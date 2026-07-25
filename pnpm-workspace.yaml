@@ -1,0 +1,11 @@
+packages:
+  - 'programmable-network/*'
+  - 'core/*'
+  - 'packages/*'
+allowBuilds:
+  bufferutil: true
+  esbuild: true
+  utf-8-validate: true
+minimumReleaseAgeExclude:
+  - '@nomicfoundation/hardhat-utils@4.1.6'
+  - hardhat@3.11.1

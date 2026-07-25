@@ -1,0 +1,28 @@
+# Rust build artifacts
+/target/
+/debug/
+/release/
+
+# Cargo package files
+**/*.rs.bk
+Cargo.lock
+
+# IDE/editor configs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Local env and configs
+.env
+*.log
+*.tmp
+config.yml
+
+# OS-specific
+.DS_Store
+Thumbs.db
+
+data/*.db
+
+

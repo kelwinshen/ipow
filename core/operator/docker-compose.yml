@@ -1,0 +1,112 @@
+services:
+  # --- HEDERA OPERATOR ---
+  # Runs all engines: Approver, Streamer, and Converter for Hedera
+  hedera-operator:
+    container_name: hedera-operator
+    image: renrensan/ipow-interoperability-service
+    build: .
+    command:
+      [
+        "operator",
+        "--src",
+        "hedera",
+        "--engine",
+        "all",
+        "--watch-sources",
+        "eth,polkadot",
+      ]
+    env_file: .env
+    environment:
+      REDIS_URL: "redis://operator-service-redis:6379"
+    networks:
+      - bridge-network
+    depends_on:
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
+  # --- ETHEREUM OPERATOR ---
+  # Runs all engines: Approver, Streamer, and Converter for Ethereum
+  ethereum-operator:
+    container_name: ethereum-operator
+    image: renrensan/ipow-interoperability-service
+    command:
+      [
+        "operator",
+        "--src",
+        "eth",
+        "--engine",
+        "all",
+        "--watch-sources",
+        "hedera,polkadot",
+      ]
+    env_file: .env
+    environment:
+      REDIS_URL: "redis://operator-service-redis:6379"
+    networks:
+      - bridge-network
+    depends_on:
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
+  # --- POLKADOT OPERATOR ---
+  # Runs all engines: Approver, Streamer, and Converter for Polkadot
+  polkadot-operator:
+    container_name: polkadot-operator
+    image: renrensan/ipow-interoperability-service
+    command:
+      [
+        "operator",
+        "--src",
+        "polkadot",
+        "--engine",
+        "all",
+        "--watch-sources",
+        "hedera,eth",
+      ]
+    env_file: .env
+    environment:
+      REDIS_URL: "redis://operator-service-redis:6379"
+    networks:
+      - bridge-network
+    depends_on:
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
+  # --- API SERVICE ---
+  operator-api:
+    container_name: operator-api
+    image: renrensan/ipow-interoperability-service
+    command: ["api", "--port", "8888"]
+    ports:
+      - "8888:8888"
+    env_file: .env
+    environment:
+      REDIS_URL: "redis://operator-service-redis:6379"
+    networks:
+      - bridge-network
+    depends_on:
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: operator-service-redis
+    restart: unless-stopped
+    ports:
+      - "6380:6379"
+    networks:
+      - bridge-network
+    command: ["redis-server", "--appendonly", "yes", "--loglevel", "warning"]
+    volumes:
+      - redis_data:/data
+
+networks:
+  bridge-network:
+    driver: bridge
+
+volumes:
+  redis_data:

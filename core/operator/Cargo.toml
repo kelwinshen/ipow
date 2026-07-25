@@ -1,0 +1,9 @@
+[workspace]
+members = [
+  "crates/core",
+  "crates/network-vm/evm-revm",
+  "crates/network-vm/svm",
+  "crates/operator",
+  "crates/api"
+]
+resolver = "3"
