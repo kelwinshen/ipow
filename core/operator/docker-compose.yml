@@ -13,7 +13,7 @@ services:
         "--engine",
         "all",
         "--watch-sources",
-        "eth,polkadot",
+        "eth,polkadot,solana",
       ]
     env_file: .env
     environment:
@@ -38,7 +38,7 @@ services:
         "--engine",
         "all",
         "--watch-sources",
-        "hedera,polkadot",
+        "hedera,polkadot,solana",
       ]
     env_file: .env
     environment:
@@ -63,7 +63,32 @@ services:
         "--engine",
         "all",
         "--watch-sources",
-        "hedera,eth",
+        "hedera,eth,solana",
+      ]
+    env_file: .env
+    environment:
+      REDIS_URL: "redis://operator-service-redis:6379"
+    networks:
+      - bridge-network
+    depends_on:
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
+  # --- SOLANA OPERATOR ---
+  # Runs all engines: Approver, Streamer, and Converter for Solana
+  solana-operator:
+    container_name: solana-operator
+    image: renrensan/ipow-interoperability-service
+    command:
+      [
+        "operator",
+        "--src",
+        "solana",
+        "--engine",
+        "all",
+        "--watch-sources",
+        "hedera,eth,polkadot",
       ]
     env_file: .env
     environment:
