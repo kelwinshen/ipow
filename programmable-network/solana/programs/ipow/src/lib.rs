@@ -85,7 +85,7 @@ pub(crate) use submit_proof_cache::__client_accounts_submit_proof_cache;
 pub use update_network::UpdateNetwork;
 pub(crate) use update_network::__client_accounts_update_network;
 
-declare_id!("FYBZ5hJBMqWnivN6SDkCYEFg3Wabd48PWajvSCjQ9cSS");
+declare_id!("EsmGbkui9ZFC6Fch9J6xoyNRZSp6TwfvcjS88beP1Vem");
 
 #[program]
 pub mod ipow {

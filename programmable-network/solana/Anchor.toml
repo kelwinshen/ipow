@@ -7,7 +7,7 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-ipow = "FYBZ5hJBMqWnivN6SDkCYEFg3Wabd48PWajvSCjQ9cSS"
+ipow = "EsmGbkui9ZFC6Fch9J6xoyNRZSp6TwfvcjS88beP1Vem"
 
 [provider]
 cluster = "devnet"

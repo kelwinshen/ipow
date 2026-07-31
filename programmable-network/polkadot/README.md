@@ -33,7 +33,7 @@ npx hardhat ignition deploy ignition/modules/IPoWV1.ts --network polkadotTestnet
 ```
 
 Chain ID 420420417 (Polkadot Hub TestNet, on Paseo). Current deployment:
-`0x4C5769e3213496a0641E139e2F0E94ce7625374C`.
+`0x2dD223DcD7F69539Ea895A29095c69c16b088aDb`.
 
 ## Post-deploy configuration
 

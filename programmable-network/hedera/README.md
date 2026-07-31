@@ -30,7 +30,7 @@ npx hardhat ignition deploy ignition/modules/IPoWV1.ts --network hederaTestnet
 ```
 
 Chain ID 296. Current Hedera Testnet deployment:
-`0xDe4bCB0e62393Fe9c798130eE43Ba4F0689d99Ac`.
+`0x36D7F82F8B2E800C877592F8DFFF0E8CFAc96CF3`.
 
 ## Post-deploy configuration
 

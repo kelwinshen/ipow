@@ -29,7 +29,7 @@ validation, header relay (including ingesting a real Bitcoin genesis header
 and rejecting a tampered one), initialization, and one full settlement-flow
 integration test.
 
-Program ID (devnet): `FYBZ5hJBMqWnivN6SDkCYEFg3Wabd48PWajvSCjQ9cSS`.
+Program ID (devnet): `EsmGbkui9ZFC6Fch9J6xoyNRZSp6TwfvcjS88beP1Vem`.
 
 ## Setup
 

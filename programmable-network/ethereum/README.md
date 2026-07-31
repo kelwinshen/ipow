@@ -47,7 +47,7 @@ Ignition tracks deployments by network under
 network that already has a tracked deployment reuses it rather than
 redeploying. Pass `--reset` to force a fresh deployment instead.
 
-Current Sepolia deployment: `0x88fB10c02Dff4F2f2F87064b5DA97fc31de74e10`.
+Current Sepolia deployment: `0x3a6b4B540BAc87056618696dc3fE6929c28e9b6C`.
 
 ## Post-deploy configuration
 
