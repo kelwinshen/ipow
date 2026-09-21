@@ -74,7 +74,8 @@ fn commit_global_header_rejects_non_operator() {
             prev_height_tracker: dummy_tracker,
             prev_epoch_start_header: None,
             prev_epoch_end_header: None,
-            operator: stranger.pubkey(),
+            prev_header: None,
+            submitter: stranger.pubkey(),
             system_program: anchor_lang::solana_program::system_program::ID,
         })
         .args(ipow::client::args::CommitGlobalHeader {
@@ -108,7 +109,8 @@ fn commit_global_header_rejects_low_work() {
             prev_height_tracker: dummy_tracker,
             prev_epoch_start_header: None,
             prev_epoch_end_header: None,
-            operator: operator.pubkey(),
+            prev_header: None,
+            submitter: operator.pubkey(),
             system_program: anchor_lang::solana_program::system_program::ID,
         })
         .args(ipow::client::args::CommitGlobalHeader {
@@ -136,7 +138,8 @@ fn commit_global_header_accepts_real_genesis_header() {
             prev_height_tracker: dummy_tracker,
             prev_epoch_start_header: None,
             prev_epoch_end_header: None,
-            operator: operator.pubkey(),
+            prev_header: None,
+            submitter: operator.pubkey(),
             system_program: anchor_lang::solana_program::system_program::ID,
         })
         .args(ipow::client::args::CommitGlobalHeader {
@@ -174,7 +177,8 @@ fn operator_open_tunnel_opens_a_conversion_anchored_to_a_real_header() {
             prev_height_tracker: dummy_tracker,
             prev_epoch_start_header: None,
             prev_epoch_end_header: None,
-            operator: operator.pubkey(),
+            prev_header: None,
+            submitter: operator.pubkey(),
             system_program: anchor_lang::solana_program::system_program::ID,
         })
         .args(ipow::client::args::CommitGlobalHeader {
@@ -298,4 +302,78 @@ fn operator_open_tunnel_opens_a_conversion_anchored_to_a_real_header() {
     let state: ipow::accounts::GlobalState = ctx.get_account(&global_state).unwrap();
     assert_eq!(state.total_reserved_native, native_amount);
     assert_eq!(state.active_open_conversions, 1);
+}
+
+/// Real Bitcoin mainnet block 1 header: prev = genesis hash, bits 0x1d00ffff,
+/// hash 00000000839a8e6886ab5951d76f411475428afc90947ee320161bbf18eb6048.
+fn block1_header_80() -> [u8; 80] {
+    let hex_str = "010000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000982051fd1e4ba744bbbe680e1fee14677ba1a3c3540bf7b1cdb606e857233e0e61bc6649ffff001d01e36299";
+    hex::decode(hex_str).unwrap().try_into().unwrap()
+}
+
+fn commit(ctx: &mut AnchorContext, global_state: Pubkey, signer: &Keypair, header_80: [u8; 80], height: u64, prev_header: Option<Pubkey>) -> anchor_litesvm::TransactionResult {
+    ctx.svm.expire_blockhash();
+    let header = header_pda(ctx, height);
+    let prev_height_tracker = if height > 0 {
+        ctx.svm
+            .get_pda_with_bump(&[b"tracker", &(height - 1).to_le_bytes()], &ipow::ID)
+            .0
+    } else {
+        Pubkey::new_unique()
+    };
+    let ix = ctx
+        .program()
+        .accounts(ipow::client::accounts::CommitGlobalHeader {
+            global_state,
+            header,
+            prev_height_tracker,
+            prev_epoch_start_header: None,
+            prev_epoch_end_header: None,
+            prev_header,
+            submitter: signer.pubkey(),
+            system_program: anchor_lang::solana_program::system_program::ID,
+        })
+        .args(ipow::client::args::CommitGlobalHeader { header_80, height })
+        .instruction()
+        .unwrap();
+    ctx.execute_instruction(ix, &[signer]).unwrap()
+}
+
+fn advance(ctx: &mut AnchorContext, secs: i64) {
+    let mut clock: solana_clock::Clock = ctx.svm.get_sysvar();
+    clock.unix_timestamp += secs;
+    ctx.svm.set_sysvar(&clock);
+}
+
+#[test]
+fn non_operator_can_extend_only_a_stale_tip_and_only_with_a_linked_header() {
+    let (mut ctx, _admin, operator, global_state) = setup_initialized();
+    let stranger = ctx.svm.create_funded_account(10_000_000_000).unwrap();
+    // A fresh relay's anchor is operator-only.
+    commit(&mut ctx, global_state, &operator, genesis_header_80(), 0, None).assert_success();
+    let h0 = header_pda(&ctx, 0);
+
+    // Tip is fresh: stranger refused.
+    commit(&mut ctx, global_state, &stranger, block1_header_80(), 1, Some(h0)).assert_anchor_error("HeaderNotStale");
+    // Stranger cannot claim "no tip" to skip linkage.
+    commit(&mut ctx, global_state, &stranger, block1_header_80(), 1, None).assert_anchor_error("Unauthorized");
+
+    advance(&mut ctx, 30 * 60 + 1);
+    // Stale tip, but a header that doesn't link (genesis again at height 1) is refused.
+    commit(&mut ctx, global_state, &stranger, genesis_header_80(), 1, Some(h0)).assert_anchor_error("PrevAndTipUnmatch");
+    // Real block 1 links: accepted from a stranger.
+    commit(&mut ctx, global_state, &stranger, block1_header_80(), 1, Some(h0)).assert_success();
+    let state: ipow::accounts::GlobalState = ctx.get_account(&global_state).unwrap();
+    assert_eq!(state.global_tip_height, 1);
+    let stored: ipow::accounts::GlobalHeader = ctx.get_account(&header_pda(&ctx, 1)).unwrap();
+    assert_eq!(stored.height, 1);
+}
+
+#[test]
+fn operator_extension_also_requires_linkage() {
+    let (mut ctx, _admin, operator, global_state) = setup_initialized();
+    commit(&mut ctx, global_state, &operator, genesis_header_80(), 0, None).assert_success();
+    let h0 = header_pda(&ctx, 0);
+    commit(&mut ctx, global_state, &operator, genesis_header_80(), 1, Some(h0)).assert_anchor_error("PrevAndTipUnmatch");
+    commit(&mut ctx, global_state, &operator, block1_header_80(), 1, Some(h0)).assert_success();
 }

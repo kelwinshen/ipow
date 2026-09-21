@@ -336,6 +336,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "anchor-spl"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "300e2e8058e674e8d6ea7c72dfb8be4349609dd9c3760ce729fc6406199624fe"
+dependencies = [
+ "anchor-lang",
+ "spl-associated-token-account-interface",
+ "spl-pod",
+ "spl-token-2022-interface",
+ "spl-token-group-interface",
+ "spl-token-interface",
+ "spl-token-metadata-interface",
+]
+
+[[package]]
 name = "anchor-syn"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -690,6 +705,48 @@ name = "base64ct"
 version = "1.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
+
+[[package]]
+name = "beta-factory"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "anchor-litesvm",
+ "anchor-spl",
+ "ipow",
+ "litesvm",
+ "litesvm-token",
+ "sha2 0.11.0",
+ "solana-account",
+ "solana-clock",
+ "solana-keypair",
+ "solana-message",
+ "solana-program",
+ "solana-signer",
+ "solana-transaction",
+ "spl-associated-token-account-interface",
+]
+
+[[package]]
+name = "beta-mint"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "anchor-litesvm",
+ "anchor-spl",
+ "ipow-conversion",
+ "litesvm",
+ "litesvm-token",
+ "sha2 0.11.0",
+ "solana-account",
+ "solana-clock",
+ "solana-keypair",
+ "solana-message",
+ "solana-program",
+ "solana-signer",
+ "solana-transaction",
+ "spl-associated-token-account-interface",
+]
 
 [[package]]
 name = "bincode"
@@ -1879,11 +1936,35 @@ dependencies = [
  "litesvm",
  "reqwest",
  "sha2 0.11.0",
+ "solana-account",
+ "solana-clock",
  "solana-keypair",
  "solana-message",
  "solana-program",
  "solana-signer",
  "solana-transaction",
+]
+
+[[package]]
+name = "ipow-conversion"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "anchor-litesvm",
+ "anchor-spl",
+ "ipow",
+ "litesvm",
+ "litesvm-token",
+ "sha2 0.11.0",
+ "solana-account",
+ "solana-clock",
+ "solana-keypair",
+ "solana-message",
+ "solana-program",
+ "solana-signer",
+ "solana-transaction",
+ "spl-associated-token-account-interface",
+ "spl-token-2022-interface",
 ]
 
 [[package]]
@@ -2204,6 +2285,7 @@ dependencies = [
  "solana-transaction",
  "solana-transaction-error",
  "spl-associated-token-account-interface",
+ "spl-token-2022-interface",
  "spl-token-interface",
 ]
 

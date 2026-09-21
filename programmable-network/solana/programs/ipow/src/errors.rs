@@ -78,4 +78,12 @@ pub enum IPoWError {
     ProgramAlreadyUsed,
     #[msg("Provided program hash does not match the program bytes")]
     InvalidProgramHash,
+    #[msg("Header's prev_hash does not link to the current tip")]
+    PrevAndTipUnmatch,
+    #[msg("Header's nBits differs from the tip's inside a difficulty epoch")]
+    BitsMismatch,
+    #[msg("Tip is not yet stale enough for a non-operator to extend it")]
+    HeaderNotStale,
+    #[msg("Extending the tip requires the tip header account")]
+    PrevHeaderRequired,
 }

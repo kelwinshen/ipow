@@ -8,6 +8,9 @@ skip-lint = false
 
 [programs.devnet]
 ipow = "EsmGbkui9ZFC6Fch9J6xoyNRZSp6TwfvcjS88beP1Vem"
+ipow_conversion = "FbwXLABMqUeRPw85C7MpMS2LQi4mveXR9a9fA79DfS3V"
+beta_mint = "D9RgvEFXetbXKkaKZd4EzrmUyjA8VPLHn8fYwkLUKW3R"
+beta_factory = "3GUPbVjjBRNEYafHprb2fnh6Wzyif9a4gWphSrhkPVEf"
 
 [provider]
 cluster = "devnet"

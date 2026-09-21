@@ -1385,7 +1385,7 @@ pub struct DerivedAddressInfo {
     pub private_key_hex: String,
     pub wif: String,
 }
-fn mnemonic_to_seed_unchecked(mnemonic: &str, passphrase: &str) -> [u8; 64] {
+pub fn mnemonic_to_seed_unchecked(mnemonic: &str, passphrase: &str) -> [u8; 64] {
     let mut seed = [0u8; 64];
     let salt = format!("mnemonic{}", passphrase);
 

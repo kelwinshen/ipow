@@ -220,6 +220,19 @@ impl ChainProviderAdapter for SvmChainProvider {
                 self.ctx.program_id
             };
 
+            // Extending the tip by one: supply the tip header so the program
+            // can check prev-hash linkage and nBits continuity (and, for
+            // non-operator submitters, tip staleness).
+            let prev_header_meta = if h > 0 && global_tip != 0 && h == global_tip + 1 {
+                Pubkey::find_program_address(
+                    &[b"header", &(h - 1).to_le_bytes()],
+                    &self.ctx.program_id,
+                )
+                .0
+            } else {
+                self.ctx.program_id
+            };
+
             let mut header_array = [0u8; 80];
             header_array.copy_from_slice(&header80_bytes[..80]);
 
@@ -235,6 +248,10 @@ impl ChainProviderAdapter for SvmChainProvider {
                     AccountMeta::new_readonly(prev_height_tracker_pda, false),
                     AccountMeta::new_readonly(prev_start_pda, false),
                     AccountMeta::new_readonly(prev_end_pda, false),
+                    // `prev_header`: the tip header account when extending by
+                    // one (linkage + nBits continuity are checked against it);
+                    // the program ID is Anchor's `None` sentinel otherwise.
+                    AccountMeta::new_readonly(prev_header_meta, false),
                     AccountMeta::new(self.ctx.operator.pubkey(), true),
                     AccountMeta::new_readonly(system_program::id(), false),
                 ],

@@ -2,6 +2,7 @@ import { expect } from "chai";
 import { network } from "hardhat";
 
 import {
+  BLOCK1_HEADER_HEX,
   GENESIS_HEADER_HEX,
   GENESIS_HEIGHT,
   computeHeaderHashLE,
@@ -167,5 +168,34 @@ describe("iPoWV1: approveAndStartWithAnchorAndFirst (integration, using the gene
         .connect(operator)
         .approveAndStartWithAnchorAndFirst(txId, 3600n, paradappProgram)
     ).to.be.revertedWithCustomError(c, "LowReserve");
+  });
+});
+
+describe("iPoWV1: permissionless header fallback (§6.9)", function () {
+  it("a stranger may extend only a stale tip, only by one, only with a linked header", async function () {
+    const [operator, stranger] = await ethers.getSigners();
+    const c = await deployIPoWV1(operator);
+    await c.connect(operator).commitGlobalBitcoinHeader80(GENESIS_HEADER_HEX, GENESIS_HEIGHT);
+
+    // Fresh tip: refused.
+    await expect(c.connect(stranger).commitGlobalBitcoinHeader80(BLOCK1_HEADER_HEX, 1)).to.be.revertedWithCustomError(c, "HeaderNotStale");
+    await ethers.provider.send("evm_increaseTime", [30 * 60 + 1]);
+    await ethers.provider.send("evm_mine", []);
+    // Stale tip but a jump: still operator-only.
+    await expect(c.connect(stranger).commitGlobalBitcoinHeader80(BLOCK1_HEADER_HEX, 5)).to.be.revertedWithCustomError(c, "Unauthorized");
+    // Stale tip, unlinked header (genesis again at height 1): refused.
+    await expect(c.connect(stranger).commitGlobalBitcoinHeader80(GENESIS_HEADER_HEX, 1)).to.be.revertedWithCustomError(c, "PrevAndTipUnmatch");
+    // Real block 1 links: accepted from a stranger.
+    await expect(c.connect(stranger).commitGlobalBitcoinHeader80(BLOCK1_HEADER_HEX, 1)).to.emit(c, "GlobalHeaderAppended");
+    expect(await c.globalTipHeight()).to.equal(1n);
+    expect(await c.globalHeightToHashLE(1)).to.equal(computeHeaderHashLE(BLOCK1_HEADER_HEX));
+  });
+
+  it("the operator's own extensions must link to the tip too", async function () {
+    const [operator] = await ethers.getSigners();
+    const c = await deployIPoWV1(operator);
+    await c.connect(operator).commitGlobalBitcoinHeader80(GENESIS_HEADER_HEX, GENESIS_HEIGHT);
+    await expect(c.connect(operator).commitGlobalBitcoinHeader80(GENESIS_HEADER_HEX, 1)).to.be.revertedWithCustomError(c, "PrevAndTipUnmatch");
+    await expect(c.connect(operator).commitGlobalBitcoinHeader80(BLOCK1_HEADER_HEX, 1)).to.emit(c, "GlobalHeaderAppended");
   });
 });

@@ -369,10 +369,19 @@ contract iPoWV1 is iPoWV1Types, ReentrancyGuard {
 
     /// @notice Appends one Bitcoin block header to the global relay, after checking its
     /// Proof-of-Work and (at epoch boundaries) its difficulty retarget.
+    /// @dev How long a tip may sit unextended before anyone may extend it (§6.9).
+    uint256 public constant PERMISSIONLESS_HEADER_DELAY = 30 minutes;
+
+    /// @notice Operator-first with a permissionless fallback (docs/DESIGN_V2.md
+    /// §6.9): anyone may extend the tip by exactly one header once the tip
+    /// has sat unextended for `PERMISSIONLESS_HEADER_DELAY`. Anchoring a fresh
+    /// relay and jumping ahead stay operator-only. Every extension — the
+    /// operator's included — must link to the tip's hash and keep the tip's
+    /// nBits inside a difficulty epoch.
     function commitGlobalBitcoinHeader80(
         bytes calldata header80,
         uint256 height
-    ) external onlyOperator {
+    ) external {
         if (header80.length != 80) revert InvalidHeader();
 
         bytes32 hHashLE = BitcoinPrimitives._hashHeaderLE(header80);
@@ -383,6 +392,22 @@ contract iPoWV1 is iPoWV1Types, ReentrancyGuard {
         uint32 ts = BitcoinPrimitives._extractTimestamp(header80);
 
         if (!BitcoinPrimitives._validateWorkLE(hHashLE, target)) revert LowWork();
+
+        {
+            bytes32 tipHash = globalHeightToHashLE[globalTipHeight];
+            bool hasTip = tipHash != bytes32(0);
+            bool extending = hasTip && height == globalTipHeight + 1;
+            if (msg.sender != operator) {
+                if (!extending) revert Unauthorized();
+                if (block.timestamp < uint256(globalHeaders[tipHash].arrivalTime) + PERMISSIONLESS_HEADER_DELAY) {
+                    revert HeaderNotStale();
+                }
+            }
+            if (extending) {
+                if (prevLE != tipHash) revert PrevAndTipUnmatch();
+                if (height % DIFF_PERIOD != 0 && bits != globalHeaders[tipHash].nBits) revert InvalidRetarget();
+            }
+        }
 
         bytes32 existing = globalHeightToHashLE[height];
         if (existing != bytes32(0)) {

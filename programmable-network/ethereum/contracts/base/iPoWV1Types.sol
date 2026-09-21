@@ -66,6 +66,8 @@ abstract contract iPoWV1Types {
     error HeightRewrite();
     error NoJumpWhenActive();
     error PrevAndTipUnmatch();
+    error HeaderNotStale();
+    error PrevHeaderMissing();
     error EpochFirstMissing();
     error InvalidRetarget();
     error EpochAnchorsMissing();

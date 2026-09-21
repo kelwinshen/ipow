@@ -1,0 +1,2824 @@
+{
+  "address": "3GUPbVjjBRNEYafHprb2fnh6Wzyif9a4gWphSrhkPVEf",
+  "metadata": {
+    "name": "beta_factory",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "BETA v2 factory (docs/DESIGN_V2.md §6): one fungible BETA on Solana backed by SOL held here and ETH held in BetaVault.sol on Ethereum. Cross-chain claims travel as Bitcoin transactions on each registered party's statement chain; this program judges the claims that are about Solana facts (burns, pending locks), acts provisionally on the ones about Ethereum (mints, rate-limited and vetoable), and slashes bonds it holds. Reads ipow's header relay read-only, like ipow-conversion."
+  },
+  "docs": [
+    "BETA v2 factory — `docs/DESIGN_V2.md` §6. One fungible BETA on Solana,",
+    "its SOL half held here, its ETH half held by `BetaVault.sol`. Cross-chain",
+    "claims are Bitcoin transactions on each party's statement chain; this",
+    "program judges claims about Solana facts, acts provisionally on claims",
+    "about Ethereum facts, and slashes the bonds it holds."
+  ],
+  "instructions": [
+    {
+      "name": "approve_pending",
+      "discriminator": [
+        171,
+        11,
+        173,
+        28,
+        199,
+        199,
+        129,
+        178
+      ],
+      "accounts": [
+        {
+          "name": "pending",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  101,
+                  110,
+                  100,
+                  105,
+                  110,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              },
+              {
+                "kind": "arg",
+                "path": "nonce"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user",
+          "signer": true,
+          "relations": [
+            "pending"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "nonce",
+          "type": "u64"
+        },
+        {
+          "name": "eth_lock_id",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "audit_skipped_release",
+      "discriminator": [
+        192,
+        5,
+        62,
+        155,
+        62,
+        54,
+        70,
+        60
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "party",
+          "writable": true
+        },
+        {
+          "name": "processed",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  110,
+                  99,
+                  104,
+                  111,
+                  114
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "txid_le"
+              }
+            ]
+          }
+        },
+        {
+          "name": "bond_escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  111,
+                  110,
+                  100,
+                  95,
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "insurance",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  110,
+                  115,
+                  117,
+                  114,
+                  97,
+                  110,
+                  99,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "submitter",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "burn",
+          "writable": true,
+          "optional": true
+        }
+      ],
+      "args": [
+        {
+          "name": "txid_le",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "statement",
+          "type": "bytes"
+        }
+      ]
+    },
+    {
+      "name": "burn_redeem",
+      "discriminator": [
+        169,
+        193,
+        126,
+        91,
+        139,
+        162,
+        32,
+        15
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "burn",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  117,
+                  114,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "config.next_burn_id",
+                "account": "FactoryConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "beta_mint",
+          "writable": true
+        },
+        {
+          "name": "burner_beta",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "burner"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "beta_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "burner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "units",
+          "type": "u64"
+        },
+        {
+          "name": "to_eth",
+          "type": {
+            "array": [
+              "u8",
+              20
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "exercise_mint",
+      "discriminator": [
+        119,
+        81,
+        43,
+        99,
+        154,
+        65,
+        126,
+        225
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "processed",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  110,
+                  99,
+                  104,
+                  111,
+                  114
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "txid_le"
+              }
+            ]
+          }
+        },
+        {
+          "name": "party"
+        },
+        {
+          "name": "pending",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  101,
+                  110,
+                  100,
+                  105,
+                  110,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "processed.sol_user",
+                "account": "ProcessedAnchor"
+              },
+              {
+                "kind": "account",
+                "path": "processed.nonce",
+                "account": "ProcessedAnchor"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user",
+          "writable": true
+        },
+        {
+          "name": "user_beta",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "user"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "beta_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "beta_mint",
+          "writable": true
+        },
+        {
+          "name": "mint_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  110,
+                  116,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "txid_le",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "expire_pending",
+      "discriminator": [
+        70,
+        169,
+        9,
+        55,
+        182,
+        166,
+        196,
+        204
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "pending",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  101,
+                  110,
+                  100,
+                  105,
+                  110,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              },
+              {
+                "kind": "arg",
+                "path": "nonce"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "user",
+          "writable": true,
+          "relations": [
+            "pending"
+          ]
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "prior_party",
+          "docs": [
+            "Required only to cancel a queued slot whose queuing party is dead."
+          ],
+          "optional": true
+        }
+      ],
+      "args": [
+        {
+          "name": "nonce",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "fund_rewards",
+      "discriminator": [
+        114,
+        64,
+        163,
+        112,
+        175,
+        167,
+        19,
+        121
+      ],
+      "accounts": [
+        {
+          "name": "reward_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  119,
+                  97,
+                  114,
+                  100,
+                  115
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "funder",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "initialize",
+      "discriminator": [
+        175,
+        175,
+        109,
+        31,
+        13,
+        152,
+        155,
+        237
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "docs": [
+            "The SOL reserve: pending locks and the backing of outstanding BETA."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  110,
+                  116,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "bond_escrow",
+          "docs": [
+            "Party bonds (operators and auditors), exact per-party accounting in `Party.bond`."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  111,
+                  110,
+                  100,
+                  95,
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "insurance",
+          "docs": [
+            "Slashed bonds not owed to a specific victim accumulate here."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  110,
+                  115,
+                  117,
+                  114,
+                  97,
+                  110,
+                  99,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "beta_mint",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "governance",
+          "type": "pubkey"
+        },
+        {
+          "name": "params",
+          "type": {
+            "defined": {
+              "name": "FactoryParams"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "lock_sol",
+      "discriminator": [
+        181,
+        15,
+        15,
+        99,
+        159,
+        87,
+        241,
+        42
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "pending",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  101,
+                  110,
+                  100,
+                  105,
+                  110,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              },
+              {
+                "kind": "arg",
+                "path": "nonce"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "beta_mint"
+        },
+        {
+          "name": "user_beta",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "user"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "beta_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "associated_token_program",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "nonce",
+          "type": "u64"
+        },
+        {
+          "name": "units",
+          "type": "u64"
+        },
+        {
+          "name": "deadline",
+          "type": "i64"
+        }
+      ]
+    },
+    {
+      "name": "process_anchor",
+      "discriminator": [
+        179,
+        99,
+        182,
+        209,
+        91,
+        213,
+        69,
+        28
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "party",
+          "writable": true
+        },
+        {
+          "name": "party_owner",
+          "writable": true
+        },
+        {
+          "name": "processed",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  110,
+                  99,
+                  104,
+                  111,
+                  114
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "txid_le"
+              }
+            ]
+          }
+        },
+        {
+          "name": "header"
+        },
+        {
+          "name": "bond_escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  111,
+                  110,
+                  100,
+                  95,
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "insurance",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  110,
+                  115,
+                  117,
+                  114,
+                  97,
+                  110,
+                  99,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "reward_pool",
+          "docs": [
+            "Governance-funded pool that pays veto rewards (`fund_rewards`)."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  119,
+                  97,
+                  114,
+                  100,
+                  115
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "submitter",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "pending",
+          "docs": [
+            "MINT: the pending lock named by the statement (address re-derived in the handler)."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "pending_user",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "burn",
+          "docs": [
+            "RELEASE: the burn named by the statement (address re-derived in the handler)."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "target_party",
+          "docs": [
+            "VETO: the operator being vetoed."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "target_anchor",
+          "docs": [
+            "VETO: the vetoed anchor (absent for a dead-veto)."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "prior_party",
+          "docs": [
+            "MINT re-anchor: the retired party that previously queued this pending slot."
+          ],
+          "optional": true
+        }
+      ],
+      "args": [
+        {
+          "name": "txid_le",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "statement",
+          "type": "bytes"
+        },
+        {
+          "name": "tx_raw",
+          "type": "bytes"
+        },
+        {
+          "name": "proof_block_height",
+          "type": "u64"
+        },
+        {
+          "name": "branch_le",
+          "type": {
+            "vec": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        },
+        {
+          "name": "index",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "register_party",
+      "discriminator": [
+        131,
+        2,
+        183,
+        13,
+        18,
+        202,
+        234,
+        110
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "party",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  97,
+                  114,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "party_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "bond_escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  111,
+                  110,
+                  100,
+                  95,
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "governance",
+          "signer": true,
+          "optional": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "party_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "kind",
+          "type": {
+            "defined": {
+              "name": "PartyKind"
+            }
+          }
+        },
+        {
+          "name": "anchor_txid_le",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "anchor_vout",
+          "type": "u32"
+        },
+        {
+          "name": "bond",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "request_unbond",
+      "discriminator": [
+        11,
+        35,
+        179,
+        103,
+        226,
+        159,
+        251,
+        63
+      ],
+      "accounts": [
+        {
+          "name": "party",
+          "writable": true
+        },
+        {
+          "name": "owner",
+          "signer": true,
+          "relations": [
+            "party"
+          ]
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "set_params",
+      "discriminator": [
+        27,
+        234,
+        178,
+        52,
+        147,
+        2,
+        187,
+        141
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "governance",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "params",
+          "type": {
+            "defined": {
+              "name": "FactoryParams"
+            }
+          }
+        },
+        {
+          "name": "paused",
+          "type": "bool"
+        }
+      ]
+    },
+    {
+      "name": "settle_mint",
+      "discriminator": [
+        201,
+        168,
+        164,
+        233,
+        170,
+        82,
+        40,
+        96
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "processed",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  110,
+                  99,
+                  104,
+                  111,
+                  114
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "txid_le"
+              }
+            ]
+          }
+        },
+        {
+          "name": "bond_escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  111,
+                  110,
+                  100,
+                  95,
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "insurance",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  110,
+                  115,
+                  117,
+                  114,
+                  97,
+                  110,
+                  99,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "attester",
+          "docs": [
+            "The attesting party (required when an escrow is outstanding)."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "pending",
+          "docs": [
+            "The pending slot (required when cancelling a never-exercised mint)."
+          ],
+          "writable": true,
+          "optional": true
+        }
+      ],
+      "args": [
+        {
+          "name": "txid_le",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "skip_anchor",
+      "discriminator": [
+        1,
+        253,
+        23,
+        35,
+        52,
+        212,
+        136,
+        206
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "party",
+          "writable": true
+        },
+        {
+          "name": "processed",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  110,
+                  99,
+                  104,
+                  111,
+                  114
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "txid_le"
+              }
+            ]
+          }
+        },
+        {
+          "name": "header"
+        },
+        {
+          "name": "submitter",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "txid_le",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "tx_raw",
+          "type": "bytes"
+        },
+        {
+          "name": "proof_block_height",
+          "type": "u64"
+        },
+        {
+          "name": "branch_le",
+          "type": {
+            "vec": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        },
+        {
+          "name": "index",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "top_up_bond",
+      "discriminator": [
+        110,
+        37,
+        8,
+        119,
+        210,
+        231,
+        202,
+        197
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "party",
+          "writable": true
+        },
+        {
+          "name": "bond_escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  111,
+                  110,
+                  100,
+                  95,
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "party"
+          ]
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "withdraw_bond",
+      "discriminator": [
+        222,
+        199,
+        141,
+        31,
+        188,
+        93,
+        155,
+        40
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "party",
+          "writable": true
+        },
+        {
+          "name": "bond_escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  111,
+                  110,
+                  100,
+                  95,
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "party"
+          ]
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Burn",
+      "discriminator": [
+        24,
+        133,
+        239,
+        240,
+        159,
+        140,
+        141,
+        163
+      ]
+    },
+    {
+      "name": "FactoryConfig",
+      "discriminator": [
+        29,
+        197,
+        255,
+        232,
+        22,
+        128,
+        67,
+        26
+      ]
+    },
+    {
+      "name": "Party",
+      "discriminator": [
+        208,
+        64,
+        165,
+        146,
+        114,
+        138,
+        161,
+        100
+      ]
+    },
+    {
+      "name": "Pending",
+      "discriminator": [
+        36,
+        180,
+        147,
+        170,
+        72,
+        175,
+        173,
+        126
+      ]
+    },
+    {
+      "name": "ProcessedAnchor",
+      "discriminator": [
+        91,
+        17,
+        195,
+        75,
+        43,
+        78,
+        38,
+        45
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "Unauthorized",
+      "msg": "unauthorized"
+    },
+    {
+      "code": 6001,
+      "name": "Paused",
+      "msg": "factory is paused"
+    },
+    {
+      "code": 6002,
+      "name": "InvalidParams",
+      "msg": "invalid parameters"
+    },
+    {
+      "code": 6003,
+      "name": "BondTooSmall",
+      "msg": "bond below the minimum for this party kind"
+    },
+    {
+      "code": 6004,
+      "name": "PartyDead",
+      "msg": "party is dead"
+    },
+    {
+      "code": 6005,
+      "name": "NotOperator",
+      "msg": "party is not an operator"
+    },
+    {
+      "code": 6006,
+      "name": "NotAuditor",
+      "msg": "party is not an auditor"
+    },
+    {
+      "code": 6007,
+      "name": "UnbondNotReady",
+      "msg": "unbond delay has not elapsed"
+    },
+    {
+      "code": 6008,
+      "name": "UnbondNotRequested",
+      "msg": "unbond was not requested"
+    },
+    {
+      "code": 6009,
+      "name": "PendingNotExpired",
+      "msg": "pending lock deadline has not passed"
+    },
+    {
+      "code": 6010,
+      "name": "PendingQueued",
+      "msg": "pending lock is referenced by a queued mint"
+    },
+    {
+      "code": 6011,
+      "name": "AlreadyApproved",
+      "msg": "pending lock already approved"
+    },
+    {
+      "code": 6012,
+      "name": "TxidMismatch",
+      "msg": "txid does not match the raw transaction"
+    },
+    {
+      "code": 6013,
+      "name": "InvalidHeader",
+      "msg": "header height does not match the proof height"
+    },
+    {
+      "code": 6014,
+      "name": "InvalidMerkleBranch",
+      "msg": "merkle branch does not reach the header's root"
+    },
+    {
+      "code": 6015,
+      "name": "MalformedTx",
+      "msg": "raw transaction is too short or malformed"
+    },
+    {
+      "code": 6016,
+      "name": "WitnessSerialization",
+      "msg": "witness-serialized transactions are not accepted; strip the witness"
+    },
+    {
+      "code": 6017,
+      "name": "NotOnStatementChain",
+      "msg": "anchor input[0] does not spend the party's registered outpoint"
+    },
+    {
+      "code": 6018,
+      "name": "BadAnchorPayload",
+      "msg": "anchor output[1] is not a valid OP_RETURN payload"
+    },
+    {
+      "code": 6019,
+      "name": "KindMismatch",
+      "msg": "anchor kind does not match the statement"
+    },
+    {
+      "code": 6020,
+      "name": "StatementHashMismatch",
+      "msg": "statement hash does not match the anchor"
+    },
+    {
+      "code": 6021,
+      "name": "MalformedStatement",
+      "msg": "statement bytes are malformed"
+    },
+    {
+      "code": 6022,
+      "name": "MissingAccount",
+      "msg": "required account missing for this statement kind"
+    },
+    {
+      "code": 6023,
+      "name": "AccountMismatch",
+      "msg": "account does not match the statement"
+    },
+    {
+      "code": 6024,
+      "name": "AlreadyProcessed",
+      "msg": "anchor already processed"
+    },
+    {
+      "code": 6025,
+      "name": "BadAnchorState",
+      "msg": "anchor is not in a state that allows this action"
+    },
+    {
+      "code": 6026,
+      "name": "Held",
+      "msg": "anchor is held by a veto"
+    },
+    {
+      "code": 6027,
+      "name": "RateLimited",
+      "msg": "mint cap for this window is exhausted"
+    },
+    {
+      "code": 6028,
+      "name": "SkipNotReady",
+      "msg": "skip delay has not elapsed"
+    },
+    {
+      "code": 6029,
+      "name": "TargetNotProcessed",
+      "msg": "target anchor has not been processed yet"
+    },
+    {
+      "code": 6030,
+      "name": "BurnAlreadyClaimed",
+      "msg": "burn record already claimed by a release"
+    },
+    {
+      "code": 6031,
+      "name": "InsufficientBeta",
+      "msg": "insufficient BETA balance"
+    },
+    {
+      "code": 6032,
+      "name": "Overflow",
+      "msg": "arithmetic overflow"
+    },
+    {
+      "code": 6033,
+      "name": "ChallengeOpen",
+      "msg": "challenge window still open"
+    },
+    {
+      "code": 6034,
+      "name": "NotAttested",
+      "msg": "anchor is neither attested nor past its challenge window"
+    },
+    {
+      "code": 6035,
+      "name": "AlreadyAttested",
+      "msg": "anchor already attested"
+    },
+    {
+      "code": 6036,
+      "name": "InsufficientBond",
+      "msg": "attester's bond cannot cover the escrow"
+    },
+    {
+      "code": 6037,
+      "name": "AlreadySettled",
+      "msg": "anchor already settled"
+    },
+    {
+      "code": 6038,
+      "name": "AttesterRequired",
+      "msg": "attester party account required"
+    }
+  ],
+  "types": [
+    {
+      "name": "AnchorStatus",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Queued"
+          },
+          {
+            "name": "Exercised"
+          },
+          {
+            "name": "Slashed"
+          },
+          {
+            "name": "Skipped"
+          },
+          {
+            "name": "Cancelled"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Burn",
+      "docs": [
+        "A redemption: BETA burned, SOL paid, ETH half awaiting the operator's",
+        "RELEASE anchor. `claimed` is set when a RELEASE naming this burn is",
+        "judged true here; a second RELEASE for it is a lie."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "burn_id",
+            "type": "u64"
+          },
+          {
+            "name": "burner",
+            "type": "pubkey"
+          },
+          {
+            "name": "units",
+            "type": "u64"
+          },
+          {
+            "name": "to_eth",
+            "type": {
+              "array": [
+                "u8",
+                20
+              ]
+            }
+          },
+          {
+            "name": "claimed",
+            "type": "bool"
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "FactoryConfig",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "governance",
+            "type": "pubkey"
+          },
+          {
+            "name": "beta_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "vault_bump",
+            "type": "u8"
+          },
+          {
+            "name": "mint_authority_bump",
+            "type": "u8"
+          },
+          {
+            "name": "bond_escrow_bump",
+            "type": "u8"
+          },
+          {
+            "name": "insurance_bump",
+            "type": "u8"
+          },
+          {
+            "name": "params",
+            "type": {
+              "defined": {
+                "name": "FactoryParams"
+              }
+            }
+          },
+          {
+            "name": "paused",
+            "type": "bool"
+          },
+          {
+            "name": "window_start_height",
+            "docs": [
+              "Rate window: Bitcoin height the current window started at (from the",
+              "header relay's tip when the first mint of the window executed) and",
+              "units minted in it."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "window_units",
+            "type": "u64"
+          },
+          {
+            "name": "eth_claims_units",
+            "docs": [
+              "Whole-BETA units currently outstanding — equals the ETH claims the",
+              "Ethereum vault must honor."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "reserve_lamports",
+            "docs": [
+              "Lamports in the vault backing outstanding BETA (excludes pending locks)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "pending_lamports",
+            "docs": [
+              "Lamports in the vault held for not-yet-minted pending locks."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "next_burn_id",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "FactoryParams",
+      "docs": [
+        "Governance-settable parameters. Governance sets numbers; it never",
+        "judges whether a statement was true (DESIGN_V2 §6.7)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "sol_per_unit",
+            "docs": [
+              "Composition: lamports of SOL backing one whole BETA."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "eth_gwei_per_unit",
+            "docs": [
+              "Composition: gwei of ETH backing one whole BETA (checked on Ethereum)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "window_blocks",
+            "docs": [
+              "v2 rate window — kept for layout compatibility; unused in v3",
+              "(exposure is per-action escrow, DESIGN_V2 §7.5)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "mint_cap_units_per_window",
+            "type": "u64"
+          },
+          {
+            "name": "t_skip_secs",
+            "docs": [
+              "A stalled anchor (preimage never revealed) may be skipped once the",
+              "header carrying it is this old."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "t_challenge_secs",
+            "docs": [
+              "v3 challenge window: a queued MINT executes early only on an",
+              "ATTEST, otherwise after this long if no VETO stands; escrows settle",
+              "at its end (DESIGN_V2 §7). (Field position inherited from v2's",
+              "`t_pause_secs`.)"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "unbond_delay_secs",
+            "type": "i64"
+          },
+          {
+            "name": "min_operator_bond",
+            "type": "u64"
+          },
+          {
+            "name": "min_auditor_bond",
+            "type": "u64"
+          },
+          {
+            "name": "comp_lamports_per_unit",
+            "docs": [
+              "Slash per unit for a false statement about Solana; paid to the",
+              "named user (false MINT) or to insurance (false RELEASE)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "veto_slash_lamports",
+            "docs": [
+              "Slash for an auditor whose veto of a RELEASE was wrong; reward for",
+              "one that was right (paid from insurance when funded)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "veto_reward_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "bounty_bps",
+            "docs": [
+              "Share of any slash paid to whoever submitted the anchor."
+            ],
+            "type": "u16"
+          }
+        ]
+      }
+    },
+    {
+      "name": "GlobalHeader",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "height",
+            "type": "u64"
+          },
+          {
+            "name": "hash_le",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "prev_hash_le",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "merkle_root_le",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "n_bits",
+            "type": "u32"
+          },
+          {
+            "name": "timestamp",
+            "type": "u32"
+          },
+          {
+            "name": "arrival_time",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Party",
+      "docs": [
+        "A registered statement-maker. `party_id` is the cross-chain identity",
+        "(the same 32 bytes are registered on Ethereum); `anchor_txid_le`/",
+        "`anchor_vout` is the head of its statement chain as this chain has",
+        "processed it (DESIGN_V2 §6.2)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "party_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "kind",
+            "type": {
+              "defined": {
+                "name": "PartyKind"
+              }
+            }
+          },
+          {
+            "name": "anchor_txid_le",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "anchor_vout",
+            "type": "u32"
+          },
+          {
+            "name": "seq",
+            "docs": [
+              "Number of anchors processed on this chain."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bond",
+            "docs": [
+              "Lamports of this party's bond held in `bond_escrow`."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "dead",
+            "docs": [
+              "Set by a slash for a false statement about Solana. A dead party's",
+              "anchors are still processed (so further lies can be judged) but",
+              "never exercised."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "paused_until",
+            "docs": [
+              "Operator only: set by an auditor's dead-veto; mints are not",
+              "exercised until it lapses."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "unbond_requested_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PartyKind",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Operator"
+          },
+          {
+            "name": "Auditor"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Pending",
+      "docs": [
+        "User X's SOL half of a mint, locked in the vault, waiting for the",
+        "operator's MINT anchor. `approved`/`eth_lock_id` is the user's on-chain",
+        "consent (DESIGN_V2 §6.3's `sig_X`, done as a signed instruction instead",
+        "of an ed25519 signature inside the statement)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "user",
+            "type": "pubkey"
+          },
+          {
+            "name": "nonce",
+            "type": "u64"
+          },
+          {
+            "name": "units",
+            "type": "u64"
+          },
+          {
+            "name": "deadline",
+            "type": "i64"
+          },
+          {
+            "name": "eth_lock_id",
+            "type": "u64"
+          },
+          {
+            "name": "approved",
+            "type": "bool"
+          },
+          {
+            "name": "queued",
+            "docs": [
+              "A MINT anchor referencing this lock has been processed and queued;",
+              "the lock can no longer expire — it will be minted when capacity",
+              "allows (§6.7)."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "queued_by",
+            "docs": [
+              "Party whose MINT anchor queued this lock. If that party is later",
+              "retired (`dead`), a live operator may re-anchor the same MINT and",
+              "take the slot over, or the user may cancel after the deadline",
+              "(DESIGN_V2 §6.12, \"stranded queued mint\")."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ProcessedAnchor",
+      "docs": [
+        "One processed anchor, keyed by its Bitcoin txid. Exists forever so an",
+        "anchor can never be processed twice and so vetoes/audits can refer to",
+        "it."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "party_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "txid_le",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "kind",
+            "type": "u8"
+          },
+          {
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "AnchorStatus"
+              }
+            }
+          },
+          {
+            "name": "statement_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "block_height",
+            "type": "u64"
+          },
+          {
+            "name": "processed_at",
+            "type": "i64"
+          },
+          {
+            "name": "challenge_until",
+            "docs": [
+              "v3: end of the challenge window (`processed_at + t_challenge_secs`)."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "held",
+            "docs": [
+              "v3: a VETO stands against this anchor (lifted only by a CLEAR)."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "attested_by",
+            "docs": [
+              "v3: party whose ATTEST covers this anchor (zero = none) and the",
+              "escrow it reserved for it; `settled` once the window was settled."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "escrow",
+            "type": "u64"
+          },
+          {
+            "name": "settled",
+            "type": "bool"
+          },
+          {
+            "name": "eth_lock_id",
+            "type": "u64"
+          },
+          {
+            "name": "sol_user",
+            "type": "pubkey"
+          },
+          {
+            "name": "nonce",
+            "type": "u64"
+          },
+          {
+            "name": "units",
+            "type": "u64"
+          },
+          {
+            "name": "deadline",
+            "type": "i64"
+          }
+        ]
+      }
+    }
+  ]
+}

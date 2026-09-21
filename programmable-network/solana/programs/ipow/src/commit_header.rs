@@ -2,13 +2,37 @@ use anchor_lang::prelude::*;
 use sha2::{Digest, Sha256};
 
 use crate::bitcoin::{expected_retarget_bits, target_from_bits, validate_work_le};
-use crate::constants::DIFF_PERIOD;
+use crate::constants::{DIFF_PERIOD, PERMISSIONLESS_HEADER_DELAY_SEC};
 use crate::errors::IPoWError;
 use crate::state::{GlobalHeader, GlobalState, HeightTracker};
 
 pub fn handler(ctx: Context<CommitHeader>, header_80: [u8; 80], height: u64) -> Result<()> {
     let global_state = &mut ctx.accounts.global_state;
     let header_pda = &mut ctx.accounts.header;
+    let now = Clock::get()?.unix_timestamp;
+
+    // Operator-first, permissionless fallback (DESIGN_V2 §6.9). "Extending"
+    // = the next height with the tip header account supplied; only that
+    // shape is open to non-operators, and only once the tip has sat
+    // unextended for `PERMISSIONLESS_HEADER_DELAY_SEC`. Anchoring a fresh
+    // relay and jumping ahead stay operator-only.
+    let is_operator = ctx.accounts.submitter.key() == global_state.operator;
+    let extending = height > 0
+        && height == global_state.global_tip_height + 1
+        && ctx.accounts.prev_header.is_some();
+    if !is_operator {
+        require!(extending, IPoWError::Unauthorized);
+        let prev = ctx.accounts.prev_header.as_ref().unwrap();
+        require!(
+            now >= prev.arrival_time + PERMISSIONLESS_HEADER_DELAY_SEC,
+            IPoWError::HeaderNotStale
+        );
+    }
+    // The tip header, when it exists, must be supplied — even by the
+    // operator — so linkage and difficulty continuity are always checked.
+    if height > 0 && height == global_state.global_tip_height + 1 && global_state.global_tip_height != 0 {
+        require!(ctx.accounts.prev_header.is_some(), IPoWError::PrevHeaderRequired);
+    }
 
     if height > 0 {
         let (expected_pda, _) = Pubkey::find_program_address(
@@ -63,6 +87,22 @@ pub fn handler(ctx: Context<CommitHeader>, header_80: [u8; 80], height: u64) -> 
         IPoWError::LowWork
     );
 
+    if extending {
+        let prev = ctx.accounts.prev_header.as_ref().unwrap();
+        let (expected_prev, _) = Pubkey::find_program_address(
+            &[b"header", (height - 1).to_le_bytes().as_ref()],
+            ctx.program_id,
+        );
+        require!(prev.key() == expected_prev, IPoWError::InvalidHeader);
+        require!(prev.height == height - 1, IPoWError::InvalidHeader);
+        require!(prev_le == prev.hash_le, IPoWError::PrevAndTipUnmatch);
+        // Inside a difficulty epoch nBits is constant; at an epoch boundary
+        // the retarget rule below decides instead.
+        if height % DIFF_PERIOD != 0 {
+            require!(n_bits == prev.n_bits, IPoWError::BitsMismatch);
+        }
+    }
+
     if height % DIFF_PERIOD == 0
         && global_state.global_tip_height != 0
         && height == global_state.global_tip_height + 1
@@ -101,7 +141,7 @@ pub struct CommitHeader<'info> {
 
     #[account(
         init,
-        payer = operator,
+        payer = submitter,
         space = 8 + GlobalHeader::INIT_SPACE,
         seeds = [b"header".as_ref(), height.to_le_bytes().as_ref()],
         bump
@@ -119,7 +159,16 @@ pub struct CommitHeader<'info> {
     pub prev_epoch_start_header: Option<Account<'info, GlobalHeader>>,
     pub prev_epoch_end_header: Option<Account<'info, GlobalHeader>>,
 
-    #[account(mut, address = global_state.operator @ IPoWError::Unauthorized)]
-    pub operator: Signer<'info>,
+    /// The current tip's header account (`height - 1`). Required whenever
+    /// the relay already has a tip and this header extends it; checked for
+    /// prev-hash linkage and nBits continuity, and its `arrival_time` gates
+    /// the permissionless fallback.
+    /// Address is verified in the handler (`prev.height == height - 1`, and
+    /// `Account<GlobalHeader>` already proves this program owns it).
+    pub prev_header: Option<Account<'info, GlobalHeader>>,
+
+    /// Any signer. Non-operators may only extend a stale tip (see handler).
+    #[account(mut)]
+    pub submitter: Signer<'info>,
     pub system_program: Program<'info, System>,
 }
