@@ -1155,10 +1155,29 @@ names it (whether the ATTEST was processed before or after).
   Daemon: attests verified mints/releases (fast path), vetoes lies, settles
   closed windows, self-attests the operator's own MINTs (`SELF_ATTEST=no`
   to disable), retries Esplora with a fallback host.
-- Not yet exercised live: no v3 anchor has been broadcast yet (Esplora was
-  unreachable from the build machine at the end of the session). First
-  live v3 run = a deposit + lock, the daemon anchoring MINT + ATTEST, and
-  an instant exercise.
+- **First live v3 mint (2026-09-22, block 968030).** Sepolia v3 lock #1
+  (0.001 ETH, nonce 4) + devnet pending nonce 4 approved for it. Operator
+  `0x03…03` anchored MINT `b019417d…7aa8` and, on its own chain right
+  behind it, ATTEST `a00829ba…8097` (both RBF-bumped from a 0.47 sat/vB
+  first attempt to 2 sat/vB after ~2 h unconfirmed — the wallet couldn't
+  fund the 4 sat/vB "fastest" rate for both). Relays jumped to 968030
+  (Sepolia needed the epoch-start header 967680 recorded first —
+  `EpochFirstMissing` otherwise; jumping avoids ~117 sequential header
+  txs, which the deployer could not have paid for). Devnet: MINT
+  `Queued` → ATTEST reserved 0.01 SOL from the operator's bond (0.2 →
+  0.19) → `exercise_mint` **immediately** (supply 3, `eth_claims` 3,
+  reserve 0.03 SOL). Sepolia: MINT processed 38 min after its block
+  (inside `tFin`) → lock #1 FINAL; ATTEST recorded `mintAttester =
+  0x03…03`. Escrow settles back to the bond after the 7-day window
+  (`ACTION=settle`).
+  Lessons: (1) Esplora's `/tx/:id/status` returns `{"confirmed":false}`
+  for *unknown* txids too — use `/tx/:id` (404) or `/outspend` to tell
+  "in mempool" from "not broadcast"; the daemon's confirmation polls only
+  trust `"confirmed":true`. (2) `tFin` = 1 h is tight when the anchor
+  confirms during an outage; the daemon should relay+process the moment
+  it sees a confirmation, and `tFin` deserves to be a few hours.
+  (3) `relayTo` in the daemon extends header by header; it needs the
+  jump path (with epoch-start pre-relay on the EVM) when far behind.
 
 ### 7.6 Trust statement (v3)
 
