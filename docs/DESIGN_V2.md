@@ -1181,6 +1181,27 @@ names it (whether the ATTEST was processed before or after).
   → Done the same day: the daemon jumps when the gap exceeds `JUMP_GAP`
   (6) and no Conversion is open, pre-relaying the EVM epoch-start header;
   `tFin` raised to 4 h and `t_skip`/`tSkip` to 8 h on both chains.
+- **First daemon-driven mint, and the first independent attester
+  (2026-09-22, blocks 968040/968046).** Sepolia v3 lock #2 + devnet nonce
+  5. The operator daemon found the match and anchored MINT
+  `4079c614…841c` by itself (block 968040); its self-ATTEST could not be
+  funded, so the mint waited. After a top-up the **auditor** loop saw
+  "verified on Ethereum, unattested" and anchored ATTEST `5f901eca…fe22`
+  from the auditor's chain — and then, every cycle until that anchor was
+  confirmed and processed, three more identical ATTESTs (`1bfbc2b9…`,
+  `ea6f2303…`, `61f509cb…`; 1,244 sats wasted). Fixes: the daemon keeps a
+  statement-hash ledger and never anchors the same statement twice; the
+  program treats a redundant ATTEST as a no-op that only advances the
+  attester's chain (previously `AlreadyAttested` would have wedged it).
+  With those in place the watchtower relayed 968041–968046 (extend),
+  processed all four attests on both chains (first carries the escrow:
+  auditor bond 0.1 → 0.09 SOL; the rest no-ops) and `exercise_mint`
+  succeeded: **BETA #4 minted on an independent attester's escrow**
+  (supply 4, `eth_claims` 4, reserve 0.04 SOL; Sepolia lock #2 FINAL,
+  `mintAttester = 0x04…04`). Escrow returns to the auditor at settle
+  (~2026-09-29). Also: Esplora's `/tx/:id/status` reports unknown txids as
+  `{"confirmed":false}`; the daemon's "in mempool" checks now use
+  `/tx/:id` (404) or `/outspend`.
 
 ### 7.6 Trust statement (v3)
 
