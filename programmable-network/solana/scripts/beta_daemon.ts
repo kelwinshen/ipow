@@ -311,17 +311,28 @@ async function bitcoinHead(partyId: string): Promise<{ txid: string; vout: numbe
   for (let g = 0; g < 50; g++) { const nx = await nextAnchor(head.txid, head.vout); if (!nx) break; head = { txid: nx.txid, vout: 0 }; }
   return head;
 }
-async function anchorStatement(partyId: string, stmt: Buffer) {
+/** Anchors `stmt` on `partyId`'s chain. Returns the txid, or null if it could not be funded/broadcast. */
+async function anchorStatement(partyId: string, stmt: Buffer): Promise<string | null> {
   saveStatement(stmt);
   const head = await bitcoinHead(partyId);
   const addr = fs.readFileSync(path.join(OPERATOR_DIR, ".env"), "utf8").match(/^OPERATOR_BTC_WALLET_ADDRESS=(.*)$/m)![1].trim();
   const utxos: any[] = await getJson(`${ESPLORA}/address/${addr}/utxo`);
-  const fund = utxos.filter((u) => !(u.txid === head.txid && u.vout === head.vout) && u.value > 600).sort((a, b) => b.value - a.value)[0];
-  if (!fund) { log("no funding UTXO in the operator wallet; cannot anchor"); return; }
-  const rate = Math.max(0.35, (await getJson(`${ESPLORA}/fee-estimates`))["6"] ?? 0.5);
+  const rate = Math.max(parseFloat(process.env.MIN_FEE_RATE ?? "1"), (await getJson(`${ESPLORA}/fee-estimates`))["6"] ?? 1);
   const fee = Math.ceil(rate * 260);
+  // Any non-head UTXO that covers the fee (heads of other parties are dust; never spend those).
+  const heads = new Set<string>();
+  for (const p of PARTIES) { const h = await bitcoinHead(p).catch(() => null); if (h) heads.add(`${h.txid}:${h.vout}`); }
+  const fund = utxos.filter((u) => !heads.has(`${u.txid}:${u.vout}`) && u.value >= fee).sort((a, b) => b.value - a.value)[0];
+  if (!fund) {
+    const have = utxos.filter((u) => !heads.has(`${u.txid}:${u.vout}`)).reduce((a, u) => a + u.value, 0);
+    log(`cannot anchor: need a funding UTXO ≥ ${fee} sats (${rate} sat/vB); wallet ${addr} has ${have} spendable sats — top up ~${Math.max(0, 2 * fee + 300 - have)} sats`);
+    return null;
+  }
   const r = runAnchor([head.txid, String(head.vout), String(stmt[0]), hex(stmt), String(HEAD_SATS), String(fee)], { FUND_MAIN: "1", FUND_TXID: fund.txid, FUND_VOUT: String(fund.vout) });
-  log(BROADCAST ? "anchored" : "DRY-RUN anchor", "kind", stmt[0], r.out.match(/^txid: (\w+)/m)?.[1] ?? r.out.slice(-200));
+  const txid = r.out.match(/^txid: (\w+)/m)?.[1] ?? null;
+  const broadcastOk = !BROADCAST || /^broadcast: 200/m.test(r.out);
+  log(BROADCAST ? "anchored" : "DRY-RUN anchor", "kind", stmt[0], txid ?? r.out.slice(-200), broadcastOk ? "" : "BROADCAST FAILED " + (r.out.match(/^broadcast: .*/m)?.[0] ?? ""));
+  return txid && broadcastOk ? txid : null;
 }
 
 // ---------- operator
@@ -339,13 +350,11 @@ async function operatorCycle() {
     if (!p || !p.approved || p.ethLockId.toString() !== lockId || p.queued) continue;
     if (p.units.toString() !== e.args.units.toString() || p.deadline.toString() !== e.args.deadline.toString()) { log("lock", lockId, "does not match pending; not anchoring"); continue; }
     log("OPERATOR: lock", lockId, "matches Solana pending — anchoring MINT");
-    await anchorStatement(OPERATOR_ID, stmtMint(BigInt(lockId), unhex(e.args.solUser), BigInt(e.args.nonce), BigInt(e.args.units), BigInt(e.args.deadline)));
-    state.anchoredLocks[lockId] = new Date().toISOString(); saveState();
+    const mintTxid = await anchorStatement(OPERATOR_ID, stmtMint(BigInt(lockId), unhex(e.args.solUser), BigInt(e.args.nonce), BigInt(e.args.units), BigInt(e.args.deadline)));
+    if (!mintTxid) continue; // retry next cycle
+    state.anchoredLocks[lockId] = mintTxid; saveState();
     // v3 fast path: the operator attests its own MINT (escrow from its bond) so the user needn't wait the window.
-    if (process.env.SELF_ATTEST !== "no") {
-      const head = await bitcoinHead(OPERATOR_ID); // the MINT anchor we just broadcast
-      await anchorStatement(OPERATOR_ID, stmtTarget(5, unhex(head.txid).reverse()));
-    }
+    if (process.env.SELF_ATTEST !== "no") await anchorStatement(OPERATOR_ID, stmtTarget(5, unhex(mintTxid).reverse()));
   }
   // RELEASEs: unclaimed Solana burns → a FINAL unreleased lock of the same size, else insurance.
   const burns = await factory.account.burn.all();
@@ -360,8 +369,10 @@ async function operatorCycle() {
       if (cover < BigInt(b.account.units.toString()) * (await vault.params()).ethWeiPerUnit) { log("burn", id, "has no FINAL lock and insurance can't cover it; waiting"); continue; }
     }
     log("OPERATOR: burn", id, "→ RELEASE via", lockId === BigInt(0) ? "insurance" : `lock ${lockId}`);
-    await anchorStatement(OPERATOR_ID, stmtRelease(lockId, BigInt(id), Buffer.from(b.account.toEth), BigInt(b.account.units.toString())));
-    state.anchoredBurns[id] = new Date().toISOString(); saveState();
+    const relTxid = await anchorStatement(OPERATOR_ID, stmtRelease(lockId, BigInt(id), Buffer.from(b.account.toEth), BigInt(b.account.units.toString())));
+    if (!relTxid) continue;
+    state.anchoredBurns[id] = relTxid; saveState();
+    if (process.env.SELF_ATTEST !== "no") await anchorStatement(OPERATOR_ID, stmtTarget(5, unhex(relTxid).reverse()));
   }
 }
 
