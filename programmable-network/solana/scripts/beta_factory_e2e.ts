@@ -143,8 +143,9 @@ async function main() {
 
   if (action === "set-params") {
     const c = await factory.account.factoryConfig.fetch(config);
-    const p = { ...c.params, tChallengeSecs: new anchor.BN(env("T_CHALLENGE", String(7 * 86400))) };
+    const p = { ...c.params, tChallengeSecs: new anchor.BN(env("T_CHALLENGE", c.params.tChallengeSecs.toString())) };
     if (process.env.COMP_PER_UNIT) p.compLamportsPerUnit = sol(env("COMP_PER_UNIT"));
+    if (process.env.T_SKIP) p.tSkipSecs = new anchor.BN(env("T_SKIP"));
     const sig = await factory.methods.setParams(p, process.env.PAUSED === "1").accounts({ config, governance: wallet }).rpc();
     console.log("params set; t_challenge", p.tChallengeSecs.toString(), sig);
     return;

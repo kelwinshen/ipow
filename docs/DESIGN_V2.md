@@ -1178,6 +1178,9 @@ names it (whether the ATTEST was processed before or after).
   it sees a confirmation, and `tFin` deserves to be a few hours.
   (3) `relayTo` in the daemon extends header by header; it needs the
   jump path (with epoch-start pre-relay on the EVM) when far behind.
+  → Done the same day: the daemon jumps when the gap exceeds `JUMP_GAP`
+  (6) and no Conversion is open, pre-relaying the EVM epoch-start header;
+  `tFin` raised to 4 h and `t_skip`/`tSkip` to 8 h on both chains.
 
 ### 7.6 Trust statement (v3)
 

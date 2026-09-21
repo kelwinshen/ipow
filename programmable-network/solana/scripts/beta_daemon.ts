@@ -117,11 +117,34 @@ function runAnchor(args: string[], env: Record<string, string>) {
 }
 
 // ---------- header relays
+// Extend header-by-header when the gap is small or a Conversion is open
+// (contiguity needed for proof windows); otherwise jump straight to the
+// target height — BETA only ever reads a header by height. The EVM relay
+// additionally needs the target epoch's first header on record before a
+// jump (retarget validation), so pre-relay it when missing.
+const JUMP_GAP = parseInt(process.env.JUMP_GAP ?? "6");
+const DIFF_PERIOD = 2016;
 async function relayTo(height: number) {
   const gs = await ipow.account.globalState.fetch(pda([Buffer.from("global_state")], IPOW_ID));
-  for (let h = Number(gs.globalTipHeight.toString()) + 1; h <= height; h++) { const r = runSol({ ACTION: "relay-header", HEIGHT: String(h) }); log("sol relay", h, r.ok ? "ok" : r.out.slice(-120)); if (!r.ok) throw new Error("sol relay failed"); }
+  const solTip = Number(gs.globalTipHeight.toString());
+  if (height > solTip) {
+    const extend = height - solTip <= JUMP_GAP || Number(gs.activeOpenConversions.toString()) > 0;
+    const heights = extend ? Array.from({ length: height - solTip }, (_, i) => solTip + 1 + i) : [height];
+    for (const h of heights) { const r = runSol({ ACTION: "relay-header", HEIGHT: String(h) }); log("sol relay", h, extend ? "(extend)" : "(jump)", r.ok ? "ok" : r.out.slice(-120)); if (!r.ok) throw new Error("sol relay failed"); }
+  }
   const tip = Number(await ipowV1.globalTipHeight());
-  for (let h = tip + 1; h <= height; h++) { const r = runEth({ ACTION: "relay-header", HEIGHT: String(h) }); log("eth relay", h, r.ok ? "ok" : r.out.slice(-120)); if (!r.ok) throw new Error("eth relay failed"); }
+  if (height > tip) {
+    const extend = height - tip <= JUMP_GAP;
+    let heights: number[];
+    if (extend) heights = Array.from({ length: height - tip }, (_, i) => tip + 1 + i);
+    else {
+      const epochStart = height - (height % DIFF_PERIOD);
+      heights = [];
+      if (epochStart > 0 && epochStart < height && (await ipowV1.globalHeightToHashLE(epochStart)) === ethers.ZeroHash) heights.push(epochStart);
+      heights.push(height);
+    }
+    for (const h of heights) { const r = runEth({ ACTION: "relay-header", HEIGHT: String(h) }); log("eth relay", h, extend ? "(extend)" : "(jump)", r.ok ? "ok" : r.out.slice(-120)); if (!r.ok) throw new Error("eth relay failed"); }
+  }
 }
 
 // ---------- statements
