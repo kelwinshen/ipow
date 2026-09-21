@@ -88,7 +88,8 @@ function solProvider() {
   return new anchor.AnchorProvider(new anchor.web3.Connection(process.env.ANCHOR_PROVIDER_URL ?? "https://api.devnet.solana.com", "confirmed"), new anchor.Wallet(kp), { commitment: "confirmed" });
 }
 const provider = solProvider();
-const factory: any = new anchor.Program(JSON.parse(fs.readFileSync(path.join(SOL_DIR, "target/idl/beta_factory.json"), "utf8")), provider);
+const factoryIdl = JSON.parse(fs.readFileSync(path.join(SOL_DIR, "target/idl/beta_factory.json"), "utf8"));
+const factory: any = new anchor.Program(factoryIdl, provider);
 const ipow: any = new anchor.Program(JSON.parse(fs.readFileSync(path.join(SOL_DIR, "target/idl/ipow.json"), "utf8")), provider);
 const pda = (seeds: Buffer[], pid = FACTORY_ID) => anchor.web3.PublicKey.findProgramAddressSync(seeds, pid)[0];
 const u64le = (n: number | bigint) => new anchor.BN(n.toString()).toArrayLike(Buffer, "le", 8);
@@ -180,10 +181,19 @@ async function findStatement(kind: number, hash: string): Promise<Buffer | null>
   return null;
 }
 
-/** ProcessedAnchor accounts of the current (v3) layout only. */
+/** ProcessedAnchor accounts of the current (v3) layout only: fetch by
+ *  discriminator and decode each, skipping accounts of older layouts. */
 async function solAnchors(): Promise<any[]> {
-  const size = 8 + (factory.idl.types.find((t: any) => t.name === "ProcessedAnchor") ? factory.coder.accounts.size(factory.idl.accounts.find((a: any) => a.name === "ProcessedAnchor")) : 0);
-  try { return await factory.account.processedAnchor.all(size ? [{ dataSize: size }] : []); } catch { return []; }
+  const acc = factoryIdl.accounts.find((a: any) => a.name === "ProcessedAnchor");
+  const disc = Buffer.from(acc.discriminator);
+  const raw = await provider.connection.getProgramAccounts(FACTORY_ID, { filters: [{ memcmp: { offset: 0, bytes: anchor.utils.bytes.bs58.encode(disc) } }] });
+  const V3_SIZE = 236; // 8 + ProcessedAnchor::INIT_SPACE (v3 layout); older anchors are shorter
+  const out: any[] = [];
+  for (const r of raw) {
+    if (r.account.data.length < V3_SIZE) continue;
+    try { out.push({ publicKey: r.pubkey, account: factory.coder.accounts.decode("processedAnchor", r.account.data) }); } catch { /* skip undecodable */ }
+  }
+  return out;
 }
 
 // ---------- Bitcoin statement-chain walking
