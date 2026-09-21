@@ -44,6 +44,11 @@ const OPERATOR_ID = (process.env.OPERATOR_ID ?? "").replace(/^0x/, "");
 const AUDITOR_ID = (process.env.AUDITOR_ID ?? "").replace(/^0x/, "");
 const BROADCAST = process.env.BROADCAST === "yes";
 const HEAD_SATS = 294;
+/// Hard spend limits when broadcasting: sats per anchor fee, anchors per
+/// hour, and sats per hour (fees). The daemon refuses beyond them and logs.
+const MAX_FEE_SATS = parseInt(process.env.MAX_FEE_SATS ?? "600");
+const MAX_ANCHORS_PER_HOUR = parseInt(process.env.MAX_ANCHORS_PER_HOUR ?? "4");
+const MAX_SATS_PER_HOUR = parseInt(process.env.MAX_SATS_PER_HOUR ?? "1500");
 
 const log = (...a: any[]) => console.log(new Date().toISOString().slice(11, 19), ...a);
 const sha256 = (b: Buffer) => createHash("sha256").update(b).digest();
@@ -75,8 +80,17 @@ async function getJson(url: string): Promise<any> { return (await fetchOk(url)).
 async function getText(url: string) { return (await (await fetchOk(url)).text()).trim(); }
 
 // ---------- persistent daemon state
-type DState = { anchoredBurns: Record<string, string>; anchoredLocks: Record<string, string>; skipped: string[]; anchoredStatements: Record<string, string> };
-const state: DState = Object.assign({ anchoredBurns: {}, anchoredLocks: {}, skipped: [], anchoredStatements: {} }, fs.existsSync(STATE_FILE) ? JSON.parse(fs.readFileSync(STATE_FILE, "utf8")) : {});
+type DState = { anchoredBurns: Record<string, string>; anchoredLocks: Record<string, string>; skipped: string[]; anchoredStatements: Record<string, string>; spends: { t: number; fee: number; txid: string }[] };
+const state: DState = Object.assign({ anchoredBurns: {}, anchoredLocks: {}, skipped: [], anchoredStatements: {}, spends: [] }, fs.existsSync(STATE_FILE) ? JSON.parse(fs.readFileSync(STATE_FILE, "utf8")) : {});
+function spendAllowed(fee: number): string | null {
+  const hourAgo = Date.now() - 3600_000;
+  const recent = state.spends.filter((x) => x.t > hourAgo);
+  if (fee > MAX_FEE_SATS) return `fee ${fee} > MAX_FEE_SATS ${MAX_FEE_SATS}`;
+  if (recent.length >= MAX_ANCHORS_PER_HOUR) return `${recent.length} anchors in the last hour ≥ MAX_ANCHORS_PER_HOUR ${MAX_ANCHORS_PER_HOUR}`;
+  const spent = recent.reduce((a, x) => a + x.fee, 0);
+  if (spent + fee > MAX_SATS_PER_HOUR) return `${spent}+${fee} sats in the last hour > MAX_SATS_PER_HOUR ${MAX_SATS_PER_HOUR}`;
+  return null;
+}
 const saveState = () => fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
 fs.mkdirSync(STATEMENTS_DIR, { recursive: true });
 const saveStatement = (stmt: Buffer) => fs.writeFileSync(path.join(STATEMENTS_DIR, hex(sha256(stmt)) + ".hex"), hex(stmt));
@@ -343,10 +357,11 @@ async function anchorStatement(partyId: string, stmt: Buffer): Promise<string | 
     log(`cannot anchor: need a funding UTXO ≥ ${fee} sats (${rate} sat/vB); wallet ${addr} has ${have} spendable sats — top up ~${Math.max(0, 2 * fee + 300 - have)} sats`);
     return null;
   }
+  if (BROADCAST) { const why = spendAllowed(fee); if (why) { log(`SPEND CAP: not anchoring (${why})`); return null; } }
   const r = runAnchor([head.txid, String(head.vout), String(stmt[0]), hex(stmt), String(HEAD_SATS), String(fee)], { FUND_MAIN: "1", FUND_TXID: fund.txid, FUND_VOUT: String(fund.vout) });
   const txid = r.out.match(/^txid: (\w+)/m)?.[1] ?? null;
   const broadcastOk = !BROADCAST || /^broadcast: 200/m.test(r.out);
-  if (txid && broadcastOk && BROADCAST) { state.anchoredStatements[key] = txid; saveState(); }
+  if (txid && broadcastOk && BROADCAST) { state.anchoredStatements[key] = txid; state.spends.push({ t: Date.now(), fee, txid }); saveState(); }
   log(BROADCAST ? "anchored" : "DRY-RUN anchor", "kind", stmt[0], txid ?? r.out.slice(-200), broadcastOk ? "" : "BROADCAST FAILED " + (r.out.match(/^broadcast: .*/m)?.[0] ?? ""));
   return txid && broadcastOk ? txid : null;
 }
@@ -393,7 +408,7 @@ async function operatorCycle() {
 }
 
 async function main() {
-  log(`beta daemon role=${ROLE} vault=${VAULT} parties=${PARTIES.map((p) => p.slice(0, 4)).join(",")} broadcast=${BROADCAST}`);
+  log(`beta daemon role=${ROLE} vault=${VAULT} parties=${PARTIES.map((p) => p.slice(0, 4)).join(",")} broadcast=${BROADCAST} caps: fee≤${MAX_FEE_SATS} sats, ≤${MAX_ANCHORS_PER_HOUR} anchors/h, ≤${MAX_SATS_PER_HOUR} sats/h`);
   for (;;) {
     try {
       if (ROLE === "watchtower" || ROLE === "both") await watchtowerCycle();
