@@ -1202,6 +1202,18 @@ names it (whether the ATTEST was processed before or after).
   (~2026-09-29). Also: Esplora's `/tx/:id/status` reports unknown txids as
   `{"confirmed":false}`; the daemon's "in mempool" checks now use
   `/tx/:id` (404) or `/outspend`.
+- **Slow-path redeem in flight (2026-09-22, block 968053).** Burn #1 on
+  devnet (1 BETA → 0.01 SOL back instantly); operator RELEASE
+  `4971e4fa…ac90` (lock 2, burn 1, 300 sats), deliberately unattested.
+  Relays *jumped* to 968053 (one tx per chain — first live use of the
+  daemon's jump path). Devnet: burn #1 claimed, anchor Exercised.
+  Sepolia: `QueuedRelease`, unheld, unpaid, `challengeUntil` 1790636424
+  (2026-09-29 ~20:20 UTC) → `executeRelease` then pays 0.001 ETH from
+  the vault with no attester ever involved; `settleRelease` is a no-op.
+  Together with the two mint escrows settling ~09-28/29 this is the
+  first live exercise of the window-close logic. Daemon spend caps
+  (`MAX_FEE_SATS` 600, `MAX_ANCHORS_PER_HOUR` 4, `MAX_SATS_PER_HOUR`
+  1500) were added after the duplicate-attest incident.
 
 ### 7.6 Trust statement (v3)
 
