@@ -253,11 +253,20 @@ pub fn handler(
             match ta.kind {
                 KIND_MINT => {
                     // Judged on Ethereum. Here: reserve escrow from the attester's
-                    // bond and allow immediate exercise (§7.3 fast path).
-                    require!(ta.status == AnchorStatus::Queued, FactoryError::BadAnchorState);
-                    require!(!ta.held && !ta.settled, FactoryError::Held);
-                    require!(ta.attested_by == [0u8; 32], FactoryError::AlreadyAttested);
-                    require!(now < ta.challenge_until, FactoryError::BadAnchorState);
+                    // bond and allow immediate exercise (§7.3 fast path). A
+                    // redundant attest (already attested, already exercised,
+                    // held, settled, or past the window) is a harmless no-op
+                    // that only advances the attester's chain — an error here
+                    // would wedge that chain behind the duplicate.
+                    let redundant = ta.status != AnchorStatus::Queued
+                        || ta.held
+                        || ta.settled
+                        || ta.attested_by != [0u8; 32]
+                        || now >= ta.challenge_until;
+                    if redundant {
+                        pa.status = AnchorStatus::Exercised;
+                        return Ok(());
+                    }
                     let escrow = ta
                         .units
                         .checked_mul(params.comp_lamports_per_unit)

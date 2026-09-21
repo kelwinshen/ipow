@@ -952,6 +952,22 @@ fn held_unattested_mint_is_cancelled_at_settle_and_the_user_can_expire() {
 }
 
 #[test]
+fn a_duplicate_attest_is_a_no_op_that_still_advances_the_chain() {
+    let mut s = setup();
+    let op = register_operator(&mut s);
+    let aud = register_auditor(&mut s);
+    let user = s.ctx.svm.create_funded_account(20 * SOL).unwrap();
+    let (mtx, _) = honest_mint_attested(&mut s, &op, &user, 1, 1, 7, (GENESIS_TXID, 0), 1);
+    let bond_before = party(&s.ctx, AUD_ID).bond;
+    let (a2, r) = attest(&mut s, AUD_ID, &aud, (GENESIS_TXID, 0), mtx, 2);
+    r.assert_success();
+    assert!(matches!(processed(&s.ctx, a2).status, beta_factory::types::AnchorStatus::Exercised));
+    assert_eq!(party(&s.ctx, AUD_ID).bond, bond_before); // no second escrow
+    assert_eq!(processed(&s.ctx, mtx).attested_by, OP_ID); // first attester stands
+    assert_eq!(party(&s.ctx, AUD_ID).anchor_txid_le, a2); // chain advanced
+}
+
+#[test]
 fn attesting_a_release_solana_found_false_is_slashed() {
     let mut s = setup();
     let op = register_operator(&mut s);

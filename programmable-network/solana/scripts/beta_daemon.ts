@@ -75,8 +75,8 @@ async function getJson(url: string): Promise<any> { return (await fetchOk(url)).
 async function getText(url: string) { return (await (await fetchOk(url)).text()).trim(); }
 
 // ---------- persistent daemon state
-type DState = { anchoredBurns: Record<string, string>; anchoredLocks: Record<string, string>; skipped: string[] };
-const state: DState = fs.existsSync(STATE_FILE) ? JSON.parse(fs.readFileSync(STATE_FILE, "utf8")) : { anchoredBurns: {}, anchoredLocks: {}, skipped: [] };
+type DState = { anchoredBurns: Record<string, string>; anchoredLocks: Record<string, string>; skipped: string[]; anchoredStatements: Record<string, string> };
+const state: DState = Object.assign({ anchoredBurns: {}, anchoredLocks: {}, skipped: [], anchoredStatements: {} }, fs.existsSync(STATE_FILE) ? JSON.parse(fs.readFileSync(STATE_FILE, "utf8")) : {});
 const saveState = () => fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
 fs.mkdirSync(STATEMENTS_DIR, { recursive: true });
 const saveStatement = (stmt: Buffer) => fs.writeFileSync(path.join(STATEMENTS_DIR, hex(sha256(stmt)) + ".hex"), hex(stmt));
@@ -323,6 +323,11 @@ async function bitcoinHead(partyId: string): Promise<{ txid: string; vout: numbe
 }
 /** Anchors `stmt` on `partyId`'s chain. Returns the txid, or null if it could not be funded/broadcast. */
 async function anchorStatement(partyId: string, stmt: Buffer): Promise<string | null> {
+  // Never anchor the same statement twice: on-chain state only changes once
+  // the first anchor is confirmed and processed, so without this every
+  // cycle would re-fire it (cost us 311 sats on 2026-09-22).
+  const key = `${partyId}:${hex(sha256(stmt))}`;
+  if (state.anchoredStatements[key]) { log("already anchored", key.slice(0, 12), "→", state.anchoredStatements[key].slice(0, 10)); return state.anchoredStatements[key]; }
   saveStatement(stmt);
   const head = await bitcoinHead(partyId);
   const addr = fs.readFileSync(path.join(OPERATOR_DIR, ".env"), "utf8").match(/^OPERATOR_BTC_WALLET_ADDRESS=(.*)$/m)![1].trim();
@@ -341,6 +346,7 @@ async function anchorStatement(partyId: string, stmt: Buffer): Promise<string | 
   const r = runAnchor([head.txid, String(head.vout), String(stmt[0]), hex(stmt), String(HEAD_SATS), String(fee)], { FUND_MAIN: "1", FUND_TXID: fund.txid, FUND_VOUT: String(fund.vout) });
   const txid = r.out.match(/^txid: (\w+)/m)?.[1] ?? null;
   const broadcastOk = !BROADCAST || /^broadcast: 200/m.test(r.out);
+  if (txid && broadcastOk && BROADCAST) { state.anchoredStatements[key] = txid; saveState(); }
   log(BROADCAST ? "anchored" : "DRY-RUN anchor", "kind", stmt[0], txid ?? r.out.slice(-200), broadcastOk ? "" : "BROADCAST FAILED " + (r.out.match(/^broadcast: .*/m)?.[0] ?? ""));
   return txid && broadcastOk ? txid : null;
 }
