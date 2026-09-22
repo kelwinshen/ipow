@@ -1159,6 +1159,25 @@ both, not assumed. They don't fully match, and shouldn't in every place:
   `only the first attester of an unresolved MINT is recorded…` (EVM suite
   now 115).
 
+**Deployed the same day.** Solana `beta_factory` upgraded in place again
+(slot 502471525 — needed a second `program extend` for the fee-mechanism
+growth; a first deploy attempt failed mid-write leaving 5 stray buffer
+accounts holding ~7.75 SOL, closed to reclaim rent before retrying with
+`--with-compute-unit-price 1000`). All existing config/party/pending
+state survived untouched, as expected from an in-place upgrade.
+Ethereum: fresh `BetaVault` v4 (Sepolia can't upgrade in place) at
+`0xDEF84990e07cBDd0Ac08D1343754D8BE833fE380`, same relay
+`0xB8ab960D1121F33B48b4086aBFCDD8B750081588`; `tFinSecs`/`tSkipSecs`
+carried forward at their raised values (4h / 8h). Operator `0x03…03`
+(0.01 ETH bond) and auditor `0x04…04` (0.005 ETH bond) re-registered with
+their existing Bitcoin chain heads; reward pool funded 0.003 ETH.
+Deliberately **not** touched: v3 vault
+`0x799e3B35ba0fCC8DB67Ceba453017d7C883eBcE8` still holds lock #2's
+pending RELEASE — its payout completes there, independently, once its
+own challenge window closes (~2026-09-29); redeploying doesn't
+invalidate it, since it's a separate contract at a separate address.
+Drivers/daemon updated to prefer v4 by default.
+
 ### 7.4b Acceleration fee (MINT side, built 2026-09-22)
 
 An ATTEST buys the user *speed*, not correctness — the operator's bond

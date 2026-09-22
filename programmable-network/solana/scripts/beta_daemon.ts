@@ -111,7 +111,7 @@ const u64le = (n: number | bigint) => new anchor.BN(n.toString()).toArrayLike(Bu
 const ethEnv = Object.fromEntries(fs.readFileSync(path.join(ETH_DIR, ".env"), "utf8").split("\n").filter((l) => l.includes("=") && !l.startsWith("#")).map((l) => { const i = l.indexOf("="); return [l.slice(0, i).trim(), l.slice(i + 1).trim().replace(/^"|"$/g, "")]; }));
 const ethProvider = new ethers.JsonRpcProvider(ethEnv.SEPOLIA_RPC_URL);
 const deployed = JSON.parse(fs.readFileSync(path.join(ETH_DIR, "ignition/deployments/chain-11155111/deployed_addresses.json"), "utf8"));
-const VAULT = process.env.BETA_VAULT ?? deployed["BetaVaultV3Module#BetaVault"] ?? deployed["BetaVaultV2Module#BetaVault"];
+const VAULT = process.env.BETA_VAULT ?? deployed["BetaVaultV4Module#BetaVault"] ?? deployed["BetaVaultV3Module#BetaVault"] ?? deployed["BetaVaultV2Module#BetaVault"];
 const IPOW_V1 = process.env.IPOW_V1 ?? deployed["BetaVaultModule#iPoWV1"];
 const vaultAbi = JSON.parse(fs.readFileSync(path.join(ETH_DIR, "artifacts/contracts/BetaVault.sol/BetaVault.json"), "utf8")).abi;
 const vault = new ethers.Contract(VAULT, vaultAbi, ethProvider);

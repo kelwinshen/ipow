@@ -30,7 +30,7 @@ const provider = new ethers.JsonRpcProvider(env.SEPOLIA_RPC_URL);
 const wallet = new ethers.Wallet(env.SEPOLIA_PRIVATE_KEY, provider);
 const deployed = JSON.parse(fs.readFileSync("ignition/deployments/chain-11155111/deployed_addresses.json", "utf8"));
 const IPOW = process.env.IPOW_V1 ?? deployed["BetaVaultModule#iPoWV1"];
-const VAULT = process.env.BETA_VAULT ?? deployed["BetaVaultV3Module#BetaVault"] ?? deployed["BetaVaultV2Module#BetaVault"] ?? deployed["BetaVaultModule#BetaVault"];
+const VAULT = process.env.BETA_VAULT ?? deployed["BetaVaultV4Module#BetaVault"] ?? deployed["BetaVaultV3Module#BetaVault"] ?? deployed["BetaVaultV2Module#BetaVault"] ?? deployed["BetaVaultModule#BetaVault"];
 const artifact = (n) => JSON.parse(fs.readFileSync(`artifacts/contracts/${n}.sol/${n}.json`, "utf8")).abi;
 const ipow = new ethers.Contract(IPOW, artifact("iPoWV1"), wallet);
 const vault = new ethers.Contract(VAULT, artifact("BetaVault"), wallet);
