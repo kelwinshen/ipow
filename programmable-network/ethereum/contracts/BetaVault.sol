@@ -586,8 +586,12 @@ contract BetaVault is ReentrancyGuard {
     {
         ProcessedAnchor storage ta = anchors[target];
         if (ta.status == AnchorStatus.None) {
-            // The MINT may not be on Ethereum yet: record the attester for later fan-out.
-            if (kind == KIND_ATTEST) mintAttester[target] = partyId;
+            // The MINT may not be on Ethereum yet: record the FIRST attester
+            // for later fan-out — a later attest of the same target must
+            // never overwrite who's actually on the hook (found live
+            // 2026-09-22: without this guard, whoever attested *last* took
+            // sole responsibility, letting every earlier attester off).
+            if (kind == KIND_ATTEST && mintAttester[target] == bytes32(0)) mintAttester[target] = partyId;
             pa.status = AnchorStatus.Exercised;
             return;
         }
@@ -596,7 +600,7 @@ contract BetaVault is ReentrancyGuard {
                 _slash(partyId, party, uint256(ta.units) * params.ethWeiPerUnit, msg.sender);
                 pa.status = AnchorStatus.Slashed;
             } else {
-                if (kind == KIND_ATTEST) mintAttester[target] = partyId;
+                if (kind == KIND_ATTEST && mintAttester[target] == bytes32(0)) mintAttester[target] = partyId;
                 pa.status = AnchorStatus.Exercised;
             }
             return;

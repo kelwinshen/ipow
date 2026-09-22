@@ -1134,6 +1134,31 @@ names it (whether the ATTEST was processed before or after).
   serve as the escrow pool. Their *sizing* stops being a safety
   parameter — a party can only attest what it can escrow.
 
+### 7.4a-bis EVM/SVM parity check (2026-09-22)
+
+Prompted by "does the EVM and SVM already match 1:1" — verified by reading
+both, not assumed. They don't fully match, and shouldn't in every place:
+
+- **Intentionally asymmetric, both correct**: `approve_pending` has no
+  Ethereum analog (Solana's two-step lock-then-approve vs Ethereum's
+  one-call `deposit`); a Solana MINT-attest locks a real SOL escrow
+  (Solana is blind, the escrow buys early release) while an Ethereum
+  MINT-attest costs nothing (Ethereum judges MINT truth directly and
+  instantly, nothing to gate early); Solana carries two dead v2 params
+  for layout stability (in-place upgrades) that Ethereum's clean-redeploy
+  `Params` struct never needed.
+- **Confirmed gap, not yet built**: Ethereum has no
+  `audit_skipped_release` equivalent — nothing lets an anchor Ethereum
+  skipped ever be revisited if its preimage later surfaces. Left open.
+- **Bug found and fixed**: `_processAttestOrClear`'s MINT branch set
+  `mintAttester[target] = partyId` unconditionally on every call, so a
+  second attester silently overwrote the first — only whoever attested
+  *last* bore the fan-out slash if the mint proved false; every earlier
+  attester walked away. Guarded to lock in only the first attester,
+  matching Solana's `attested_by` semantics. New test:
+  `only the first attester of an unresolved MINT is recorded…` (EVM suite
+  now 115).
+
 ### 7.4b Acceleration fee (MINT side, built 2026-09-22)
 
 An ATTEST buys the user *speed*, not correctness — the operator's bond

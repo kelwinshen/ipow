@@ -353,6 +353,30 @@ describe("BetaVault: RELEASE — v3 challenge window, attest, veto, settle", fun
     expect((await d.vault.anchors(a2.txid)).status).to.equal(2);
   });
 
+  it("only the first attester of an unresolved MINT is recorded — a second attest neither credits nor blames the latecomer", async function () {
+    const d = await deploy();
+    const stmt = stmtMint(99n, SOL_USER, 1n, 1n, (await now()) + 1000n);
+    const txRaw = anchorTx(GENESIS, 0, { kind: KIND_MINT, hash: sha256(stmt) }, 1);
+    const mintTxid = dsha256(getBytes(txRaw));
+    const a1 = await d.process(AUD_ID, [GENESIS, 0], stmtTarget(KIND_ATTEST, mintTxid), d.aud, 2);
+    expect((await d.vault.anchors(a1.txid)).status).to.equal(1);
+    expect(await d.vault.mintAttester(mintTxid)).to.equal(AUD_ID);
+
+    const AUD2 = "0x" + "07".repeat(32);
+    await d.vault.connect(d.other).registerParty(AUD2, 1, GENESIS, 0, { value: ethers.parseEther("2") });
+    const a2 = await d.process(AUD2, [GENESIS, 0], stmtTarget(KIND_ATTEST, mintTxid), d.other, 3);
+    expect((await d.vault.anchors(a2.txid)).status).to.equal(1);
+    // Still the first attester — the second one's call was accepted (its own chain
+    // advanced) but did not overwrite who is actually on the hook.
+    expect(await d.vault.mintAttester(mintTxid)).to.equal(AUD_ID);
+
+    const m = await d.process(OP_ID, [GENESIS, 0], stmt, d.other, 1);
+    expect((await d.vault.parties(OP_ID)).dead).to.equal(true);
+    expect((await d.vault.parties(AUD_ID)).dead).to.equal(true); // the real attester pays
+    expect((await d.vault.parties(AUD2)).dead).to.equal(false); // the latecomer never took the risk
+    void m;
+  });
+
   it("vetoes on MINTs are judged here: false → slashed, true → rewarded; ALIVE is judged too", async function () {
     const d = await deploy();
     await d.vault.connect(d.gov).fundRewards({ value: ONE });
