@@ -136,8 +136,8 @@ pub mod beta_factory {
         withdraw_bond::handler(ctx)
     }
 
-    pub fn lock_sol(ctx: Context<LockSol>, nonce: u64, units: u64, deadline: i64) -> Result<()> {
-        lock_sol::handler(ctx, nonce, units, deadline)
+    pub fn lock_sol(ctx: Context<LockSol>, nonce: u64, units: u64, deadline: i64, attest_fee: u64) -> Result<()> {
+        lock_sol::handler(ctx, nonce, units, deadline, attest_fee)
     }
 
     pub fn approve_pending(ctx: Context<ApprovePending>, nonce: u64, eth_lock_id: u64) -> Result<()> {

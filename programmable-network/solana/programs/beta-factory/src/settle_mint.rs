@@ -12,6 +12,12 @@ use crate::utils::transfer_from_pda;
 /// - held → the escrow is forfeited to insurance (it backs the unit that
 ///   should not exist). If the mint was never exercised it is cancelled
 ///   and its pending slot un-queued, so the user can re-anchor or expire.
+///
+/// The acceleration fee (if any) is a separate matter, already resolved
+/// long before settle: paid to the attester the moment it attested
+/// (`process_anchor`), or refunded to the user at exercise if nobody ever
+/// did (`exercise_mint`). It buys speed, not correctness, so it never
+/// depends on how the challenge window ends.
 pub fn handler(ctx: Context<SettleMint>, _txid_le: [u8; 32]) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
     let pa = &mut ctx.accounts.processed;

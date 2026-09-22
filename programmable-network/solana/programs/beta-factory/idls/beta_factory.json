@@ -618,8 +618,32 @@
           }
         },
         {
+          "name": "fees",
+          "docs": [
+            "Holds posted acceleration fees; refunded from here on the slow path."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  101,
+                  101,
+                  115
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "token_program",
           "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
         }
       ],
       "args": [
@@ -1029,6 +1053,26 @@
           }
         },
         {
+          "name": "fees",
+          "docs": [
+            "Holds every posted-but-not-yet-paid-or-refunded acceleration fee."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  101,
+                  101,
+                  115
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "beta_mint"
         },
         {
@@ -1151,6 +1195,10 @@
         {
           "name": "deadline",
           "type": "i64"
+        },
+        {
+          "name": "attest_fee",
+          "type": "u64"
         }
       ]
     },
@@ -1283,6 +1331,26 @@
                   97,
                   114,
                   100,
+                  115
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "fees",
+          "docs": [
+            "Holds posted acceleration fees; paid out here on a successful MINT attest."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  101,
+                  101,
                   115
                 ]
               }
@@ -2697,6 +2765,18 @@
                 32
               ]
             }
+          },
+          {
+            "name": "attest_fee",
+            "docs": [
+              "v3: acceleration fee the user posted alongside their lock, held in",
+              "the `fees` PDA. Paid to whoever ATTESTs this mint (the moment they",
+              "do — see `process_anchor`'s Attest/KIND_MINT branch); refunded to",
+              "the user at `exercise_mint` if nobody ever attests (the free path",
+              "was used instead, so no one earned it). It buys speed only, never",
+              "correctness — the operator's bond covers that regardless."
+            ],
+            "type": "u64"
           },
           {
             "name": "created_at",

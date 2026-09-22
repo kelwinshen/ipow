@@ -276,6 +276,24 @@ pub fn handler(
                     ta.escrow = escrow;
                     ta.attested_by = party.party_id;
                     pa.status = AnchorStatus::Exercised;
+                    // Pay the user's acceleration fee, right now — it buys
+                    // speed, which this attest is providing this instant,
+                    // independent of whether the underlying MINT is later
+                    // proven true or false (that risk is what the escrow
+                    // above is for).
+                    let pending = ctx.accounts.pending.as_mut().ok_or(FactoryError::MissingAccount)?;
+                    require!(pending.user == ta.sol_user && pending.nonce == ta.nonce, FactoryError::AccountMismatch);
+                    let fee = pending.attest_fee;
+                    pending.attest_fee = 0;
+                    let fees_bump = ctx.bumps.fees;
+                    let fees_seeds: &[&[u8]] = &[b"fees", &[fees_bump]];
+                    transfer_from_pda(
+                        fee,
+                        &ctx.accounts.fees.to_account_info(),
+                        &ctx.accounts.party_owner.to_account_info(),
+                        &ctx.accounts.system_program.to_account_info(),
+                        &[fees_seeds],
+                    )?;
                 }
                 KIND_RELEASE => match ta.status {
                     // Judged here: attesting a release Solana already found false is a lie.
@@ -377,6 +395,9 @@ pub struct ProcessAnchor<'info> {
     /// Governance-funded pool that pays veto rewards (`fund_rewards`).
     #[account(mut, seeds = [b"rewards"], bump)]
     pub reward_pool: SystemAccount<'info>,
+    /// Holds posted acceleration fees; paid out here on a successful MINT attest.
+    #[account(mut, seeds = [b"fees"], bump)]
+    pub fees: SystemAccount<'info>,
     #[account(mut)]
     pub submitter: Signer<'info>,
     pub system_program: Program<'info, System>,

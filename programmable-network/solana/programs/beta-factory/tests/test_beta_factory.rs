@@ -305,12 +305,21 @@ fn register_auditor(s: &mut Setup) -> Keypair {
     a
 }
 
+fn fees_pda() -> Pubkey {
+    Pubkey::find_program_address(&[b"fees"], &beta_factory::ID).0
+}
+
 fn lock_sol(s: &mut Setup, user: &Keypair, nonce: u64, units: u64, deadline: i64) {
+    lock_sol_with_fee(s, user, nonce, units, deadline, 0);
+}
+
+fn lock_sol_with_fee(s: &mut Setup, user: &Keypair, nonce: u64, units: u64, deadline: i64, attest_fee: u64) {
     let ix = LiteSvmProgram::new(beta_factory::ID)
         .accounts(beta_factory::client::accounts::LockSol {
             config: s.config,
             pending: pending_pda(user.pubkey(), nonce),
             vault: s.vault,
+            fees: fees_pda(),
             beta_mint: s.beta_mint,
             user_beta: ata(user.pubkey(), s.beta_mint),
             user: user.pubkey(),
@@ -318,7 +327,7 @@ fn lock_sol(s: &mut Setup, user: &Keypair, nonce: u64, units: u64, deadline: i64
             associated_token_program: spl_associated_token_account_interface::program::ID,
             system_program: anchor_lang::solana_program::system_program::ID,
         })
-        .args(beta_factory::client::args::LockSol { nonce, units, deadline })
+        .args(beta_factory::client::args::LockSol { nonce, units, deadline, attest_fee })
         .instruction()
         .unwrap();
     s.ctx.execute_instruction(ix, &[user]).unwrap().assert_success();
@@ -373,6 +382,7 @@ fn process(
             bond_escrow: s.bond_escrow,
             insurance: s.insurance,
             reward_pool: s.reward_pool,
+            fees: fees_pda(),
             submitter: submitter.pubkey(),
             system_program: anchor_lang::solana_program::system_program::ID,
             pending: extra.pending,
@@ -408,7 +418,9 @@ fn exercise(s: &mut Setup, txid: [u8; 32], party_id: [u8; 32], user: Pubkey, non
             user_beta: ata(user, s.beta_mint),
             beta_mint: s.beta_mint,
             mint_authority: s.mint_authority,
+            fees: fees_pda(),
             token_program: litesvm_token::spl_token::ID,
+            system_program: anchor_lang::solana_program::system_program::ID,
         })
         .args(beta_factory::client::args::ExerciseMint { txid_le: txid })
         .instruction()
@@ -426,8 +438,8 @@ fn settle(s: &mut Setup, txid: [u8; 32], attester: Option<Pubkey>, pending: Opti
 }
 
 /// Attests `target` from `party` (its own chain from `prev`), enabling immediate exercise.
-fn attest(s: &mut Setup, party_id: [u8; 32], owner: &Keypair, prev: ([u8; 32], u32), target: [u8; 32], salt: u8) -> ([u8; 32], anchor_litesvm::TransactionResult) {
-    process(s, party_id, owner.pubkey(), prev, &stmt_target(KIND_ATTEST, target), owner, Extra { target_anchor: Some(anchor_pda(target)), ..Default::default() }, salt)
+fn attest(s: &mut Setup, party_id: [u8; 32], owner: &Keypair, prev: ([u8; 32], u32), target: [u8; 32], pending: Pubkey, salt: u8) -> ([u8; 32], anchor_litesvm::TransactionResult) {
+    process(s, party_id, owner.pubkey(), prev, &stmt_target(KIND_ATTEST, target), owner, Extra { target_anchor: Some(anchor_pda(target)), pending: Some(pending), ..Default::default() }, salt)
 }
 
 fn burn_redeem(s: &mut Setup, burner: &Keypair, units: u64, to_eth: [u8; 20]) -> u64 {
@@ -481,7 +493,7 @@ fn honest_mint(s: &mut Setup, op: &Keypair, user: &Keypair, nonce: u64, units: u
 /// Returns (mint txid, attest txid); the operator chain head is now the attest txid.
 fn honest_mint_attested(s: &mut Setup, op: &Keypair, user: &Keypair, nonce: u64, units: u64, eth_lock_id: u64, prev: ([u8; 32], u32), salt: u8) -> ([u8; 32], [u8; 32]) {
     let mtx = honest_mint(s, op, user, nonce, units, eth_lock_id, prev, salt);
-    let (atx, r) = attest(s, OP_ID, op, (mtx, 0), mtx, salt.wrapping_add(100));
+    let (atx, r) = attest(s, OP_ID, op, (mtx, 0), mtx, pending_pda(user.pubkey(), nonce), salt.wrapping_add(100));
     r.assert_success();
     (mtx, atx)
 }
@@ -515,7 +527,7 @@ fn mint_happy_path_queues_then_exercises() {
 
     // v3: neither attested nor past the window → not yet.
     exercise(&mut s, txid, OP_ID, user.pubkey(), 1, &op).assert_anchor_error("NotAttested");
-    let (atx, r) = attest(&mut s, OP_ID, &op, (txid, 0), txid, 2);
+    let (atx, r) = attest(&mut s, OP_ID, &op, (txid, 0), txid, pending_pda(user.pubkey(), 1), 2);
     r.assert_success();
     let pa2 = processed(&s.ctx, txid);
     assert_eq!(pa2.attested_by, OP_ID);
@@ -614,7 +626,7 @@ fn statement_hash_mismatch_and_kind_mismatch_are_rejected() {
     let ix = LiteSvmProgram::new(beta_factory::ID)
         .accounts(beta_factory::client::accounts::ProcessAnchor {
             config: s.config, party: party_pda(OP_ID), party_owner: op.pubkey(), processed: anchor_pda(txid), header,
-            bond_escrow: s.bond_escrow, insurance: s.insurance, reward_pool: s.reward_pool, submitter: op.pubkey(),
+            bond_escrow: s.bond_escrow, insurance: s.insurance, reward_pool: s.reward_pool, fees: fees_pda(), submitter: op.pubkey(),
             system_program: anchor_lang::solana_program::system_program::ID,
             pending: Some(pending_pda(user.pubkey(), 1)), pending_user: None, burn: None, target_party: None, target_anchor: None, prior_party: None,
         })
@@ -629,7 +641,7 @@ fn statement_hash_mismatch_and_kind_mismatch_are_rejected() {
     let ix = LiteSvmProgram::new(beta_factory::ID)
         .accounts(beta_factory::client::accounts::ProcessAnchor {
             config: s.config, party: party_pda(OP_ID), party_owner: op.pubkey(), processed: anchor_pda(txid2), header: header2,
-            bond_escrow: s.bond_escrow, insurance: s.insurance, reward_pool: s.reward_pool, submitter: op.pubkey(),
+            bond_escrow: s.bond_escrow, insurance: s.insurance, reward_pool: s.reward_pool, fees: fees_pda(), submitter: op.pubkey(),
             system_program: anchor_lang::solana_program::system_program::ID,
             pending: Some(pending_pda(user.pubkey(), 1)), pending_user: None, burn: None, target_party: None, target_anchor: None, prior_party: None,
         })
@@ -652,7 +664,7 @@ fn wrong_txid_or_wrong_header_is_rejected() {
         LiteSvmProgram::new(beta_factory::ID)
             .accounts(beta_factory::client::accounts::ProcessAnchor {
                 config: s.config, party: party_pda(OP_ID), party_owner: op.pubkey(), processed: anchor_pda(txid_arg), header,
-                bond_escrow: s.bond_escrow, insurance: s.insurance, reward_pool: s.reward_pool, submitter: op.pubkey(),
+                bond_escrow: s.bond_escrow, insurance: s.insurance, reward_pool: s.reward_pool, fees: fees_pda(), submitter: op.pubkey(),
                 system_program: anchor_lang::solana_program::system_program::ID,
                 pending: None, pending_user: None, burn: None, target_party: None, target_anchor: None, prior_party: None,
             })
@@ -783,6 +795,63 @@ fn fund_rewards(s: &mut Setup, funder: &Keypair, amount: u64) {
 }
 
 #[test]
+fn attest_fee_is_paid_to_the_attester_immediately_not_deferred_to_settle() {
+    let mut s = setup();
+    let op = register_operator(&mut s);
+    let aud = register_auditor(&mut s);
+    let user = s.ctx.svm.create_funded_account(20 * SOL).unwrap();
+    let deadline = now(&s.ctx) + 86_400;
+    lock_sol_with_fee(&mut s, &user, 1, 1, deadline, SOL / 100); // 0.01 SOL fee
+    approve_pending(&mut s, &user, 1, 7);
+    let stmt = stmt_mint(7, user.pubkey(), 1, 1, deadline);
+    let (mtx, r) = process(&mut s, OP_ID, op.pubkey(), (GENESIS_TXID, 0), &stmt, &op, Extra { pending: Some(pending_pda(user.pubkey(), 1)), ..Default::default() }, 1);
+    r.assert_success();
+
+    let aud_before = s.ctx.svm.get_balance(&aud.pubkey()).unwrap();
+    let (atx, r) = attest(&mut s, AUD_ID, &aud, (GENESIS_TXID, 0), mtx, pending_pda(user.pubkey(), 1), 2);
+    r.assert_success();
+    // Paid instantly — before exercise, before settle, before anyone knows the eventual
+    // verdict. Net of the tx fee and the rent aud itself paid to create its own attest anchor.
+    let rent = s.ctx.svm.get_balance(&anchor_pda(atx)).unwrap();
+    assert_eq!(s.ctx.svm.get_balance(&aud.pubkey()).unwrap() + rent + FEE - aud_before, SOL / 100);
+    let p: beta_factory::accounts::Pending = s.ctx.get_account(&pending_pda(user.pubkey(), 1)).unwrap();
+    assert_eq!(p.attest_fee, 0); // spent, can't be paid twice
+
+    // A redundant second attest does not pay again.
+    let aud2 = s.ctx.svm.create_funded_account(50 * SOL).unwrap();
+    let aud2_id = [7u8; 32];
+    register(&mut s, aud2_id, beta_factory::types::PartyKind::Auditor, &aud2, 2 * SOL, false).unwrap();
+    let before2 = s.ctx.svm.get_balance(&aud2.pubkey()).unwrap();
+    let (_, r) = attest(&mut s, aud2_id, &aud2, (GENESIS_TXID, 0), mtx, pending_pda(user.pubkey(), 1), 3);
+    r.assert_success();
+    assert!(s.ctx.svm.get_balance(&aud2.pubkey()).unwrap() <= before2); // paid rent for the anchor account, never a fee
+
+    exercise(&mut s, mtx, OP_ID, user.pubkey(), 1, &op).assert_success();
+}
+
+#[test]
+fn attest_fee_is_refunded_to_the_user_when_nobody_accelerates_the_mint() {
+    let mut s = setup();
+    let op = register_operator(&mut s);
+    let user = s.ctx.svm.create_funded_account(20 * SOL).unwrap();
+    let deadline = now(&s.ctx) + 86_400;
+    let fee = SOL / 100;
+    lock_sol_with_fee(&mut s, &user, 1, 1, deadline, fee);
+    approve_pending(&mut s, &user, 1, 7);
+    let stmt = stmt_mint(7, user.pubkey(), 1, 1, deadline);
+    let (mtx, r) = process(&mut s, OP_ID, op.pubkey(), (GENESIS_TXID, 0), &stmt, &op, Extra { pending: Some(pending_pda(user.pubkey(), 1)), ..Default::default() }, 1);
+    r.assert_success();
+
+    // Free path: nobody ever attests.
+    advance_clock(&mut s.ctx, T_CHALLENGE + 1);
+    let before = s.ctx.svm.get_balance(&user.pubkey()).unwrap();
+    exercise(&mut s, mtx, OP_ID, user.pubkey(), 1, &op).assert_success();
+    // Fee refunded plus the closed Pending account's own rent — at minimum the fee itself came back.
+    assert!(s.ctx.svm.get_balance(&user.pubkey()).unwrap() >= before + fee);
+    assert_eq!(beta_balance(&s.ctx, user.pubkey(), s.beta_mint), UNIT); // minted anyway, for free
+}
+
+#[test]
 fn a_mint_queued_by_a_retired_operator_can_be_re_anchored_by_a_live_one_or_cancelled() {
     let mut s = setup();
     let op = register_operator(&mut s);
@@ -808,7 +877,7 @@ fn a_mint_queued_by_a_retired_operator_can_be_re_anchored_by_a_live_one_or_cance
     let p: beta_factory::accounts::Pending = s.ctx.get_account(&pending_pda(user.pubkey(), 1)).unwrap();
     assert_eq!(p.queued_by, op2_id);
     // The old anchor can no longer exercise the slot; the new one can (after attesting).
-    let (_, r) = attest(&mut s, op2_id, &op2, (t2, 0), t2, 30);
+    let (_, r) = attest(&mut s, op2_id, &op2, (t2, 0), t2, pending_pda(user.pubkey(), 1), 30);
     r.assert_success();
     exercise(&mut s, mtx, OP_ID, user.pubkey(), 1, &op).assert_anchor_error("PartyDead");
     exercise(&mut s, t2, op2_id, user.pubkey(), 1, &op2).assert_success();
@@ -959,7 +1028,7 @@ fn a_duplicate_attest_is_a_no_op_that_still_advances_the_chain() {
     let user = s.ctx.svm.create_funded_account(20 * SOL).unwrap();
     let (mtx, _) = honest_mint_attested(&mut s, &op, &user, 1, 1, 7, (GENESIS_TXID, 0), 1);
     let bond_before = party(&s.ctx, AUD_ID).bond;
-    let (a2, r) = attest(&mut s, AUD_ID, &aud, (GENESIS_TXID, 0), mtx, 2);
+    let (a2, r) = attest(&mut s, AUD_ID, &aud, (GENESIS_TXID, 0), mtx, pending_pda(user.pubkey(), 1), 2);
     r.assert_success();
     assert!(matches!(processed(&s.ctx, a2).status, beta_factory::types::AnchorStatus::Exercised));
     assert_eq!(party(&s.ctx, AUD_ID).bond, bond_before); // no second escrow

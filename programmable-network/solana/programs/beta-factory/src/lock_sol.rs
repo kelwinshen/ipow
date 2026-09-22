@@ -6,9 +6,11 @@ use crate::errors::FactoryError;
 use crate::state::{FactoryConfig, Pending};
 use crate::utils::transfer_from_signer;
 
-/// User X locks the SOL half of `units` BETA. Also creates X's BETA token
-/// account now so `exercise_mint` later needs no `init`.
-pub fn handler(ctx: Context<LockSol>, nonce: u64, units: u64, deadline: i64) -> Result<()> {
+/// User X locks the SOL half of `units` BETA, plus an optional
+/// `attest_fee` — what they're willing to pay whoever accelerates this
+/// mint instead of the free week-long path (DESIGN_V2 §7). Also creates
+/// X's BETA token account now so `exercise_mint` later needs no `init`.
+pub fn handler(ctx: Context<LockSol>, nonce: u64, units: u64, deadline: i64, attest_fee: u64) -> Result<()> {
     require!(!ctx.accounts.config.paused, FactoryError::Paused);
     require!(units > 0, FactoryError::InvalidParams);
     let now = Clock::get()?.unix_timestamp;
@@ -22,6 +24,12 @@ pub fn handler(ctx: Context<LockSol>, nonce: u64, units: u64, deadline: i64) -> 
         &ctx.accounts.vault.to_account_info(),
         &ctx.accounts.system_program.to_account_info(),
     )?;
+    transfer_from_signer(
+        attest_fee,
+        &ctx.accounts.user.to_account_info(),
+        &ctx.accounts.fees.to_account_info(),
+        &ctx.accounts.system_program.to_account_info(),
+    )?;
     let c = &mut ctx.accounts.config;
     c.pending_lamports = c.pending_lamports.checked_add(lamports).ok_or(FactoryError::Overflow)?;
     let p = &mut ctx.accounts.pending;
@@ -33,6 +41,7 @@ pub fn handler(ctx: Context<LockSol>, nonce: u64, units: u64, deadline: i64) -> 
     p.approved = false;
     p.queued = false;
     p.queued_by = [0u8; 32];
+    p.attest_fee = attest_fee;
     p.created_at = now;
     Ok(())
 }
@@ -46,6 +55,9 @@ pub struct LockSol<'info> {
     pub pending: Account<'info, Pending>,
     #[account(mut, seeds = [b"vault"], bump = config.vault_bump)]
     pub vault: SystemAccount<'info>,
+    /// Holds every posted-but-not-yet-paid-or-refunded acceleration fee.
+    #[account(mut, seeds = [b"fees"], bump)]
+    pub fees: SystemAccount<'info>,
     #[account(address = config.beta_mint)]
     pub beta_mint: Account<'info, Mint>,
     #[account(init_if_needed, payer = user, associated_token::mint = beta_mint, associated_token::authority = user)]

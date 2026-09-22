@@ -4,6 +4,7 @@ use anchor_spl::token::{self, Mint, MintTo, Token, TokenAccount};
 use crate::constants::*;
 use crate::errors::FactoryError;
 use crate::state::{AnchorStatus, FactoryConfig, Party, Pending, ProcessedAnchor};
+use crate::utils::transfer_from_pda;
 
 /// Permissionless. Executes a queued MINT (DESIGN_V2 §7.3): immediately
 /// once a bonded party has ATTESTed it (escrow reserved), otherwise after
@@ -28,6 +29,21 @@ pub fn handler(ctx: Context<ExerciseMint>, _txid_le: [u8; 32]) -> Result<()> {
     let p = &ctx.accounts.pending;
     require!(p.user == pa.sol_user && p.nonce == pa.nonce && p.queued, FactoryError::AccountMismatch);
     require!(p.queued_by == pa.party_id, FactoryError::BadAnchorState);
+    // Slow path (nobody ever attested): nobody earned the acceleration
+    // fee, so it goes back to the user who posted it. On the fast path
+    // it was already paid out to the attester at attest time and this is
+    // already zero.
+    if pa.attested_by == [0u8; 32] && p.attest_fee > 0 {
+        let fees_bump = ctx.bumps.fees;
+        let fees_seeds: &[&[u8]] = &[b"fees", &[fees_bump]];
+        transfer_from_pda(
+            p.attest_fee,
+            &ctx.accounts.fees.to_account_info(),
+            &ctx.accounts.user.to_account_info(),
+            &ctx.accounts.system_program.to_account_info(),
+            &[fees_seeds],
+        )?;
+    }
     let lamports = pa.units.checked_mul(c.params.sol_per_unit).ok_or(FactoryError::Overflow)?;
     c.pending_lamports = c.pending_lamports.checked_sub(lamports).ok_or(FactoryError::Overflow)?;
     c.reserve_lamports = c.reserve_lamports.checked_add(lamports).ok_or(FactoryError::Overflow)?;
@@ -71,5 +87,9 @@ pub struct ExerciseMint<'info> {
     /// CHECK: PDA signer.
     #[account(seeds = [b"mint_authority"], bump = config.mint_authority_bump)]
     pub mint_authority: UncheckedAccount<'info>,
+    /// Holds posted acceleration fees; refunded from here on the slow path.
+    #[account(mut, seeds = [b"fees"], bump)]
+    pub fees: SystemAccount<'info>,
     pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
 }

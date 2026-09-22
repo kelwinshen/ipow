@@ -22,5 +22,12 @@ pub struct Pending {
     /// take the slot over, or the user may cancel after the deadline
     /// (DESIGN_V2 §6.12, "stranded queued mint").
     pub queued_by: [u8; 32],
+    /// v3: acceleration fee the user posted alongside their lock, held in
+    /// the `fees` PDA. Paid to whoever ATTESTs this mint (the moment they
+    /// do — see `process_anchor`'s Attest/KIND_MINT branch); refunded to
+    /// the user at `exercise_mint` if nobody ever attests (the free path
+    /// was used instead, so no one earned it). It buys speed only, never
+    /// correctness — the operator's bond covers that regardless.
+    pub attest_fee: u64,
     pub created_at: i64,
 }

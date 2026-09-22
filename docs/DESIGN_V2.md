@@ -1134,6 +1134,39 @@ names it (whether the ATTEST was processed before or after).
   serve as the escrow pool. Their *sizing* stops being a safety
   parameter — a party can only attest what it can escrow.
 
+### 7.4b Acceleration fee (MINT side, built 2026-09-22)
+
+An ATTEST buys the user *speed*, not correctness — the operator's bond
+already covers correctness on every claim, attested or not (§7.6). Speed
+needs its own incentive, separate from the escrow that's actually at risk
+for a wrong claim. Design settled on: **the user who wants speed pays for
+it directly**, not a governance subsidy — matching how real fast-
+withdrawal systems price liquidity provision.
+
+- `lock_sol` takes an optional `attest_fee`, transferred into a new
+  `fees` PDA (`seeds = [b"fees"]`) alongside the SOL being locked;
+  `Pending.attest_fee` records it.
+- `process_anchor`'s `ATTEST`-of-`MINT` branch (non-redundant case) pays
+  the fee to the attesting party's owner **immediately**, the same
+  instant the escrow is reserved — not deferred to settle, since the fee
+  compensates the service of accelerating (rendered now), independent of
+  whether the claim later proves true (that risk is the escrow's job,
+  forfeited separately at settle if wrong).
+- `exercise_mint`'s slow-path branch (`attested_by` still empty) refunds
+  any unspent `attest_fee` to the user — nobody earned it if nobody
+  accelerated them.
+- Redundant attests (§7.4a) return before touching the fee, so a second
+  attest of an already-accelerated mint never double-pays.
+
+Deliberately scoped to MINT only for now. On RELEASE the fee would
+naturally be posted on Solana (at `burn_redeem`) while the attester's
+real service is on Ethereum; the clean hook is Solana's own processing of
+a RELEASE-ATTEST anchor (which already runs, currently a no-op on
+success) — left as follow-up rather than built same-day. Tests:
+`attest_fee_is_paid_to_the_attester_immediately_not_deferred_to_settle`,
+`attest_fee_is_refunded_to_the_user_when_nobody_accelerates_the_mint`
+(+2, suite now 25).
+
 ### 7.5b Built and deployed (2026-09-22)
 
 - Solana `beta-factory` v3 upgraded in place on devnet (slot 502011808):

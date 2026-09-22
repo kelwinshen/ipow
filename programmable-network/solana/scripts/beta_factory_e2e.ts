@@ -194,10 +194,14 @@ async function main() {
     const c = await factory.account.factoryConfig.fetch(config);
     const nonce = BigInt(env("NONCE"));
     const deadline = process.env.DEADLINE ? parseInt(env("DEADLINE")) : Math.floor(Date.now() / 1000) + parseInt(env("DEADLINE_SECS", "86400"));
-    const sig = await factory.methods.lockSol(new anchor.BN(nonce.toString()), new anchor.BN(env("UNITS", "1")), new anchor.BN(deadline))
-      .accounts({ config, pending: pendingPda(wallet, nonce), vault, betaMint: c.betaMint, userBeta: ata(wallet, c.betaMint), user: wallet, tokenProgram: TOKEN_PROGRAM, associatedTokenProgram: ATA_PROGRAM, systemProgram: anchor.web3.SystemProgram.programId })
+    // Optional acceleration fee: what you're willing to pay whoever ATTESTs
+    // this mint instead of the free 7-day path (ATTEST_FEE_SOL=0.01, say).
+    // Refunded automatically if nobody ever does.
+    const attestFee = sol(env("ATTEST_FEE_SOL", "0"));
+    const sig = await factory.methods.lockSol(new anchor.BN(nonce.toString()), new anchor.BN(env("UNITS", "1")), new anchor.BN(deadline), attestFee)
+      .accounts({ config, pending: pendingPda(wallet, nonce), vault, fees: pda([Buffer.from("fees")]), betaMint: c.betaMint, userBeta: ata(wallet, c.betaMint), user: wallet, tokenProgram: TOKEN_PROGRAM, associatedTokenProgram: ATA_PROGRAM, systemProgram: anchor.web3.SystemProgram.programId })
       .rpc();
-    console.log("locked; deadline", deadline, "pending", pendingPda(wallet, nonce).toBase58(), sig);
+    console.log("locked; deadline", deadline, "attest_fee", attestFee.toString(), "pending", pendingPda(wallet, nonce).toBase58(), sig);
     return;
   }
 
@@ -274,7 +278,7 @@ async function main() {
       const c = await factory.account.factoryConfig.fetch(config);
       const sig = await factory.methods.exerciseMint([...txidLe])
         .preInstructions([anchor.web3.ComputeBudgetProgram.setComputeUnitLimit({ units: 600_000 })])
-        .accounts({ config, processed: anchorPda(txidLe), party, pending: pendingPda(a.solUser, BigInt(a.nonce.toString())), user: a.solUser, userBeta: ata(a.solUser, c.betaMint), betaMint: c.betaMint, mintAuthority, tokenProgram: TOKEN_PROGRAM })
+        .accounts({ config, processed: anchorPda(txidLe), party, pending: pendingPda(a.solUser, BigInt(a.nonce.toString())), user: a.solUser, userBeta: ata(a.solUser, c.betaMint), betaMint: c.betaMint, mintAuthority, fees: pda([Buffer.from("fees")]), tokenProgram: TOKEN_PROGRAM, systemProgram: anchor.web3.SystemProgram.programId })
         .rpc();
       console.log("exercised", sig);
       return;
@@ -305,13 +309,20 @@ async function main() {
       if (!targetTxidLe.equals(Buffer.alloc(32))) extra.targetAnchor = anchorPda(Buffer.from(targetTxidLe));
     } else if (kind === 5 || kind === 6) {
       extra.targetAnchor = anchorPda(Buffer.from(statement.subarray(1, 33)));
+      // ATTEST targeting a MINT also needs that mint's pending slot, so
+      // process_anchor can pay out (kind 5) whatever acceleration fee the
+      // user posted at lock_sol.
+      if (kind === 5) {
+        const target = await factory.account.processedAnchor.fetchNullable(extra.targetAnchor);
+        if (target && target.kind === 1) extra.pending = pendingPda(target.solUser, BigInt(target.nonce.toString()));
+      }
     } else if (kind === 7) {
       extra.targetParty = pda([Buffer.from("party"), statement.subarray(1, 33)]);
     }
     const p = await factory.account.party.fetch(party);
     const sig = await factory.methods.processAnchor([...txidLe], statement, raw, new anchor.BN(proof.block_height), branchLe, new anchor.BN(proof.pos))
       .preInstructions([anchor.web3.ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 })])
-      .accounts({ config, party, partyOwner: p.owner, processed: anchorPda(txidLe), header, bondEscrow, insurance, rewardPool: pda([Buffer.from("rewards")]), submitter: wallet, systemProgram: anchor.web3.SystemProgram.programId, ...extra })
+      .accounts({ config, party, partyOwner: p.owner, processed: anchorPda(txidLe), header, bondEscrow, insurance, rewardPool: pda([Buffer.from("rewards")]), fees: pda([Buffer.from("fees")]), submitter: wallet, systemProgram: anchor.web3.SystemProgram.programId, ...extra })
       .rpc();
     const a = await factory.account.processedAnchor.fetch(anchorPda(txidLe));
     console.log("processed", sig, "status", a.status);
