@@ -29,7 +29,15 @@ impl EvmConfig {
         let net_key = match network.string_identifier() {
             "ethereum" => "eth_sepolia",
             "polkadot" => "polkadot",
-            _ => "hedera",
+            "hedera" => "hedera",
+            "base" => "base",
+            "robinhood" => "robinhood",
+            "hyperliquid" => "hyperliquid",
+            other => panic!(
+                "EvmConfig::load: no config.yml network key mapping for '{}' — \
+                 add one instead of silently falling back to another network's config",
+                other
+            ),
         };
 
         // --- FROM config.yml ---

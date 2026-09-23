@@ -1,3 +1,5 @@
+mod beta_operator;
+mod beta_registry;
 mod chain_operator;
 mod registry;
 
@@ -58,6 +60,13 @@ enum Commands {
         #[arg(long, default_value = "8888")]
         port: u16,
     },
+
+    /// Drives Beta's composed-mint lifecycle (claim -> relay -> exercise)
+    /// across every network with a `beta_networks.*` entry in config.yml —
+    /// unlike `Operator`, this has no `--src`: it's one process covering
+    /// every configured Beta hub/spoke together, since a single pending
+    /// mint's remote legs can span several of them at once.
+    Beta,
 }
 
 #[tokio::main]
@@ -67,6 +76,11 @@ async fn main() -> anyhow::Result<()> {
     let core_ctx = Arc::new(CoreContext::init(CoreConfig::load()).await?);
 
     match cli.command {
+        Commands::Beta => {
+            info!("Launching Beta Operator (claim -> relay -> exercise)");
+            crate::beta_operator::BetaOperator::run(core_ctx.clone()).await?;
+        },
+
         Commands::Operator { engine, src, watch_sources } => {
             let src_key = src.to_lowercase();
             let stack = Registry::get_stack(&src_key, core_ctx.clone()).await?;

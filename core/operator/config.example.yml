@@ -28,11 +28,82 @@ networks:
     max_transaction_limit:
     rpc_url:
   solana_devnet:
-    operator_address: 
-    rpc_url: 
-    contract_address: 
-    min_transaction_limit: 
-    max_transaction_limit: 
+    operator_address:
+    rpc_url:
+    contract_address:
+    min_transaction_limit:
+    max_transaction_limit:
+  base:
+    operator_address:
+    contract_address:
+    min_transaction_limit:
+    max_transaction_limit:
+    rpc_url:
+  robinhood:
+    operator_address:
+    contract_address:
+    min_transaction_limit:
+    max_transaction_limit:
+    rpc_url:
+  hyperliquid:
+    operator_address:
+    contract_address:
+    min_transaction_limit:
+    max_transaction_limit:
+    rpc_url:
+
+# Beta (composed-token mint) network config — separate namespace from
+# `networks:` above; a network's Beta `iPoWV1` is often a different
+# deployed instance than its Conversion one. `hub_address`/`vault_address`
+# are each optional — set whichever role(s) this network plays.
+beta_networks:
+  ethereum:
+    ipow_headers_address:
+    hub_address:
+    vault_address:
+    rpc_url:
+  hedera:
+    ipow_headers_address:
+    hub_address:
+    vault_address:
+    rpc_url:
+  polkadot:
+    ipow_headers_address:
+    hub_address:
+    vault_address:
+    rpc_url:
+  base:
+    ipow_headers_address:
+    hub_address:
+    vault_address:
+    rpc_url:
+  robinhood:
+    ipow_headers_address:
+    hub_address:
+    vault_address:
+    rpc_url:
+  hyperliquid:
+    ipow_headers_address:
+    hub_address:
+    vault_address:
+    rpc_url:
+  # Tempo (Moderato): hub_address is BetaHubPathUSD (PathUSD-converted
+  # bonds/payouts, not plain BetaHub, which uses native value the same way
+  # BetaVault does — Tempo rejects that outright, §8.21); vault_address is
+  # the equivalent BetaVaultPathUSD.
+  tempo:
+    ipow_headers_address:
+    hub_address:
+    vault_address:
+    rpc_url:
+  # Solana's beta-factory is always a hub, never a spoke (no Solana spoke
+  # program exists) — hub_program_id/ipow_program_id, not
+  # ipow_headers_address/hub_address, since this is a genuinely different
+  # shape (Anchor program ids, not EVM contract addresses).
+  solana:
+    hub_program_id:
+    ipow_program_id:
+    rpc_url:
 
 # Other Configurations
 supra:

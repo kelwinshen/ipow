@@ -728,27 +728,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "beta-mint"
-version = "0.1.0"
-dependencies = [
- "anchor-lang",
- "anchor-litesvm",
- "anchor-spl",
- "ipow-conversion",
- "litesvm",
- "litesvm-token",
- "sha2 0.11.0",
- "solana-account",
- "solana-clock",
- "solana-keypair",
- "solana-message",
- "solana-program",
- "solana-signer",
- "solana-transaction",
- "spl-associated-token-account-interface",
-]
-
-[[package]]
 name = "bincode"
 version = "1.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

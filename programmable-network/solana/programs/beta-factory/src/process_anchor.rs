@@ -73,14 +73,18 @@ pub fn handler(
 
     match stmt {
         Statement::Mint {
-            eth_lock_id,
+            composition_id,
+            component_index,
+            lock_id,
             sol_user,
             nonce,
             units,
             deadline,
         } => {
             require!(party.kind == PartyKind::Operator, FactoryError::NotOperator);
-            pa.eth_lock_id = eth_lock_id;
+            pa.composition_id = composition_id;
+            pa.component_index = component_index;
+            pa.lock_id = lock_id;
             pa.sol_user = sol_user;
             pa.nonce = nonce;
             pa.units = units;
@@ -90,9 +94,12 @@ pub fn handler(
                 &[b"pending", sol_user.as_ref(), &nonce.to_le_bytes()],
                 ctx.program_id,
             );
-            // A slot already queued under another party may be taken over
-            // only if that party has been retired — the submitter passes
-            // the prior party account to prove it.
+            // A mint already claimed by another party may be taken over —
+            // as a whole, every component reset — only if that party has
+            // been retired; the submitter passes the prior party account
+            // to prove it (§6.12, generalized to §8's multiple components:
+            // one basket, one carrier, so a takeover restarts every leg
+            // rather than splicing partial progress across operators).
             let prior_dead = |queued_by: [u8; 32]| -> bool {
                 match ctx.accounts.prior_party.as_ref() {
                     Some(pp) => pp.party_id == queued_by && pp.dead,
@@ -101,18 +108,34 @@ pub fn handler(
             };
             let predicate_true = match ctx.accounts.pending.as_ref() {
                 Some(p) if p.key() == expected_pending => {
+                    let i = component_index as usize;
+                    let takeover = p.queued_by != [0u8; 32]
+                        && p.queued_by != party.party_id
+                        && prior_dead(p.queued_by);
+                    let claimable = p.queued_by == [0u8; 32] || p.queued_by == party.party_id || takeover;
                     p.approved
-                        && (!p.queued || (p.queued_by != party.party_id && prior_dead(p.queued_by)))
-                        && p.eth_lock_id == eth_lock_id
+                        && p.composition_id == composition_id
+                        && i < p.remote_count()
+                        && p.remote_lock_id[i] == lock_id
                         && p.units == units
                         && p.deadline == deadline
+                        && claimable
+                        && (takeover || p.remote_anchor_txid[i] == [0u8; 32])
                 }
                 _ => false,
             };
             if predicate_true {
                 let p = ctx.accounts.pending.as_mut().unwrap();
-                p.queued = true;
-                p.queued_by = party.party_id;
+                let i = component_index as usize;
+                if p.queued_by != party.party_id {
+                    // Either unclaimed, or a takeover from a retired party — either
+                    // way this operator starts every leg fresh.
+                    for slot in p.remote_anchor_txid.iter_mut() {
+                        *slot = [0u8; 32];
+                    }
+                    p.queued_by = party.party_id;
+                }
+                p.remote_anchor_txid[i] = txid_le;
                 pa.status = AnchorStatus::Queued;
             } else {
                 let victim = ctx
@@ -138,7 +161,7 @@ pub fn handler(
             }
         }
         Statement::Release {
-            eth_lock_id: _,
+            lock_id: _,
             burn_id,
             to_eth,
             units,
@@ -366,9 +389,9 @@ pub fn handler(
             target.paused_until = 0;
             pa.status = AnchorStatus::Exercised;
         }
-        Statement::Cancel { eth_lock_id } => {
+        Statement::Cancel { lock_id } => {
             require!(party.kind == PartyKind::Operator, FactoryError::NotOperator);
-            pa.eth_lock_id = eth_lock_id;
+            pa.lock_id = lock_id;
             pa.status = AnchorStatus::Exercised;
         }
     }

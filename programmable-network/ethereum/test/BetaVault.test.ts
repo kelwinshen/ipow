@@ -2,7 +2,7 @@ import { expect } from "chai";
 import { network } from "hardhat";
 import { sha256, getBytes, hexlify, concat, toBeHex, zeroPadValue, AbiCoder, keccak256 } from "ethers";
 
-import { IPoWV1__factory, BetaVault__factory } from "../types/ethers-contracts/index.ts";
+import { IPoWV1__factory, BetaVault__factory, MockERC20__factory } from "../types/ethers-contracts/index.ts";
 import { COMMIT_FEE_BPS, NATIVE_DECIMALS, SELF_NETWORK_ID } from "./helpers/deploy.ts";
 
 const { ethers } = await network.create();
@@ -57,8 +57,13 @@ function anchorTx(prevTxidLE: string, prevVout: number, payload: { kind: number;
   return hexlify(concat(p));
 }
 
+// compositionId/componentIndex are Solana-hub routing this contract never
+// judges (DESIGN_V2 §8.4) — fixed at 0 here since these tests only exercise
+// this contract's own predicate, which parses past them unconditionally.
 function stmtMint(lockId: bigint, solUser: string, nonce: bigint, units: bigint, deadline: bigint): string {
-  return hexlify(concat([Uint8Array.of(KIND_MINT), u64be(lockId), getBytes(solUser), u64be(nonce), u64be(units), u64be(deadline)]));
+  return hexlify(
+    concat([Uint8Array.of(KIND_MINT), u64be(0n), Uint8Array.of(0), u64be(lockId), getBytes(solUser), u64be(nonce), u64be(units), u64be(deadline)]),
+  );
 }
 function stmtRelease(lockId: bigint, burnId: bigint, to: string, units: bigint): string {
   return hexlify(concat([Uint8Array.of(KIND_RELEASE), u64be(lockId), u64be(burnId), getBytes(to), u64be(units)]));
@@ -155,9 +160,9 @@ describe("BetaVault: locks and MINT anchors", function () {
   it("a matching MINT anchor finalizes the lock; a late reveal does not; refunds follow the state", async function () {
     const { op, user, vault, process } = await deploy();
     const deadline = (await now()) + 86_400n;
-    await vault.connect(user).deposit(SOL_USER, 1n, 2n, deadline, { value: 2n * ONE });
+    await vault.connect(user).deposit(ethers.ZeroAddress, SOL_USER, 1n, 2n, deadline, { value: 2n * ONE });
     expect((await vault.locks(1n)).state).to.equal(1); // Pending
-    expect(await vault.totalLocked()).to.equal(2n * ONE);
+    expect(await vault.totalLocked(ethers.ZeroAddress)).to.equal(2n * ONE);
 
     // Pending → refund not allowed before deadline+margin.
     await expect(vault.connect(user).refund(1n)).to.be.revertedWithCustomError(vault, "RefundNotReady");
@@ -175,7 +180,7 @@ describe("BetaVault: locks and MINT anchors", function () {
 
     // A second lock whose MINT anchor is revealed too late stays Pending and refunds.
     const d2 = (await now()) + 86_400n;
-    await vault.connect(user).deposit(SOL_USER, 2n, 1n, d2, { value: ONE });
+    await vault.connect(user).deposit(ethers.ZeroAddress, SOL_USER, 2n, 1n, d2, { value: ONE });
     const r2 = await process(OP_ID, [txid, 0], stmtMint(2n, SOL_USER, 2n, 1n, d2), op, 2, { late: 1801 });
     await expect(r2.tx).to.not.emit(vault, "Finalized");
     expect((await vault.locks(2n)).state).to.equal(1);
@@ -203,7 +208,7 @@ describe("BetaVault: locks and MINT anchors", function () {
   it("a MINT with the wrong amount for an existing lock is also a lie", async function () {
     const { op, user, vault, process } = await deploy();
     const deadline = (await now()) + 86_400n;
-    await vault.connect(user).deposit(SOL_USER, 1n, 2n, deadline, { value: 2n * ONE });
+    await vault.connect(user).deposit(ethers.ZeroAddress, SOL_USER, 1n, 2n, deadline, { value: 2n * ONE });
     const { txid } = await process(OP_ID, [GENESIS, 0], stmtMint(1n, SOL_USER, 1n, 3n, deadline), op, 1);
     expect((await vault.anchors(txid)).status).to.equal(2);
     expect((await vault.locks(1n)).state).to.equal(1); // untouched
@@ -212,18 +217,18 @@ describe("BetaVault: locks and MINT anchors", function () {
   it("CANCEL refunds a pending lock", async function () {
     const { op, user, vault, process } = await deploy();
     const deadline = (await now()) + 86_400n;
-    await vault.connect(user).deposit(SOL_USER, 1n, 1n, deadline, { value: ONE });
+    await vault.connect(user).deposit(ethers.ZeroAddress, SOL_USER, 1n, 1n, deadline, { value: ONE });
     const { tx } = await process(OP_ID, [GENESIS, 0], stmtCancel(1n), op, 1);
     await expect(tx).to.emit(vault, "Refunded").withArgs(1n);
     expect((await vault.locks(1n)).state).to.equal(4);
-    expect(await vault.totalLocked()).to.equal(0n);
+    expect(await vault.totalLocked(ethers.ZeroAddress)).to.equal(0n);
   });
 });
 
 describe("BetaVault: RELEASE — v3 challenge window, attest, veto, settle", function () {
   async function finalizedLock(d: Awaited<ReturnType<typeof deploy>>, units: bigint) {
     const deadline = (await now()) + 86_400n;
-    await d.vault.connect(d.user).deposit(SOL_USER, 1n, units, deadline, { value: units * ONE });
+    await d.vault.connect(d.user).deposit(ethers.ZeroAddress, SOL_USER, 1n, units, deadline, { value: units * ONE });
     const { txid } = await d.process(OP_ID, [GENESIS, 0], stmtMint(1n, SOL_USER, 1n, units, deadline), d.op, 1);
     expect((await d.vault.locks(1n)).state).to.equal(2);
     return txid;
@@ -241,7 +246,7 @@ describe("BetaVault: RELEASE — v3 challenge window, attest, veto, settle", fun
     const before = await ethers.provider.getBalance(to);
     await expect(d.vault.executeRelease(txid)).to.emit(d.vault, "Released").withArgs(txid, 1n, to, 2n * ONE);
     expect((await ethers.provider.getBalance(to)) - before).to.equal(2n * ONE);
-    expect(await d.vault.totalLocked()).to.equal(0n);
+    expect(await d.vault.totalLocked(ethers.ZeroAddress)).to.equal(0n);
     await expect(d.vault.executeRelease(txid)).to.be.revertedWithCustomError(d.vault, "BadAnchorState");
   });
 
@@ -255,13 +260,13 @@ describe("BetaVault: RELEASE — v3 challenge window, attest, veto, settle", fun
     await expect(tx).to.emit(d.vault, "ReleasePaidFromEscrow");
     expect((await ethers.provider.getBalance(to)) - before).to.equal(ONE);
     expect((await d.vault.parties(AUD_ID)).bond).to.equal(ethers.parseEther("2") - ONE);
-    expect(await d.vault.totalLocked()).to.equal(ONE); // vault untouched so far
+    expect(await d.vault.totalLocked(ethers.ZeroAddress)).to.equal(ONE); // vault untouched so far
     await expect(d.vault.settleRelease(txid)).to.be.revertedWithCustomError(d.vault, "NotReady");
     await expect(d.vault.executeRelease(txid)).to.be.revertedWithCustomError(d.vault, "BadAnchorState"); // already paid
     await warp(T_CHALLENGE + 1);
     await expect(d.vault.settleRelease(txid)).to.emit(d.vault, "ReleaseSettled").withArgs(txid, true);
     expect((await d.vault.parties(AUD_ID)).bond).to.equal(ethers.parseEther("2"));
-    expect(await d.vault.totalLocked()).to.equal(0n);
+    expect(await d.vault.totalLocked(ethers.ZeroAddress)).to.equal(0n);
     expect((await d.vault.anchors(txid)).status).to.equal(1);
   });
 
@@ -281,7 +286,7 @@ describe("BetaVault: RELEASE — v3 challenge window, attest, veto, settle", fun
     await expect(d.vault.settleRelease(txid)).to.emit(d.vault, "ReleaseSettled").withArgs(txid, false);
     expect((await d.vault.anchors(txid)).status).to.equal(5); // Cancelled
     expect((await d.vault.locks(1n)).state).to.equal(2); // back to FINAL
-    expect(await d.vault.totalLocked()).to.equal(ONE);
+    expect(await d.vault.totalLocked(ethers.ZeroAddress)).to.equal(ONE);
     expect((await d.vault.parties(AUD_ID)).bond).to.equal(ethers.parseEther("2") - ONE); // attester ate it
     void a;
   });
@@ -301,7 +306,7 @@ describe("BetaVault: RELEASE — v3 challenge window, attest, veto, settle", fun
   it("a RELEASE on a lock that is not FINAL is a lie about Ethereum", async function () {
     const d = await deploy();
     const deadline = (await now()) + 86_400n;
-    await d.vault.connect(d.user).deposit(SOL_USER, 1n, 1n, deadline, { value: ONE });
+    await d.vault.connect(d.user).deposit(ethers.ZeroAddress, SOL_USER, 1n, 1n, deadline, { value: ONE });
     const { txid } = await d.process(OP_ID, [GENESIS, 0], stmtRelease(1n, 0n, await d.other.getAddress(), 1n), d.op, 1);
     expect((await d.vault.anchors(txid)).status).to.equal(2);
     expect((await d.vault.parties(OP_ID)).dead).to.equal(true);
@@ -495,5 +500,92 @@ describe("BetaVault: vetoes judged here, chain rules, skip, registration", funct
     expect((await d.vault.parties(AUD_ID)).dead).to.equal(true);
     const v = await d.process(AUD_ID, [GENESIS, 0], stmtVeto(OP_ID, ZERO32), d.aud, 1, { noWait: true });
     await expect(v.tx).to.be.revertedWithCustomError(d.vault, "PartyDead");
+  });
+});
+
+describe("BetaVault: ERC20 local legs (DESIGN_V2 §8.12)", function () {
+  async function deployWithToken() {
+    const d = await deploy();
+    const token = await new MockERC20__factory(d.gov).deploy("Mock", "MOCK");
+    await token.waitForDeployment();
+    const tokenAddr = await token.getAddress();
+    const AMOUNT_PER_UNIT = ethers.parseUnits("2", 18);
+    const SLASH_WEI_PER_UNIT = ethers.parseEther("0.3");
+    await d.vault.connect(d.gov).setTokenParams(tokenAddr, { amountPerUnit: AMOUNT_PER_UNIT, slashWeiPerUnit: SLASH_WEI_PER_UNIT });
+    await token.mint(await d.user.getAddress(), ethers.parseUnits("1000", 18));
+    await token.connect(d.user).approve(await d.vault.getAddress(), ethers.parseUnits("1000", 18));
+    return { ...d, token, tokenAddr, AMOUNT_PER_UNIT, SLASH_WEI_PER_UNIT };
+  }
+
+  it("depositing an unregistered token is refused", async function () {
+    const d = await deploy();
+    const token = await new MockERC20__factory(d.gov).deploy("Mock", "MOCK");
+    await token.waitForDeployment();
+    await expect(
+      d.vault.connect(d.user).deposit(await token.getAddress(), SOL_USER, 1n, 1n, (await now()) + 86_400n),
+    ).to.be.revertedWithCustomError(d.vault, "TokenNotRegistered");
+  });
+
+  it("an ERC20 lock finalizes on a true MINT and pulls exactly amountPerUnit * units", async function () {
+    const d = await deployWithToken();
+    const deadline = (await now()) + 86_400n;
+    const before = await d.token.balanceOf(await d.user.getAddress());
+    await d.vault.connect(d.user).deposit(d.tokenAddr, SOL_USER, 1n, 3n, deadline);
+    expect(before - (await d.token.balanceOf(await d.user.getAddress()))).to.equal(3n * d.AMOUNT_PER_UNIT);
+    expect(await d.token.balanceOf(await d.vault.getAddress())).to.equal(3n * d.AMOUNT_PER_UNIT);
+    expect(await d.vault.totalLocked(d.tokenAddr)).to.equal(3n * d.AMOUNT_PER_UNIT);
+    expect((await d.vault.locks(1n)).token).to.equal(d.tokenAddr);
+
+    const { txid, tx } = await d.process(OP_ID, [GENESIS, 0], stmtMint(1n, SOL_USER, 1n, 3n, deadline), d.op, 1);
+    await expect(tx).to.emit(d.vault, "Finalized").withArgs(1n, txid);
+    expect((await d.vault.locks(1n)).state).to.equal(2); // Final
+  });
+
+  it("an ERC20 lock that never finalizes refunds back in the same token, not ETH", async function () {
+    const d = await deployWithToken();
+    const deadline = (await now()) + 86_400n;
+    await d.vault.connect(d.user).deposit(d.tokenAddr, SOL_USER, 1n, 2n, deadline);
+    await warp(86_400 + 601);
+    const before = await d.token.balanceOf(await d.user.getAddress());
+    const ethBefore = await ethers.provider.getBalance(await d.user.getAddress());
+    const rc = await (await d.vault.connect(d.user).refund(1n)).wait();
+    expect((await d.token.balanceOf(await d.user.getAddress())) - before).to.equal(2n * d.AMOUNT_PER_UNIT);
+    // No native ETH moved for this refund beyond the caller's own gas.
+    const ethAfter = await ethers.provider.getBalance(await d.user.getAddress());
+    expect(ethBefore - ethAfter).to.equal(rc!.gasUsed * rc!.gasPrice);
+    expect(await d.vault.totalLocked(d.tokenAddr)).to.equal(0n);
+    expect((await d.vault.locks(1n)).state).to.equal(4); // Refunded
+  });
+
+  it("a false MINT for an ERC20 lock slashes the operator in wei at the registered slash rate, not token units", async function () {
+    const d = await deployWithToken();
+    const deadline = (await now()) + 86_400n;
+    await d.vault.connect(d.user).deposit(d.tokenAddr, SOL_USER, 1n, 2n, deadline);
+    // Wrong units for lock 1 — a lie about this network.
+    const { tx } = await d.process(OP_ID, [GENESIS, 0], stmtMint(1n, SOL_USER, 1n, 5n, deadline), d.other, 1);
+    await expect(tx).to.emit(d.vault, "Slashed").withArgs(OP_ID, 5n * d.SLASH_WEI_PER_UNIT, await d.other.getAddress());
+    const p = await d.vault.parties(OP_ID);
+    expect(p.dead).to.equal(true);
+    expect(p.bond).to.equal(ethers.parseEther("10") - 5n * d.SLASH_WEI_PER_UNIT);
+    // The lock's own ERC20 balance is completely untouched by the slash.
+    expect(await d.token.balanceOf(await d.vault.getAddress())).to.equal(2n * d.AMOUNT_PER_UNIT);
+  });
+
+  it("RELEASE on an ERC20-backed lock is refused; native locks are unaffected by the change", async function () {
+    const d = await deployWithToken();
+    const deadline = (await now()) + 86_400n;
+    await d.vault.connect(d.user).deposit(d.tokenAddr, SOL_USER, 1n, 1n, deadline);
+    const { txid: mtx } = await d.process(OP_ID, [GENESIS, 0], stmtMint(1n, SOL_USER, 1n, 1n, deadline), d.op, 1);
+    expect((await d.vault.locks(1n)).state).to.equal(2);
+
+    const to = await d.other.getAddress();
+    const r = await d.process(OP_ID, [mtx, 0], stmtRelease(1n, 0n, to, 1n), d.op, 2, { noWait: true });
+    await expect(r.tx).to.be.revertedWithCustomError(d.vault, "ReleaseTokenUnsupported");
+
+    // A native lock's release path still works exactly as before.
+    await d.vault.connect(d.user).deposit(ethers.ZeroAddress, SOL_USER, 2n, 1n, deadline, { value: ONE });
+    const { txid: mtx2 } = await d.process(OP_ID, [mtx, 0], stmtMint(2n, SOL_USER, 2n, 1n, deadline), d.op, 3);
+    const { txid: rtx } = await d.process(OP_ID, [mtx2, 0], stmtRelease(2n, 0n, to, 1n), d.op, 4);
+    expect((await d.vault.anchors(rtx)).status).to.equal(4); // QueuedRelease
   });
 });

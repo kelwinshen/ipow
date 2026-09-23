@@ -3,13 +3,18 @@ use anchor_lang::prelude::*;
 use crate::errors::FactoryError;
 use crate::state::Pending;
 
-/// X's consent (DESIGN_V2 §6.3 `sig_X`): after depositing on Ethereum and
-/// learning lock id N, X binds this pending lock to N. A MINT for any
-/// other N, or before approval, is a false statement about Solana.
-pub fn handler(ctx: Context<ApprovePending>, _nonce: u64, eth_lock_id: u64) -> Result<()> {
+/// X's consent (DESIGN_V2 §6.3 `sig_X`, generalized to §8's multiple
+/// remote components): after depositing on every remote chain the
+/// composition names and learning each lock id, X binds this pending
+/// mint to all of them at once, in composition order (excluding the
+/// local Solana leg, which needs no lock id). A MINT for any lock id
+/// that doesn't match, or before approval, is a false statement about
+/// Solana.
+pub fn handler(ctx: Context<ApprovePending>, _nonce: u64, remote_lock_id: Vec<u64>) -> Result<()> {
     let p = &mut ctx.accounts.pending;
     require!(!p.approved, FactoryError::AlreadyApproved);
-    p.eth_lock_id = eth_lock_id;
+    require!(remote_lock_id.len() == p.remote_count(), FactoryError::InvalidParams);
+    p.remote_lock_id = remote_lock_id;
     p.approved = true;
     Ok(())
 }

@@ -30,6 +30,7 @@ fn map_network_to_supra_symbol(network: SupportedNetwork) -> &'static str {
         SupportedNetwork::ETH => "eth",
         SupportedNetwork::SOLANA => "sol",
         SupportedNetwork::POLKADOT => "dot",
+        SupportedNetwork::HYPE => "hype",
     }
 }
 

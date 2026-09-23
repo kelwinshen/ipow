@@ -5,6 +5,24 @@ use anchor_lang::prelude::*;
 use crate::constants::{MAX_TIMESPAN_SEC, MIN_TIMESPAN_SEC, RETARGET_PERIOD_SEC};
 use crate::errors::IPoWError;
 
+/// Real Bitcoin mainnet minimum-difficulty target (`bits = 0x1d00ffff`,
+/// difficulty 1) — `0x00000000FFFF0000...0000` big-endian. Mirrors
+/// `BitcoinPrimitives._powLimit()` on the EVM side exactly: without this
+/// cap, `target_from_bits` would accept whatever (arbitrarily easy)
+/// difficulty a header claims at face value, letting an operator forge a
+/// fake header chain for near-zero real computational cost — the entire
+/// point of PoW-checking headers is defeated if the claimed difficulty
+/// itself is never bounded to something a real miner would have had to
+/// earn. Found and fixed after this exact gap let a test header (mined
+/// against a deliberately-easy target) go unnoticed as a live protocol gap
+/// rather than a test-only convenience — see `docs/DESIGN_V2.md`.
+const POW_LIMIT: [u8; 32] = {
+    let mut limit = [0u8; 32];
+    limit[4] = 0xff;
+    limit[5] = 0xff;
+    limit
+};
+
 pub fn target_from_bits(bits: u32) -> [u8; 32] {
     let mut target = [0u8; 32];
     let exp = (bits >> 24) as usize;
@@ -23,6 +41,13 @@ pub fn target_from_bits(bits: u32) -> [u8; 32] {
         target[29] = (shifted_mant >> 16) as u8;
         target[30] = (shifted_mant >> 8) as u8;
         target[31] = shifted_mant as u8;
+    }
+
+    // Big-endian byte arrays compare lexicographically the same as the
+    // numbers they represent, so a plain `>` here is a correct numeric
+    // comparison.
+    if target > POW_LIMIT {
+        target = POW_LIMIT;
     }
     target
 }
@@ -69,6 +94,17 @@ pub fn expected_retarget_bits(start_ts: u32, end_ts: u32, start_bits: u32) -> Re
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn target_from_bits_clamps_an_easier_than_real_claimed_difficulty() {
+        // 0x207fffff is regtest's powLimit bits — an intentionally trivial
+        // difficulty, easy enough to mine in a handful of iterations. If
+        // this were accepted at face value, an operator could forge a fake
+        // header chain for near-zero real work. It must clamp down to the
+        // real mainnet powLimit instead.
+        let target = target_from_bits(0x207fffff);
+        assert_eq!(target, POW_LIMIT);
+    }
 
     #[test]
     fn target_from_bits_matches_known_genesis_pow_limit() {

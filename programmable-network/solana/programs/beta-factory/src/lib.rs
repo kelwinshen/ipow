@@ -19,6 +19,7 @@ pub mod fund_rewards;
 pub mod initialize;
 pub mod lock_sol;
 pub mod process_anchor;
+pub mod register_composition;
 pub mod register_party;
 pub mod request_unbond;
 pub mod set_params;
@@ -63,6 +64,10 @@ pub use process_anchor::ProcessAnchor;
 pub(crate) use process_anchor::__client_accounts_process_anchor;
 #[allow(unused_imports)]
 pub(crate) use process_anchor::__cpi_client_accounts_process_anchor;
+pub use register_composition::RegisterComposition;
+pub(crate) use register_composition::__client_accounts_register_composition;
+#[allow(unused_imports)]
+pub(crate) use register_composition::__cpi_client_accounts_register_composition;
 pub use register_party::RegisterParty;
 pub(crate) use register_party::__client_accounts_register_party;
 #[allow(unused_imports)]
@@ -92,9 +97,9 @@ pub(crate) use withdraw_bond::__client_accounts_withdraw_bond;
 #[allow(unused_imports)]
 pub(crate) use withdraw_bond::__cpi_client_accounts_withdraw_bond;
 
-use state::{FactoryParams, PartyKind};
+use state::{Component, FactoryParams, PartyKind};
 
-declare_id!("3GUPbVjjBRNEYafHprb2fnh6Wzyif9a4gWphSrhkPVEf");
+declare_id!("BkNb9JfNbfbn3rMiA3j3z2pnFdNibxiYWWsKZ9VdzoD1");
 
 /// BETA v2 factory — `docs/DESIGN_V2.md` §6. One fungible BETA on Solana,
 /// its SOL half held here, its ETH half held by `BetaVault.sol`. Cross-chain
@@ -136,12 +141,16 @@ pub mod beta_factory {
         withdraw_bond::handler(ctx)
     }
 
-    pub fn lock_sol(ctx: Context<LockSol>, nonce: u64, units: u64, deadline: i64, attest_fee: u64) -> Result<()> {
-        lock_sol::handler(ctx, nonce, units, deadline, attest_fee)
+    pub fn register_composition(ctx: Context<RegisterComposition>, id: u64, components: Vec<Component>) -> Result<()> {
+        register_composition::handler(ctx, id, components)
     }
 
-    pub fn approve_pending(ctx: Context<ApprovePending>, nonce: u64, eth_lock_id: u64) -> Result<()> {
-        approve_pending::handler(ctx, nonce, eth_lock_id)
+    pub fn lock_sol(ctx: Context<LockSol>, nonce: u64, composition_id: u64, units: u64, deadline: i64, attest_fee: u64) -> Result<()> {
+        lock_sol::handler(ctx, nonce, composition_id, units, deadline, attest_fee)
+    }
+
+    pub fn approve_pending(ctx: Context<ApprovePending>, nonce: u64, remote_lock_id: Vec<u64>) -> Result<()> {
+        approve_pending::handler(ctx, nonce, remote_lock_id)
     }
 
     pub fn expire_pending(ctx: Context<ExpirePending>, nonce: u64) -> Result<()> {
@@ -165,8 +174,8 @@ pub mod beta_factory {
         process_anchor::handler(ctx, txid_le, statement, tx_raw, proof_block_height, branch_le, index)
     }
 
-    pub fn exercise_mint(ctx: Context<ExerciseMint>, txid_le: [u8; 32]) -> Result<()> {
-        exercise_mint::handler(ctx, txid_le)
+    pub fn exercise_mint(ctx: Context<ExerciseMint>) -> Result<()> {
+        exercise_mint::handler(ctx)
     }
 
     pub fn settle_mint(ctx: Context<SettleMint>, txid_le: [u8; 32]) -> Result<()> {

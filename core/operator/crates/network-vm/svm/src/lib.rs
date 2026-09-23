@@ -1,4 +1,5 @@
 pub mod approving_adapter;
+pub mod beta;
 pub mod bindings;
 pub mod converting_adapter;
 pub mod dependencies;

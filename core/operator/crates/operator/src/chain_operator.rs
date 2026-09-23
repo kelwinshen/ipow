@@ -21,6 +21,84 @@ use tracing::{debug, error, info, warn};
 // data concurrently, so a large batch doesn't hammer a rate-limited provider.
 const REMOTE_FETCH_CONCURRENCY: usize = 8;
 
+/// Whether a stuck, unconfirmed Native→Bitcoin payout has waited long enough
+/// past its anchor to justify a fee-bumped rebroadcast (RBF).
+struct RbfDecision {
+    anchor_rbf_eligible_height: u64,
+    is_past_anchor_threshold: bool,
+    estimated_blocks_until_confirmation: u64,
+    is_confirmation_delay_over_threshold: bool,
+    should_rbf: bool,
+}
+
+fn evaluate_rbf(
+    current_tip_height: u64,
+    anchor_height: u64,
+    anchor_block_threshold: u64,
+    estimated_confirmation_height: u64,
+    confirmation_delay_threshold_blocks: u64,
+) -> RbfDecision {
+    let anchor_rbf_eligible_height = anchor_height + anchor_block_threshold;
+    let is_past_anchor_threshold = current_tip_height >= anchor_rbf_eligible_height;
+    let estimated_blocks_until_confirmation =
+        estimated_confirmation_height.saturating_sub(current_tip_height);
+    let is_confirmation_delay_over_threshold =
+        estimated_blocks_until_confirmation > confirmation_delay_threshold_blocks;
+    RbfDecision {
+        anchor_rbf_eligible_height,
+        is_past_anchor_threshold,
+        estimated_blocks_until_confirmation,
+        is_confirmation_delay_over_threshold,
+        should_rbf: is_past_anchor_threshold && is_confirmation_delay_over_threshold,
+    }
+}
+
+/// Converts a Native→Native tunnel leg's Bitcoin-denominated amount into the
+/// destination chain's native unit, marked down 0.5% (`safe_native_float`)
+/// so the operator never commits to paying out more than the market rate
+/// covers by the time the destination-chain tx lands.
+fn compute_safe_native_amount(
+    bitcoin_amount_sats: u64,
+    market_ratio_native_per_btc: f64,
+    native_decimals: u32,
+) -> U256 {
+    let btc_float = bitcoin_amount_sats as f64 / 100_000_000.0;
+    let market_native_float = btc_float / market_ratio_native_per_btc;
+    let safe_native_float = market_native_float * 0.995;
+    U256::from((safe_native_float * 10f64.powi(native_decimals as i32)) as u128)
+}
+
+/// A tunnel intent's `network_address` field may arrive as `0x`-prefixed hex
+/// text (as stored on some source chains) or as already-raw bytes; either
+/// way the destination call needs raw bytes. Falls back to the input
+/// unchanged if it isn't valid `0x`-prefixed hex.
+fn decode_dest_address_bytes(raw: &[u8]) -> Vec<u8> {
+    if raw.starts_with(b"0x") || raw.starts_with(b"0X") {
+        let hex_str = String::from_utf8_lossy(raw);
+        let clean_hex =
+            hex_str.trim_start_matches("0x").trim_start_matches("0X");
+        if let Ok(decoded) = (0..clean_hex.len())
+            .step_by(2)
+            .map(|i| {
+                u8::from_str_radix(
+                    &clean_hex[i..std::cmp::min(i + 2, clean_hex.len())],
+                    16,
+                )
+            })
+            .collect::<Result<Vec<u8>, _>>()
+        {
+            return decoded;
+        }
+    }
+    raw.to_vec()
+}
+
+/// Whether it's cheaper to permissionlessly user-close every stuck
+/// candidate tx than to stream `gap` headers to reach the sync target.
+fn should_user_close_instead_of_stream(gap: u64, user_close_cost: usize) -> bool {
+    user_close_cost > 0 && (gap as usize) > user_close_cost
+}
+
 pub struct ChainOperator;
 
 pub struct BridgeIntent {
@@ -561,46 +639,38 @@ impl ChainOperator {
                                 .rbf_blocks_from_tip_to_unconfirmed; // Max acceptable delay before RBF
 
                             let anchor_height = anchor.anchor_height.as_u64();
-                            let anchor_rbf_eligible_height =
-                                anchor_height + anchor_block_threshold;
-
-                            let is_past_anchor_threshold = current_tip_height
-                                >= anchor_rbf_eligible_height;
-
                             let estimated_confirmation_height = proof
                                 .mempool_height
                                 .unwrap_or(current_tip_height);
 
-                            let estimated_blocks_until_confirmation =
-                                estimated_confirmation_height
-                                    .saturating_sub(current_tip_height);
-
-                            let is_confirmation_delay_over_threshold =
-                                estimated_blocks_until_confirmation
-                                    > confirmation_delay_threshold_blocks;
+                            let rbf = evaluate_rbf(
+                                current_tip_height,
+                                anchor_height,
+                                anchor_block_threshold,
+                                estimated_confirmation_height,
+                                confirmation_delay_threshold_blocks,
+                            );
 
                             info!(
                                 tx_id = %tx_id,
                                 current_tip_height = %current_tip_height,
                                 anchor_height = %anchor_height,
                                 anchor_block_threshold = %anchor_block_threshold,
-                                anchor_rbf_eligible_height = %anchor_rbf_eligible_height,
-                                is_past_anchor_threshold = %is_past_anchor_threshold,
+                                anchor_rbf_eligible_height = %rbf.anchor_rbf_eligible_height,
+                                is_past_anchor_threshold = %rbf.is_past_anchor_threshold,
                                 estimated_confirmation_height = %estimated_confirmation_height,
-                                estimated_blocks_until_confirmation = %estimated_blocks_until_confirmation,
+                                estimated_blocks_until_confirmation = %rbf.estimated_blocks_until_confirmation,
                                 confirmation_delay_threshold_blocks = %confirmation_delay_threshold_blocks,
-                                is_confirmation_delay_over_threshold = %is_confirmation_delay_over_threshold,
+                                is_confirmation_delay_over_threshold = %rbf.is_confirmation_delay_over_threshold,
                                 "RBF eligibility parameters evaluated"
                             );
-                            if is_past_anchor_threshold
-                                && is_confirmation_delay_over_threshold
-                            {
+                            if rbf.should_rbf {
                                 info!(
                                     %tx_id,
                                     current_tip_height = %current_tip_height,
                                     anchor_height = %anchor_height,
                                     estimated_confirmation_height = %estimated_confirmation_height,
-                                    estimated_blocks_until_confirmation = %estimated_blocks_until_confirmation,
+                                    estimated_blocks_until_confirmation = %rbf.estimated_blocks_until_confirmation,
                                     "RBF criteria met. Proceeding with fee bump."
                                 );
 
@@ -655,12 +725,12 @@ impl ChainOperator {
                                     %tx_id,
                                     current_tip_height = %current_tip_height,
                                     anchor_height = %anchor_height,
-                                    anchor_rbf_eligible_height = %anchor_rbf_eligible_height,
-                                    is_past_anchor_threshold = %is_past_anchor_threshold,
+                                    anchor_rbf_eligible_height = %rbf.anchor_rbf_eligible_height,
+                                    is_past_anchor_threshold = %rbf.is_past_anchor_threshold,
                                     estimated_confirmation_height = %estimated_confirmation_height,
-                                    estimated_blocks_until_confirmation = %estimated_blocks_until_confirmation,
+                                    estimated_blocks_until_confirmation = %rbf.estimated_blocks_until_confirmation,
                                     confirmation_delay_threshold_blocks = %confirmation_delay_threshold_blocks,
-                                    is_confirmation_delay_over_threshold = %is_confirmation_delay_over_threshold,
+                                    is_confirmation_delay_over_threshold = %rbf.is_confirmation_delay_over_threshold,
                                     "RBF not needed yet"
                                 );
                             }
@@ -784,32 +854,18 @@ impl ChainOperator {
                 )
                 .await?;
 
-                let native_decimals = match dest_network {
-                    SupportedNetwork::HEDERA => 8,
-                    SupportedNetwork::SOLANA => 9,
-                    _ => 18, 
-                };
-                let btc_float = info.bitcoin_amount.as_u64() as f64 / 100_000_000.0;
-                let market_native_float = btc_float / market_ratio;
-                let safe_native_float = market_native_float * 0.995;
-                let safe_native_amount = U256::from((safe_native_float * 10f64.powi(native_decimals)) as u128);
+                let native_decimals = dest_network.decimals();
+                let safe_native_amount = compute_safe_native_amount(
+                    info.bitcoin_amount.as_u64(),
+                    market_ratio,
+                    native_decimals,
+                );
 
                 let mut raw_user_address_32 = vec![0u8; 32];
                 raw_user_address_32[..20].copy_from_slice(info.user.as_bytes());
 
-                let mut dest_addr_bytes = info.network_address.to_vec();
-                if dest_addr_bytes.starts_with(b"0x") || dest_addr_bytes.starts_with(b"0X") {
-                    let hex_str = String::from_utf8_lossy(&dest_addr_bytes);
-                    let clean_hex = hex_str.trim_start_matches("0x").trim_start_matches("0X");
-                    
-                    if let Ok(decoded) = (0..clean_hex.len())
-                        .step_by(2)
-                        .map(|i| u8::from_str_radix(&clean_hex[i..std::cmp::min(i + 2, clean_hex.len())], 16))
-                        .collect::<Result<Vec<u8>, _>>()
-                    {
-                        dest_addr_bytes = decoded;
-                    }
-                }
+                let dest_addr_bytes =
+                    decode_dest_address_bytes(&info.network_address);
 
                 let network_id_u8 = provider.network() as u8;
                 let source_anchor = provider.anchor_info(tx_id).await?;
@@ -1059,7 +1115,7 @@ impl ChainOperator {
                 "Source chain user-close vs stream decision"
             );
 
-            if user_close_cost > 0 && (gap as usize) > user_close_cost {
+            if should_user_close_instead_of_stream(gap, user_close_cost) {
                 info!(%network, "Cheaper to user-close than stream → executing");
 
                 let candidates: Vec<(U256, &'static str)> =
@@ -1225,5 +1281,127 @@ impl ChainOperator {
 
         let results = join_all(tasks).await;
         results.into_iter().flatten().collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- evaluate_rbf ---
+
+    #[test]
+    fn rbf_not_eligible_before_anchor_threshold_regardless_of_delay() {
+        // current tip hasn't even reached anchor_height + threshold yet.
+        let d = evaluate_rbf(100, 90, 20, 500, 5);
+        assert!(!d.is_past_anchor_threshold);
+        assert!(!d.should_rbf);
+    }
+
+    #[test]
+    fn rbf_not_eligible_when_past_anchor_but_confirmation_imminent() {
+        // Past the anchor threshold (110 >= 90+20=110), but the estimated
+        // wait (5 blocks) doesn't exceed the delay threshold (5) — no RBF.
+        let d = evaluate_rbf(110, 90, 20, 115, 5);
+        assert!(d.is_past_anchor_threshold);
+        assert_eq!(d.estimated_blocks_until_confirmation, 5);
+        assert!(!d.is_confirmation_delay_over_threshold);
+        assert!(!d.should_rbf);
+    }
+
+    #[test]
+    fn rbf_eligible_once_past_anchor_and_delay_exceeds_threshold() {
+        let d = evaluate_rbf(110, 90, 20, 200, 5);
+        assert!(d.is_past_anchor_threshold);
+        assert_eq!(d.estimated_blocks_until_confirmation, 90);
+        assert!(d.is_confirmation_delay_over_threshold);
+        assert!(d.should_rbf);
+    }
+
+    #[test]
+    fn rbf_confirmation_height_below_tip_never_triggers_negative_delay() {
+        // A stale/lower estimated_confirmation_height than the current tip
+        // must saturate to 0 blocks remaining, not underflow.
+        let d = evaluate_rbf(500, 90, 20, 100, 5);
+        assert_eq!(d.estimated_blocks_until_confirmation, 0);
+        assert!(!d.is_confirmation_delay_over_threshold);
+    }
+
+    // --- compute_safe_native_amount ---
+
+    #[test]
+    fn safe_native_amount_applies_half_percent_markdown() {
+        // 1 BTC at a 1:20 BTC:ETH market ratio (i.e. 1 BTC = 20 ETH) should
+        // price to 20 ETH minus the 0.5% safety margin = 19.9 ETH.
+        let amount = compute_safe_native_amount(100_000_000, 1.0 / 20.0, 18);
+        let expected = U256::from(19_900_000_000_000_000_000u128); // 19.9e18
+        assert_eq!(amount, expected);
+    }
+
+    #[test]
+    fn safe_native_amount_respects_destination_decimals() {
+        // Same BTC amount and ratio, but priced in an 8-decimal native unit
+        // (Hedera) instead of 18 — output must scale down accordingly.
+        // Expected value is 1 below the mathematical 19.9e8: `as u128`
+        // truncates rather than rounds, and f64 can't represent 19.9
+        // exactly — a pre-existing characteristic of this calculation
+        // (unchanged by extracting it into this function), not something
+        // this test should paper over.
+        let amount = compute_safe_native_amount(100_000_000, 1.0 / 20.0, 8);
+        assert_eq!(amount, U256::from(1_989_999_999u128));
+    }
+
+    #[test]
+    fn safe_native_amount_zero_bitcoin_is_zero() {
+        assert_eq!(compute_safe_native_amount(0, 1.0 / 20.0, 18), U256::zero());
+    }
+
+    // --- decode_dest_address_bytes ---
+
+    #[test]
+    fn decode_dest_address_strips_0x_prefix_and_parses_hex() {
+        let decoded = decode_dest_address_bytes(b"0xdeadbeef");
+        assert_eq!(decoded, vec![0xde, 0xad, 0xbe, 0xef]);
+    }
+
+    #[test]
+    fn decode_dest_address_accepts_uppercase_0x_prefix() {
+        let decoded = decode_dest_address_bytes(b"0XCAFE");
+        assert_eq!(decoded, vec![0xca, 0xfe]);
+    }
+
+    #[test]
+    fn decode_dest_address_leaves_raw_bytes_unchanged_when_not_hex_text() {
+        // Already-raw address bytes (the common case) must pass through
+        // untouched, not get misinterpreted as hex text.
+        let raw = vec![0x01, 0x02, 0x03];
+        assert_eq!(decode_dest_address_bytes(&raw), raw);
+    }
+
+    #[test]
+    fn decode_dest_address_falls_back_on_invalid_hex_after_0x() {
+        // "0xzz" isn't valid hex — must fall back to the raw bytes rather
+        // than silently truncating or panicking.
+        let raw = b"0xzz".to_vec();
+        assert_eq!(decode_dest_address_bytes(&raw), raw);
+    }
+
+    // --- should_user_close_instead_of_stream ---
+
+    #[test]
+    fn user_close_preferred_when_strictly_cheaper_than_streaming() {
+        assert!(should_user_close_instead_of_stream(100, 5));
+    }
+
+    #[test]
+    fn streaming_preferred_when_no_close_candidates_exist() {
+        assert!(!should_user_close_instead_of_stream(100, 0));
+    }
+
+    #[test]
+    fn streaming_preferred_when_gap_is_not_larger_than_close_cost() {
+        // Closing 10 stuck txs to save a 10-header gap is a wash, not a win —
+        // must not prefer user-close on a tie.
+        assert!(!should_user_close_instead_of_stream(10, 10));
     }
 }

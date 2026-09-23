@@ -46,7 +46,12 @@ pub fn handler(ctx: Context<SettleMint>, _txid_le: [u8; 32]) -> Result<()> {
     if pa.held && pa.status == AnchorStatus::Queued {
         let p = ctx.accounts.pending.as_mut().ok_or(FactoryError::MissingAccount)?;
         require!(p.user == pa.sol_user && p.nonce == pa.nonce, FactoryError::AccountMismatch);
-        p.queued = false;
+        // Un-queue the whole basket, not just this leg — a held, expired
+        // component can never let `exercise_mint` pass (it gates on every
+        // component), so the mint is dead under this operator either way;
+        // the next `process_anchor` claim for this pending (any party,
+        // since `queued_by` is now zero) resets every cached remote txid
+        // fresh, exactly like a takeover (§8.3).
         p.queued_by = [0u8; 32];
         pa.status = AnchorStatus::Cancelled;
     }

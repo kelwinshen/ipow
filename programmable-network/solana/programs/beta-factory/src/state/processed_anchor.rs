@@ -39,7 +39,9 @@ pub struct ProcessedAnchor {
     pub escrow: u64,
     pub settled: bool,
     // MINT fields, so `exercise_mint` needs no statement bytes.
-    pub eth_lock_id: u64,
+    pub composition_id: u64,
+    pub component_index: u8,
+    pub lock_id: u64,
     pub sol_user: Pubkey,
     pub nonce: u64,
     pub units: u64,

@@ -29,6 +29,12 @@ const T_CHALLENGE: i64 = 7 * 86_400;
 const GENESIS_TXID: [u8; 32] = [7u8; 32];
 const OP_ID: [u8; 32] = [1u8; 32];
 const AUD_ID: [u8; 32] = [2u8; 32];
+/// Every test registers this one composition (DESIGN_V2 §8): a local SOL
+/// leg (verified directly, exactly like §6's) plus one remote leg judged
+/// on the Bitcoin statement bus exactly like §6/§7's single Ethereum leg
+/// — the two-component equivalent of what the pre-§8 factory always did.
+/// `component_index` for that one remote leg is always 0.
+const COMPOSITION_ID: u64 = 1;
 
 fn new_ctx() -> AnchorContext {
     let mut ctx = AnchorLiteSVM::build_with_program(
@@ -149,18 +155,23 @@ fn anchor_tx(prev_txid_le: [u8; 32], prev_vout: u32, payload: Option<(u8, [u8; 3
     tx
 }
 
-fn stmt_mint(eth_lock_id: u64, sol_user: Pubkey, nonce: u64, units: u64, deadline: i64) -> Vec<u8> {
+/// `component_index` is always 0 in these tests: every registered
+/// composition has exactly one remote leg (§8's generalization of the
+/// old single Ethereum leg).
+fn stmt_mint(lock_id: u64, sol_user: Pubkey, nonce: u64, units: u64, deadline: i64) -> Vec<u8> {
     let mut v = vec![KIND_MINT];
-    v.extend_from_slice(&eth_lock_id.to_be_bytes());
+    v.extend_from_slice(&COMPOSITION_ID.to_be_bytes());
+    v.push(0); // component_index
+    v.extend_from_slice(&lock_id.to_be_bytes());
     v.extend_from_slice(sol_user.as_ref());
     v.extend_from_slice(&nonce.to_be_bytes());
     v.extend_from_slice(&units.to_be_bytes());
     v.extend_from_slice(&(deadline as u64).to_be_bytes());
     v
 }
-fn stmt_release(eth_lock_id: u64, burn_id: u64, to_eth: [u8; 20], units: u64) -> Vec<u8> {
+fn stmt_release(lock_id: u64, burn_id: u64, to_eth: [u8; 20], units: u64) -> Vec<u8> {
     let mut v = vec![KIND_RELEASE];
-    v.extend_from_slice(&eth_lock_id.to_be_bytes());
+    v.extend_from_slice(&lock_id.to_be_bytes());
     v.extend_from_slice(&burn_id.to_be_bytes());
     v.extend_from_slice(&to_eth);
     v.extend_from_slice(&units.to_be_bytes());
@@ -177,9 +188,9 @@ fn stmt_target(kind: u8, target: [u8; 32]) -> Vec<u8> {
     v.extend_from_slice(&target);
     v
 }
-fn stmt_cancel(eth_lock_id: u64) -> Vec<u8> {
+fn stmt_cancel(lock_id: u64) -> Vec<u8> {
     let mut v = vec![KIND_CANCEL];
-    v.extend_from_slice(&eth_lock_id.to_be_bytes());
+    v.extend_from_slice(&lock_id.to_be_bytes());
     v
 }
 
@@ -245,6 +256,25 @@ fn setup() -> Setup {
         .instruction()
         .unwrap();
     ctx.execute_instruction(ix, &[&governance, &beta_mint_kp]).unwrap().assert_success();
+
+    let register_comp_ix = LiteSvmProgram::new(beta_factory::ID)
+        .accounts(beta_factory::client::accounts::RegisterComposition {
+            config,
+            composition: composition_pda(COMPOSITION_ID),
+            governance: governance.pubkey(),
+            system_program: anchor_lang::solana_program::system_program::ID,
+        })
+        .args(beta_factory::client::args::RegisterComposition {
+            id: COMPOSITION_ID,
+            components: vec![
+                beta_factory::types::Component { network_id: 0, token_id: [0u8; 32], amount_per_unit: SOL },
+                beta_factory::types::Component { network_id: 1, token_id: [0u8; 32], amount_per_unit: SOL },
+            ],
+        })
+        .instruction()
+        .unwrap();
+    ctx.execute_instruction(register_comp_ix, &[&governance]).unwrap().assert_success();
+
     Setup {
         ctx,
         governance,
@@ -271,6 +301,12 @@ fn pending_pda(user: Pubkey, nonce: u64) -> Pubkey {
 }
 fn burn_pda(burn_id: u64) -> Pubkey {
     Pubkey::find_program_address(&[b"burn", &burn_id.to_le_bytes()], &beta_factory::ID).0
+}
+fn composition_pda(id: u64) -> Pubkey {
+    Pubkey::find_program_address(&[b"composition", &id.to_le_bytes()], &beta_factory::ID).0
+}
+fn token_vault_authority_pda() -> Pubkey {
+    Pubkey::find_program_address(&[b"token_vault_authority"], &beta_factory::ID).0
 }
 fn ata(owner: Pubkey, mint: Pubkey) -> Pubkey {
     spl_associated_token_account_interface::address::get_associated_token_address(&owner, &mint)
@@ -318,6 +354,7 @@ fn lock_sol_with_fee(s: &mut Setup, user: &Keypair, nonce: u64, units: u64, dead
         .accounts(beta_factory::client::accounts::LockSol {
             config: s.config,
             pending: pending_pda(user.pubkey(), nonce),
+            composition: composition_pda(COMPOSITION_ID),
             vault: s.vault,
             fees: fees_pda(),
             beta_mint: s.beta_mint,
@@ -326,17 +363,23 @@ fn lock_sol_with_fee(s: &mut Setup, user: &Keypair, nonce: u64, units: u64, dead
             token_program: litesvm_token::spl_token::ID,
             associated_token_program: spl_associated_token_account_interface::program::ID,
             system_program: anchor_lang::solana_program::system_program::ID,
+            token_vault_authority: token_vault_authority_pda(),
+            local_spl_0_mint: None, local_spl_0_user: None, local_spl_0_vault: None,
+            local_spl_1_mint: None, local_spl_1_user: None, local_spl_1_vault: None,
+            local_spl_2_mint: None, local_spl_2_user: None, local_spl_2_vault: None,
         })
-        .args(beta_factory::client::args::LockSol { nonce, units, deadline, attest_fee })
+        .args(beta_factory::client::args::LockSol { nonce, composition_id: COMPOSITION_ID, units, deadline, attest_fee })
         .instruction()
         .unwrap();
     s.ctx.execute_instruction(ix, &[user]).unwrap().assert_success();
 }
 
-fn approve_pending(s: &mut Setup, user: &Keypair, nonce: u64, eth_lock_id: u64) {
+/// `lock_id` is the one remote (component 0) leg's lock id — the same
+/// thing `eth_lock_id` always meant, just named for its now-generic role.
+fn approve_pending(s: &mut Setup, user: &Keypair, nonce: u64, lock_id: u64) {
     let ix = LiteSvmProgram::new(beta_factory::ID)
         .accounts(beta_factory::client::accounts::ApprovePending { pending: pending_pda(user.pubkey(), nonce), user: user.pubkey() })
-        .args(beta_factory::client::args::ApprovePending { nonce, eth_lock_id })
+        .args(beta_factory::client::args::ApprovePending { nonce, remote_lock_id: vec![lock_id] })
         .instruction()
         .unwrap();
     s.ctx.execute_instruction(ix, &[user]).unwrap().assert_success();
@@ -406,14 +449,17 @@ fn process(
     (txid, r)
 }
 
+/// `txid` is the anchor that settled component 0, the one remote leg
+/// every test composition has — `remote_0` maps to it, `remote_1`/`remote_2`
+/// stay `None` since these compositions never have more than one remote.
 fn exercise(s: &mut Setup, txid: [u8; 32], party_id: [u8; 32], user: Pubkey, nonce: u64, submitter: &Keypair) -> anchor_litesvm::TransactionResult {
     s.ctx.svm.expire_blockhash();
     let ix = LiteSvmProgram::new(beta_factory::ID)
         .accounts(beta_factory::client::accounts::ExerciseMint {
             config: s.config,
-            processed: anchor_pda(txid),
-            party: party_pda(party_id),
             pending: pending_pda(user, nonce),
+            composition: composition_pda(COMPOSITION_ID),
+            party: Some(party_pda(party_id)),
             user,
             user_beta: ata(user, s.beta_mint),
             beta_mint: s.beta_mint,
@@ -421,8 +467,15 @@ fn exercise(s: &mut Setup, txid: [u8; 32], party_id: [u8; 32], user: Pubkey, non
             fees: fees_pda(),
             token_program: litesvm_token::spl_token::ID,
             system_program: anchor_lang::solana_program::system_program::ID,
+            remote_0: Some(anchor_pda(txid)),
+            remote_1: None,
+            remote_2: None,
+            remote_3: None,
+            remote_4: None,
+            remote_5: None,
+            remote_6: None,
         })
-        .args(beta_factory::client::args::ExerciseMint { txid_le: txid })
+        .args(beta_factory::client::args::ExerciseMint {})
         .instruction()
         .unwrap();
     s.ctx.execute_instruction(ix, &[submitter]).unwrap()
@@ -464,6 +517,9 @@ fn burn_redeem(s: &mut Setup, burner: &Keypair, units: u64, to_eth: [u8; 20]) ->
 }
 
 fn beta_balance(s: &AnchorContext, owner: Pubkey, mint: Pubkey) -> u64 {
+    token_balance(s, owner, mint)
+}
+fn token_balance(s: &AnchorContext, owner: Pubkey, mint: Pubkey) -> u64 {
     let acc: litesvm_token::spl_token::state::Account = litesvm_token::get_spl_account(&s.svm, &ata(owner, mint)).unwrap();
     acc.amount
 }
@@ -523,7 +579,7 @@ fn mint_happy_path_queues_then_exercises() {
     assert_eq!(p.anchor_vout, 0);
     assert_eq!(p.seq, 1);
     let pend: beta_factory::accounts::Pending = s.ctx.get_account(&pending_pda(user.pubkey(), 1)).unwrap();
-    assert!(pend.queued);
+    assert_eq!(pend.queued_by, OP_ID);
 
     // v3: neither attested nor past the window → not yet.
     exercise(&mut s, txid, OP_ID, user.pubkey(), 1, &op).assert_anchor_error("NotAttested");
@@ -589,7 +645,7 @@ fn mint_with_wrong_lock_id_is_a_lie_even_though_pending_exists() {
     assert!(party(&s.ctx, OP_ID).dead);
     // The user's SOL is untouched and still expirable after the deadline.
     let pend: beta_factory::accounts::Pending = s.ctx.get_account(&pending_pda(user.pubkey(), 1)).unwrap();
-    assert!(!pend.queued);
+    assert_eq!(pend.queued_by, [0u8; 32]);
 }
 
 #[test]
@@ -896,7 +952,7 @@ fn a_mint_queued_by_a_retired_operator_can_be_re_anchored_by_a_live_one_or_cance
     r.assert_success();
     assert!(party(&s.ctx, op2_id).dead);
     let mk = |s: &Setup, prior: Option<Pubkey>| LiteSvmProgram::new(beta_factory::ID)
-        .accounts(beta_factory::client::accounts::ExpirePending { config: s.config, pending: pending_pda(u2.pubkey(), 1), vault: s.vault, user: u2.pubkey(), system_program: anchor_lang::solana_program::system_program::ID, prior_party: prior })
+        .accounts(beta_factory::client::accounts::ExpirePending { config: s.config, pending: pending_pda(u2.pubkey(), 1), composition: composition_pda(COMPOSITION_ID), vault: s.vault, user: u2.pubkey(), system_program: anchor_lang::solana_program::system_program::ID, token_program: litesvm_token::spl_token::ID, token_vault_authority: token_vault_authority_pda(), local_spl_0_mint: None, local_spl_0_user: None, local_spl_0_vault: None, local_spl_1_mint: None, local_spl_1_user: None, local_spl_1_vault: None, local_spl_2_mint: None, local_spl_2_user: None, local_spl_2_vault: None, prior_party: prior })
         .args(beta_factory::client::args::ExpirePending { nonce: 1 })
         .instruction().unwrap();
     advance_clock(&mut s.ctx, 101);
@@ -956,7 +1012,7 @@ fn unattested_mint_executes_only_after_the_challenge_window_and_settles_clean() 
     // The queued lock cannot be expired out from under the mint.
     advance_clock(&mut s.ctx, 90_000);
     let ix = LiteSvmProgram::new(beta_factory::ID)
-        .accounts(beta_factory::client::accounts::ExpirePending { config: s.config, pending: pending_pda(u1.pubkey(), 1), vault: s.vault, user: u1.pubkey(), system_program: anchor_lang::solana_program::system_program::ID, prior_party: None })
+        .accounts(beta_factory::client::accounts::ExpirePending { config: s.config, pending: pending_pda(u1.pubkey(), 1), composition: composition_pda(COMPOSITION_ID), vault: s.vault, user: u1.pubkey(), system_program: anchor_lang::solana_program::system_program::ID, token_program: litesvm_token::spl_token::ID, token_vault_authority: token_vault_authority_pda(), local_spl_0_mint: None, local_spl_0_user: None, local_spl_0_vault: None, local_spl_1_mint: None, local_spl_1_user: None, local_spl_1_vault: None, local_spl_2_mint: None, local_spl_2_user: None, local_spl_2_vault: None, prior_party: None })
         .args(beta_factory::client::args::ExpirePending { nonce: 1 })
         .instruction().unwrap();
     s.ctx.execute_instruction(ix, &[&op]).unwrap().assert_anchor_error("PendingQueued");
@@ -1010,9 +1066,9 @@ fn held_unattested_mint_is_cancelled_at_settle_and_the_user_can_expire() {
     settle(&mut s, mtx, None, Some(pending_pda(user.pubkey(), 1)), &op).assert_success();
     assert!(matches!(processed(&s.ctx, mtx).status, beta_factory::types::AnchorStatus::Cancelled));
     let p: beta_factory::accounts::Pending = s.ctx.get_account(&pending_pda(user.pubkey(), 1)).unwrap();
-    assert!(!p.queued);
+    assert_eq!(p.queued_by, [0u8; 32]);
     let ix = LiteSvmProgram::new(beta_factory::ID)
-        .accounts(beta_factory::client::accounts::ExpirePending { config: s.config, pending: pending_pda(user.pubkey(), 1), vault: s.vault, user: user.pubkey(), system_program: anchor_lang::solana_program::system_program::ID, prior_party: None })
+        .accounts(beta_factory::client::accounts::ExpirePending { config: s.config, pending: pending_pda(user.pubkey(), 1), composition: composition_pda(COMPOSITION_ID), vault: s.vault, user: user.pubkey(), system_program: anchor_lang::solana_program::system_program::ID, token_program: litesvm_token::spl_token::ID, token_vault_authority: token_vault_authority_pda(), local_spl_0_mint: None, local_spl_0_user: None, local_spl_0_vault: None, local_spl_1_mint: None, local_spl_1_user: None, local_spl_1_vault: None, local_spl_2_mint: None, local_spl_2_user: None, local_spl_2_vault: None, prior_party: None })
         .args(beta_factory::client::args::ExpirePending { nonce: 1 })
         .instruction().unwrap();
     let before = s.ctx.svm.get_balance(&user.pubkey()).unwrap();
@@ -1057,7 +1113,7 @@ fn expire_pending_refunds_after_deadline_only() {
     let deadline = now(&s.ctx) + 100;
     lock_sol(&mut s, &user, 5, 3, deadline);
     let mk = |s: &Setup| LiteSvmProgram::new(beta_factory::ID)
-        .accounts(beta_factory::client::accounts::ExpirePending { config: s.config, pending: pending_pda(user.pubkey(), 5), vault: s.vault, user: user.pubkey(), system_program: anchor_lang::solana_program::system_program::ID, prior_party: None })
+        .accounts(beta_factory::client::accounts::ExpirePending { config: s.config, pending: pending_pda(user.pubkey(), 5), composition: composition_pda(COMPOSITION_ID), vault: s.vault, user: user.pubkey(), system_program: anchor_lang::solana_program::system_program::ID, token_program: litesvm_token::spl_token::ID, token_vault_authority: token_vault_authority_pda(), local_spl_0_mint: None, local_spl_0_user: None, local_spl_0_vault: None, local_spl_1_mint: None, local_spl_1_user: None, local_spl_1_vault: None, local_spl_2_mint: None, local_spl_2_user: None, local_spl_2_vault: None, prior_party: None })
         .args(beta_factory::client::args::ExpirePending { nonce: 5 })
         .instruction().unwrap();
     s.ctx.execute_instruction(mk(&s), &[&user]).unwrap().assert_anchor_error("PendingNotExpired");
@@ -1145,6 +1201,449 @@ fn unbond_returns_the_bond_after_the_delay_and_retires_the_party() {
     let (_, r) = process(&mut s, AUD_ID, aud.pubkey(), (GENESIS_TXID, 0), &stmt_veto(OP_ID, [0u8; 32]), &aud, Extra { target_party: Some(party_pda(OP_ID)), ..Default::default() }, 1);
     r.assert_anchor_error("PartyDead");
     let _ = op;
+}
+
+/// A MINT statement for an arbitrary composition/component, not just the
+/// shared single-remote `COMPOSITION_ID` — used to prove §8's actual
+/// multi-network gating (more than one remote leg, on different chains).
+fn stmt_mint_component(composition_id: u64, component_index: u8, lock_id: u64, sol_user: Pubkey, nonce: u64, units: u64, deadline: i64) -> Vec<u8> {
+    let mut v = vec![KIND_MINT];
+    v.extend_from_slice(&composition_id.to_be_bytes());
+    v.push(component_index);
+    v.extend_from_slice(&lock_id.to_be_bytes());
+    v.extend_from_slice(sol_user.as_ref());
+    v.extend_from_slice(&nonce.to_be_bytes());
+    v.extend_from_slice(&units.to_be_bytes());
+    v.extend_from_slice(&(deadline as u64).to_be_bytes());
+    v
+}
+
+fn register_composition(s: &mut Setup, id: u64, components: Vec<beta_factory::types::Component>) {
+    let ix = LiteSvmProgram::new(beta_factory::ID)
+        .accounts(beta_factory::client::accounts::RegisterComposition {
+            config: s.config,
+            composition: composition_pda(id),
+            governance: s.governance.pubkey(),
+            system_program: anchor_lang::solana_program::system_program::ID,
+        })
+        .args(beta_factory::client::args::RegisterComposition { id, components })
+        .instruction()
+        .unwrap();
+    s.ctx.execute_instruction(ix, &[&s.governance.insecure_clone()]).unwrap().assert_success();
+}
+
+/// `spl_locals[i]` is `(mint, user_ata, vault_ata)` for the composition's
+/// i-th non-native local (Solana) leg, in composition order — up to 3,
+/// matching `local_spl_0/1/2`. Pass `&[]` when every local leg is native.
+fn lock_sol_composition(s: &mut Setup, user: &Keypair, nonce: u64, composition_id: u64, units: u64, deadline: i64, spl_locals: &[(Pubkey, Pubkey, Pubkey)]) {
+    let slot = |i: usize, pick: fn(&(Pubkey, Pubkey, Pubkey)) -> Pubkey| spl_locals.get(i).map(pick);
+    let ix = LiteSvmProgram::new(beta_factory::ID)
+        .accounts(beta_factory::client::accounts::LockSol {
+            config: s.config,
+            pending: pending_pda(user.pubkey(), nonce),
+            composition: composition_pda(composition_id),
+            vault: s.vault,
+            fees: fees_pda(),
+            beta_mint: s.beta_mint,
+            user_beta: ata(user.pubkey(), s.beta_mint),
+            user: user.pubkey(),
+            token_program: litesvm_token::spl_token::ID,
+            associated_token_program: spl_associated_token_account_interface::program::ID,
+            system_program: anchor_lang::solana_program::system_program::ID,
+            token_vault_authority: token_vault_authority_pda(),
+            local_spl_0_mint: slot(0, |t| t.0), local_spl_0_user: slot(0, |t| t.1), local_spl_0_vault: slot(0, |t| t.2),
+            local_spl_1_mint: slot(1, |t| t.0), local_spl_1_user: slot(1, |t| t.1), local_spl_1_vault: slot(1, |t| t.2),
+            local_spl_2_mint: slot(2, |t| t.0), local_spl_2_user: slot(2, |t| t.1), local_spl_2_vault: slot(2, |t| t.2),
+        })
+        .args(beta_factory::client::args::LockSol { nonce, composition_id, units, deadline, attest_fee: 0 })
+        .instruction()
+        .unwrap();
+    s.ctx.execute_instruction(ix, &[user]).unwrap().assert_success();
+}
+
+fn approve_pending_multi(s: &mut Setup, user: &Keypair, nonce: u64, remote_lock_id: Vec<u64>) {
+    let ix = LiteSvmProgram::new(beta_factory::ID)
+        .accounts(beta_factory::client::accounts::ApprovePending { pending: pending_pda(user.pubkey(), nonce), user: user.pubkey() })
+        .args(beta_factory::client::args::ApprovePending { nonce, remote_lock_id })
+        .instruction()
+        .unwrap();
+    s.ctx.execute_instruction(ix, &[user]).unwrap().assert_success();
+}
+
+/// `remotes[i]` is the anchor txid confirming component `i + 1` (index 0
+/// in `remotes` is remote component 0, i.e. composition component index
+/// 1, since component 0 is always the local SOL leg) — `None` for a slot
+/// this composition doesn't use.
+fn exercise_multi(
+    s: &mut Setup,
+    composition_id: u64,
+    party_id: [u8; 32],
+    user: Pubkey,
+    nonce: u64,
+    remotes: [Option<[u8; 32]>; 7],
+    submitter: &Keypair,
+) -> anchor_litesvm::TransactionResult {
+    s.ctx.svm.expire_blockhash();
+    let ix = LiteSvmProgram::new(beta_factory::ID)
+        .accounts(beta_factory::client::accounts::ExerciseMint {
+            config: s.config,
+            pending: pending_pda(user, nonce),
+            composition: composition_pda(composition_id),
+            party: Some(party_pda(party_id)),
+            user,
+            user_beta: ata(user, s.beta_mint),
+            beta_mint: s.beta_mint,
+            mint_authority: s.mint_authority,
+            fees: fees_pda(),
+            token_program: litesvm_token::spl_token::ID,
+            system_program: anchor_lang::solana_program::system_program::ID,
+            remote_0: remotes[0].map(anchor_pda),
+            remote_1: remotes[1].map(anchor_pda),
+            remote_2: remotes[2].map(anchor_pda),
+            remote_3: remotes[3].map(anchor_pda),
+            remote_4: remotes[4].map(anchor_pda),
+            remote_5: remotes[5].map(anchor_pda),
+            remote_6: remotes[6].map(anchor_pda),
+        })
+        .args(beta_factory::client::args::ExerciseMint {})
+        .instruction()
+        .unwrap();
+    s.ctx.execute_instruction(ix, &[submitter]).unwrap()
+}
+
+#[test]
+fn composition_with_three_networks_gates_on_every_remote_leg_independently() {
+    let mut s = setup();
+    let op = register_operator(&mut s);
+    let user = s.ctx.svm.create_funded_account(20 * SOL).unwrap();
+
+    // A composition spanning three distinct networks (DESIGN_V2 §8.2):
+    // the required local SOL leg, plus two *different* remote networks
+    // (e.g. Ethereum and a second reserve chain) — not just two tokens on
+    // the same one. `MAX_COMPONENTS` allows up to four.
+    const NETWORK_ETH: u64 = 1;
+    const NETWORK_OTHER: u64 = 2;
+    const MULTI_COMPOSITION_ID: u64 = 2;
+    register_composition(
+        &mut s,
+        MULTI_COMPOSITION_ID,
+        vec![
+            beta_factory::types::Component { network_id: 0, token_id: [0u8; 32], amount_per_unit: SOL },
+            beta_factory::types::Component { network_id: NETWORK_ETH, token_id: [0u8; 32], amount_per_unit: SOL },
+            beta_factory::types::Component { network_id: NETWORK_OTHER, token_id: [0u8; 32], amount_per_unit: SOL },
+        ],
+    );
+
+    let deadline = now(&s.ctx) + 86_400;
+    let nonce = 1;
+    let units = 3;
+    lock_sol_composition(&mut s, &user, nonce, MULTI_COMPOSITION_ID, units, deadline, &[]);
+    approve_pending_multi(&mut s, &user, nonce, vec![70, 80]); // lock ids for the two remote legs
+    assert_eq!(config(&s).pending_lamports, units * SOL);
+
+    // Anchor and attest remote component 0 (the "Ethereum" leg) only.
+    let stmt_a = stmt_mint_component(MULTI_COMPOSITION_ID, 0, 70, user.pubkey(), nonce, units, deadline);
+    let (tx_a, r) = process(&mut s, OP_ID, op.pubkey(), (GENESIS_TXID, 0), &stmt_a, &op, Extra { pending: Some(pending_pda(user.pubkey(), nonce)), ..Default::default() }, 1);
+    r.assert_success();
+    let (_, r) = attest(&mut s, OP_ID, &op, (tx_a, 0), tx_a, pending_pda(user.pubkey(), nonce), 2);
+    r.assert_success();
+
+    // One leg ready, the other never anchored: exercise still refuses.
+    exercise_multi(&mut s, MULTI_COMPOSITION_ID, OP_ID, user.pubkey(), nonce, [Some(tx_a), None, None, None, None, None, None], &op)
+        .assert_anchor_error("MissingAccount");
+    assert_eq!(beta_balance(&s.ctx, user.pubkey(), s.beta_mint), 0);
+
+    // Now anchor and attest remote component 1 (the "second reserve
+    // chain" leg) too — a genuinely different network from component 0.
+    let head = { let p = party(&s.ctx, OP_ID); p.anchor_txid_le };
+    let stmt_b = stmt_mint_component(MULTI_COMPOSITION_ID, 1, 80, user.pubkey(), nonce, units, deadline);
+    let (tx_b, r) = process(&mut s, OP_ID, op.pubkey(), (head, 0), &stmt_b, &op, Extra { pending: Some(pending_pda(user.pubkey(), nonce)), ..Default::default() }, 3);
+    r.assert_success();
+    let (_, r) = attest(&mut s, OP_ID, &op, (tx_b, 0), tx_b, pending_pda(user.pubkey(), nonce), 4);
+    r.assert_success();
+
+    // Both remote legs ready on both networks: exercise now succeeds.
+    exercise_multi(&mut s, MULTI_COMPOSITION_ID, OP_ID, user.pubkey(), nonce, [Some(tx_a), Some(tx_b), None, None, None, None, None], &op).assert_success();
+    assert_eq!(beta_balance(&s.ctx, user.pubkey(), s.beta_mint), units * UNIT);
+    let c = config(&s);
+    assert_eq!(c.pending_lamports, 0);
+    assert_eq!(c.reserve_lamports, units * SOL); // priced off the local leg only
+    assert_eq!(c.eth_claims_units, units);
+    assert!(matches!(processed(&s.ctx, tx_a).status, beta_factory::types::AnchorStatus::Exercised));
+    assert!(matches!(processed(&s.ctx, tx_b).status, beta_factory::types::AnchorStatus::Exercised));
+    assert!(s.ctx.svm.get_account(&pending_pda(user.pubkey(), nonce)).is_none());
+}
+
+#[test]
+fn composition_spends_the_full_budget_on_seven_remote_networks() {
+    let mut s = setup();
+    let op = register_operator(&mut s);
+    let user = s.ctx.svm.create_funded_account(20 * SOL).unwrap();
+
+    // §8.12's flat budget maxed out the other way from the local test
+    // below: 1 mandatory local leg + all 7 remaining slots spent on 7
+    // *different* remote networks, one token each — proving exercise_mint
+    // actually gates on more than the old hardcoded 3 remote slots.
+    const MULTI7_COMPOSITION_ID: u64 = 5;
+    let mut components = vec![beta_factory::types::Component { network_id: 0, token_id: [0u8; 32], amount_per_unit: SOL }];
+    for net in 1..=7u64 {
+        components.push(beta_factory::types::Component { network_id: net, token_id: [0u8; 32], amount_per_unit: SOL });
+    }
+    register_composition(&mut s, MULTI7_COMPOSITION_ID, components);
+
+    let deadline = now(&s.ctx) + 86_400;
+    let nonce = 1;
+    let units = 1;
+    lock_sol_composition(&mut s, &user, nonce, MULTI7_COMPOSITION_ID, units, deadline, &[]);
+    let lock_ids: Vec<u64> = (0..7).map(|i| 100 + i).collect();
+    approve_pending_multi(&mut s, &user, nonce, lock_ids.clone());
+
+    let mut head = (GENESIS_TXID, 0u32);
+    let mut txids = [[0u8; 32]; 7];
+    for i in 0..7usize {
+        let stmt = stmt_mint_component(MULTI7_COMPOSITION_ID, i as u8, lock_ids[i], user.pubkey(), nonce, units, deadline);
+        let (tx, r) = process(&mut s, OP_ID, op.pubkey(), head, &stmt, &op, Extra { pending: Some(pending_pda(user.pubkey(), nonce)), ..Default::default() }, i as u8 + 1);
+        r.assert_success();
+        let (atx, r) = attest(&mut s, OP_ID, &op, (tx, 0), tx, pending_pda(user.pubkey(), nonce), i as u8 + 50);
+        r.assert_success();
+        txids[i] = tx;
+        head = (atx, 0);
+    }
+
+    let remotes: [Option<[u8; 32]>; 7] = std::array::from_fn(|i| Some(txids[i]));
+    exercise_multi(&mut s, MULTI7_COMPOSITION_ID, OP_ID, user.pubkey(), nonce, remotes, &op).assert_success();
+    assert_eq!(beta_balance(&s.ctx, user.pubkey(), s.beta_mint), units * UNIT);
+    for tx in txids {
+        assert!(matches!(processed(&s.ctx, tx).status, beta_factory::types::AnchorStatus::Exercised));
+    }
+    assert!(s.ctx.svm.get_account(&pending_pda(user.pubkey(), nonce)).is_none());
+}
+
+#[test]
+fn composition_spans_five_named_evm_networks() {
+    let mut s = setup();
+    let op = register_operator(&mut s);
+    let user = s.ctx.svm.create_funded_account(20 * SOL).unwrap();
+
+    // Real, verified EVM chain IDs for Base and Arbitrum; the other three
+    // don't have a chain ID Claude could verify (Hyperliquid's HyperEVM
+    // is believed to be 999 but unconfirmed here; Robinhood isn't known
+    // to run a public chain at all; Tempo's isn't confirmed either) — so
+    // those three use placeholder IDs above any real chain's range,
+    // clearly not asserted as the real thing. The composition/exercise
+    // mechanics being tested don't depend on the ID being real; only that
+    // it's a distinct `network_id` judged on its own statement-chain leg.
+    const NETWORK_BASE: u64 = 8453;
+    const NETWORK_ARBITRUM: u64 = 42161;
+    const NETWORK_HYPERLIQUID_PLACEHOLDER: u64 = 1_000_000_001;
+    const NETWORK_ROBINHOOD_PLACEHOLDER: u64 = 1_000_000_002;
+    const NETWORK_TEMPO_PLACEHOLDER: u64 = 1_000_000_003;
+    let networks = [
+        NETWORK_BASE,
+        NETWORK_ARBITRUM,
+        NETWORK_HYPERLIQUID_PLACEHOLDER,
+        NETWORK_ROBINHOOD_PLACEHOLDER,
+        NETWORK_TEMPO_PLACEHOLDER,
+    ];
+
+    const FIVE_NETWORK_COMPOSITION_ID: u64 = 6;
+    let mut components = vec![beta_factory::types::Component { network_id: 0, token_id: [0u8; 32], amount_per_unit: SOL }];
+    for net in networks {
+        components.push(beta_factory::types::Component { network_id: net, token_id: [0u8; 32], amount_per_unit: SOL });
+    }
+    register_composition(&mut s, FIVE_NETWORK_COMPOSITION_ID, components);
+
+    let deadline = now(&s.ctx) + 86_400;
+    let nonce = 1;
+    let units = 2;
+    lock_sol_composition(&mut s, &user, nonce, FIVE_NETWORK_COMPOSITION_ID, units, deadline, &[]);
+    assert_eq!(config(&s).pending_lamports, units * SOL);
+
+    let lock_ids: Vec<u64> = (0..5).map(|i| 200 + i).collect();
+    approve_pending_multi(&mut s, &user, nonce, lock_ids.clone());
+
+    let mut head = (GENESIS_TXID, 0u32);
+    let mut txids = [[0u8; 32]; 5];
+    for i in 0..5usize {
+        let stmt = stmt_mint_component(FIVE_NETWORK_COMPOSITION_ID, i as u8, lock_ids[i], user.pubkey(), nonce, units, deadline);
+        let (tx, r) = process(&mut s, OP_ID, op.pubkey(), head, &stmt, &op, Extra { pending: Some(pending_pda(user.pubkey(), nonce)), ..Default::default() }, i as u8 + 1);
+        r.assert_success();
+        // Attest all but the last leg (Tempo) — proves gating still holds
+        // with a mix of fast (ATTESTed) and unresolved legs, not just
+        // all-attested like the 7-network test.
+        if i < 4 {
+            let (atx, r) = attest(&mut s, OP_ID, &op, (tx, 0), tx, pending_pda(user.pubkey(), nonce), i as u8 + 50);
+            r.assert_success();
+            head = (atx, 0);
+        } else {
+            head = (tx, 0);
+        }
+        txids[i] = tx;
+    }
+
+    let remotes: [Option<[u8; 32]>; 7] = std::array::from_fn(|i| if i < 5 { Some(txids[i]) } else { None });
+    // Tempo's leg is neither attested nor past its challenge window yet.
+    exercise_multi(&mut s, FIVE_NETWORK_COMPOSITION_ID, OP_ID, user.pubkey(), nonce, remotes, &op)
+        .assert_anchor_error("NotAttested");
+    assert_eq!(beta_balance(&s.ctx, user.pubkey(), s.beta_mint), 0);
+
+    // Past the challenge window, the slow (unattested) Tempo leg is ready too.
+    advance_clock(&mut s.ctx, T_CHALLENGE + 1);
+    exercise_multi(&mut s, FIVE_NETWORK_COMPOSITION_ID, OP_ID, user.pubkey(), nonce, remotes, &op).assert_success();
+    assert_eq!(beta_balance(&s.ctx, user.pubkey(), s.beta_mint), units * UNIT);
+    for tx in txids {
+        assert!(matches!(processed(&s.ctx, tx).status, beta_factory::types::AnchorStatus::Exercised));
+    }
+    assert!(s.ctx.svm.get_account(&pending_pda(user.pubkey(), nonce)).is_none());
+}
+
+#[test]
+fn composition_can_lock_more_than_one_solana_token_with_no_operator_needed() {
+    let mut s = setup();
+    let user = s.ctx.svm.create_funded_account(20 * SOL).unwrap();
+
+    // A second Solana-native asset alongside native SOL, both as *local*
+    // legs of the same composition (DESIGN_V2 §8.10's full symmetric
+    // revision: Solana may hold more than one token, the same as any
+    // remote network can).
+    let spl_mint = litesvm_token::CreateMint::new(&mut s.ctx.svm, &user).decimals(6).send().unwrap();
+    let user_ata = litesvm_token::CreateAssociatedTokenAccount::new(&mut s.ctx.svm, &user, &spl_mint).send().unwrap();
+    litesvm_token::MintTo::new(&mut s.ctx.svm, &user, &spl_mint, &user_ata, 1_000_000_000).send().unwrap();
+    let vault_ata = ata(token_vault_authority_pda(), spl_mint);
+
+    const LOCAL_MULTI_COMPOSITION_ID: u64 = 3;
+    let spl_amount_per_unit: u64 = 1_000;
+    register_composition(
+        &mut s,
+        LOCAL_MULTI_COMPOSITION_ID,
+        vec![
+            beta_factory::types::Component { network_id: 0, token_id: [0u8; 32], amount_per_unit: SOL },
+            beta_factory::types::Component { network_id: 0, token_id: spl_mint.to_bytes(), amount_per_unit: spl_amount_per_unit },
+        ],
+    );
+
+    let deadline = now(&s.ctx) + 86_400;
+    let units = 5;
+    let nonce = 1;
+    let spl_before = token_balance(&s.ctx, user.pubkey(), spl_mint);
+    lock_sol_composition(&mut s, &user, nonce, LOCAL_MULTI_COMPOSITION_ID, units, deadline, &[(spl_mint, user_ata, vault_ata)]);
+
+    // Both local legs actually moved, atomically, in the one lock_sol call.
+    assert_eq!(s.ctx.svm.get_balance(&s.vault).unwrap(), units * SOL);
+    assert_eq!(token_balance(&s.ctx, token_vault_authority_pda(), spl_mint), units * spl_amount_per_unit);
+    assert_eq!(token_balance(&s.ctx, user.pubkey(), spl_mint), spl_before - units * spl_amount_per_unit);
+    assert_eq!(config(&s).pending_lamports, units * SOL);
+
+    // No remote legs at all: nothing to approve for, and no operator is
+    // ever involved — exercise succeeds immediately, permissionlessly,
+    // with `party` and every `remote_N` left out entirely.
+    approve_pending_multi(&mut s, &user, nonce, vec![]);
+    let ix = LiteSvmProgram::new(beta_factory::ID)
+        .accounts(beta_factory::client::accounts::ExerciseMint {
+            config: s.config,
+            pending: pending_pda(user.pubkey(), nonce),
+            composition: composition_pda(LOCAL_MULTI_COMPOSITION_ID),
+            party: None,
+            user: user.pubkey(),
+            user_beta: ata(user.pubkey(), s.beta_mint),
+            beta_mint: s.beta_mint,
+            mint_authority: s.mint_authority,
+            fees: fees_pda(),
+            token_program: litesvm_token::spl_token::ID,
+            system_program: anchor_lang::solana_program::system_program::ID,
+            remote_0: None,
+            remote_1: None,
+            remote_2: None,
+            remote_3: None,
+            remote_4: None,
+            remote_5: None,
+            remote_6: None,
+        })
+        .args(beta_factory::client::args::ExerciseMint {})
+        .instruction()
+        .unwrap();
+    s.ctx.svm.expire_blockhash();
+    s.ctx.execute_instruction(ix, &[&user]).unwrap().assert_success();
+
+    assert_eq!(beta_balance(&s.ctx, user.pubkey(), s.beta_mint), units * UNIT);
+    let c = config(&s);
+    assert_eq!(c.pending_lamports, 0);
+    assert_eq!(c.reserve_lamports, units * SOL);
+    assert!(s.ctx.svm.get_account(&pending_pda(user.pubkey(), nonce)).is_none());
+
+    // The SPL leg is still fully backed in the vault's own ATA — no
+    // global tally tracks it, its balance is the reserve.
+    assert_eq!(token_balance(&s.ctx, token_vault_authority_pda(), spl_mint), units * spl_amount_per_unit);
+}
+
+#[test]
+fn expire_pending_refunds_both_native_and_spl_local_legs() {
+    let mut s = setup();
+    let user = s.ctx.svm.create_funded_account(20 * SOL).unwrap();
+
+    let spl_mint = litesvm_token::CreateMint::new(&mut s.ctx.svm, &user).decimals(6).send().unwrap();
+    let user_ata = litesvm_token::CreateAssociatedTokenAccount::new(&mut s.ctx.svm, &user, &spl_mint).send().unwrap();
+    litesvm_token::MintTo::new(&mut s.ctx.svm, &user, &spl_mint, &user_ata, 1_000_000_000).send().unwrap();
+    let vault_ata = ata(token_vault_authority_pda(), spl_mint);
+
+    const COMPOSITION_ID_2: u64 = 4;
+    let spl_amount_per_unit: u64 = 2_000;
+    register_composition(
+        &mut s,
+        COMPOSITION_ID_2,
+        vec![
+            beta_factory::types::Component { network_id: 0, token_id: [0u8; 32], amount_per_unit: SOL },
+            beta_factory::types::Component { network_id: 0, token_id: spl_mint.to_bytes(), amount_per_unit: spl_amount_per_unit },
+        ],
+    );
+
+    let deadline = now(&s.ctx) + 100;
+    let units = 3;
+    let nonce = 1;
+    let sol_before = s.ctx.svm.get_balance(&user.pubkey()).unwrap();
+    let spl_before = token_balance(&s.ctx, user.pubkey(), spl_mint);
+    lock_sol_composition(&mut s, &user, nonce, COMPOSITION_ID_2, units, deadline, &[(spl_mint, user_ata, vault_ata)]);
+    assert_eq!(token_balance(&s.ctx, token_vault_authority_pda(), spl_mint), units * spl_amount_per_unit);
+
+    advance_clock(&mut s.ctx, 101);
+    s.ctx.svm.expire_blockhash();
+    let ix = LiteSvmProgram::new(beta_factory::ID)
+        .accounts(beta_factory::client::accounts::ExpirePending {
+            config: s.config,
+            pending: pending_pda(user.pubkey(), nonce),
+            composition: composition_pda(COMPOSITION_ID_2),
+            vault: s.vault,
+            user: user.pubkey(),
+            token_program: litesvm_token::spl_token::ID,
+            system_program: anchor_lang::solana_program::system_program::ID,
+            prior_party: None,
+            token_vault_authority: token_vault_authority_pda(),
+            local_spl_0_mint: Some(spl_mint),
+            local_spl_0_user: Some(user_ata),
+            local_spl_0_vault: Some(vault_ata),
+            local_spl_1_mint: None,
+            local_spl_1_user: None,
+            local_spl_1_vault: None,
+            local_spl_2_mint: None,
+            local_spl_2_user: None,
+            local_spl_2_vault: None,
+        })
+        .args(beta_factory::client::args::ExpirePending { nonce })
+        .instruction()
+        .unwrap();
+    s.ctx.execute_instruction(ix, &[&user]).unwrap().assert_success();
+
+    // `sol_before` was captured before the lock, so the units*SOL round-
+    // trips through the vault and back — net change is just the small
+    // fees/rent this test's several transactions spent, not a gain.
+    let after = s.ctx.svm.get_balance(&user.pubkey()).unwrap();
+    assert!(after + SOL / 100 >= sol_before);
+    assert!(after < sol_before);
+    assert_eq!(token_balance(&s.ctx, user.pubkey(), spl_mint), spl_before);
+    assert_eq!(token_balance(&s.ctx, token_vault_authority_pda(), spl_mint), 0);
+    assert_eq!(s.ctx.svm.get_balance(&s.vault).unwrap_or(0), 0);
+    assert_eq!(config(&s).pending_lamports, 0);
+    assert!(s.ctx.svm.get_account(&pending_pda(user.pubkey(), nonce)).is_none());
 }
 
 #[test]

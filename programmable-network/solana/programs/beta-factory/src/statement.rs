@@ -4,24 +4,36 @@ use sha2::{Digest, Sha256};
 use crate::constants::*;
 use crate::errors::FactoryError;
 
-/// Canonical statement encodings, identical on Solana and Ethereum so
-/// `sha256(bytes)` matches on both (DESIGN_V2 §6.3). All integers big-endian.
+/// Canonical statement encodings, identical on Solana and every reserve
+/// chain so `sha256(bytes)` matches everywhere (DESIGN_V2 §6.3, MINT
+/// generalized for compositions in §8.4). All integers big-endian.
 ///
-/// MINT    = 0x01 | eth_lock_id u64 | sol_user 32 | nonce u64 | units u64 | deadline i64   (65 bytes)
-/// RELEASE = 0x02 | eth_lock_id u64 | burn_id u64 | to_eth 20 | units u64                  (45 bytes)
-/// VETO    = 0x03 | target_party_id 32 | target_txid_le 32 (all-zero = dead-veto)           (65 bytes)
-/// CANCEL  = 0x04 | eth_lock_id u64                                                          (9 bytes)
+/// MINT    = 0x01 | composition_id u64 | component_index u8 | lock_id u64 | sol_user 32 | nonce u64 | units u64 | deadline i64  (74 bytes)
+/// RELEASE = 0x02 | lock_id u64 | burn_id u64 | to 20 | units u64                                                               (45 bytes)
+/// VETO    = 0x03 | target_party_id 32 | target_txid_le 32 (all-zero = dead-veto)                                                (65 bytes)
+/// CANCEL  = 0x04 | lock_id u64                                                                                                  (9 bytes)
+///
+/// MINT is generalized for compositions (§8.4); RELEASE and CANCEL are
+/// not yet (§8.6, "redeem generalizes the same way" — designed, not
+/// built this pass) and keep the single-component shape §7 already has,
+/// just with `eth_lock_id` renamed `lock_id` since it was never really
+/// Ethereum-specific. MINT is NOT YET matched on any reserve-chain vault
+/// (§8.9 step 2) — this is the Solana hub-side half; a reserve chain's
+/// own contract needs the equivalent update before any multi-component
+/// mint can complete end to end.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Statement {
     Mint {
-        eth_lock_id: u64,
+        composition_id: u64,
+        component_index: u8,
+        lock_id: u64,
         sol_user: Pubkey,
         nonce: u64,
         units: u64,
         deadline: i64,
     },
     Release {
-        eth_lock_id: u64,
+        lock_id: u64,
         burn_id: u64,
         to_eth: [u8; 20],
         units: u64,
@@ -31,7 +43,7 @@ pub enum Statement {
         target_txid_le: [u8; 32],
     },
     Cancel {
-        eth_lock_id: u64,
+        lock_id: u64,
     },
     /// v3: "that MINT/RELEASE is true, and I escrow for it" (33 bytes).
     Attest {
@@ -74,13 +86,15 @@ impl Statement {
         require!(!b.is_empty(), FactoryError::MalformedStatement);
         match b[0] {
             KIND_MINT => {
-                require!(b.len() == 65, FactoryError::MalformedStatement);
+                require!(b.len() == 74, FactoryError::MalformedStatement);
                 Ok(Statement::Mint {
-                    eth_lock_id: u64_at(b, 1),
-                    sol_user: Pubkey::new_from_array(b[9..41].try_into().unwrap()),
-                    nonce: u64_at(b, 41),
-                    units: u64_at(b, 49),
-                    deadline: u64_at(b, 57) as i64,
+                    composition_id: u64_at(b, 1),
+                    component_index: b[9],
+                    lock_id: u64_at(b, 10),
+                    sol_user: Pubkey::new_from_array(b[18..50].try_into().unwrap()),
+                    nonce: u64_at(b, 50),
+                    units: u64_at(b, 58),
+                    deadline: u64_at(b, 66) as i64,
                 })
             }
             KIND_RELEASE => {
@@ -88,7 +102,7 @@ impl Statement {
                 let mut to_eth = [0u8; 20];
                 to_eth.copy_from_slice(&b[17..37]);
                 Ok(Statement::Release {
-                    eth_lock_id: u64_at(b, 1),
+                    lock_id: u64_at(b, 1),
                     burn_id: u64_at(b, 9),
                     to_eth,
                     units: u64_at(b, 37),
@@ -108,7 +122,7 @@ impl Statement {
             KIND_CANCEL => {
                 require!(b.len() == 9, FactoryError::MalformedStatement);
                 Ok(Statement::Cancel {
-                    eth_lock_id: u64_at(b, 1),
+                    lock_id: u64_at(b, 1),
                 })
             }
             KIND_ATTEST | KIND_CLEAR | KIND_ALIVE => {
@@ -130,25 +144,29 @@ impl Statement {
         v.push(self.kind());
         match self {
             Statement::Mint {
-                eth_lock_id,
+                composition_id,
+                component_index,
+                lock_id,
                 sol_user,
                 nonce,
                 units,
                 deadline,
             } => {
-                v.extend_from_slice(&eth_lock_id.to_be_bytes());
+                v.extend_from_slice(&composition_id.to_be_bytes());
+                v.push(*component_index);
+                v.extend_from_slice(&lock_id.to_be_bytes());
                 v.extend_from_slice(sol_user.as_ref());
                 v.extend_from_slice(&nonce.to_be_bytes());
                 v.extend_from_slice(&units.to_be_bytes());
                 v.extend_from_slice(&(*deadline as u64).to_be_bytes());
             }
             Statement::Release {
-                eth_lock_id,
+                lock_id,
                 burn_id,
                 to_eth,
                 units,
             } => {
-                v.extend_from_slice(&eth_lock_id.to_be_bytes());
+                v.extend_from_slice(&lock_id.to_be_bytes());
                 v.extend_from_slice(&burn_id.to_be_bytes());
                 v.extend_from_slice(to_eth);
                 v.extend_from_slice(&units.to_be_bytes());
@@ -160,8 +178,8 @@ impl Statement {
                 v.extend_from_slice(target_party_id);
                 v.extend_from_slice(target_txid_le);
             }
-            Statement::Cancel { eth_lock_id } => {
-                v.extend_from_slice(&eth_lock_id.to_be_bytes());
+            Statement::Cancel { lock_id } => {
+                v.extend_from_slice(&lock_id.to_be_bytes());
             }
             Statement::Attest { target_txid_le } | Statement::Clear { target_txid_le } => {
                 v.extend_from_slice(target_txid_le);
@@ -182,14 +200,16 @@ mod tests {
     fn roundtrip_all_kinds() {
         let cases = vec![
             Statement::Mint {
-                eth_lock_id: 7,
+                composition_id: 1,
+                component_index: 1,
+                lock_id: 7,
                 sol_user: Pubkey::new_unique(),
                 nonce: 3,
                 units: 2,
                 deadline: 1_800_000_000,
             },
             Statement::Release {
-                eth_lock_id: 7,
+                lock_id: 7,
                 burn_id: 9,
                 to_eth: [0xabu8; 20],
                 units: 1,
@@ -198,7 +218,7 @@ mod tests {
                 target_party_id: [1u8; 32],
                 target_txid_le: [0u8; 32],
             },
-            Statement::Cancel { eth_lock_id: 5 },
+            Statement::Cancel { lock_id: 5 },
             Statement::Attest { target_txid_le: [2u8; 32] },
             Statement::Clear { target_txid_le: [3u8; 32] },
             Statement::Alive { target_party_id: [4u8; 32] },

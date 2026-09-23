@@ -1,0 +1,1560 @@
+[
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "_governance",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "_ipowHeadersAddr",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "_selfNetworkId",
+        "type": "uint256"
+      },
+      {
+        "components": [
+          {
+            "internalType": "uint64",
+            "name": "tChallengeSecs",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64",
+            "name": "tSkipSecs",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64",
+            "name": "refundMarginSecs",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64",
+            "name": "unbondDelaySecs",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint256",
+            "name": "minOperatorBond",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "minAuditorBond",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "slashWeiPerUnit",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "vetoSlashWei",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "vetoRewardWei",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint16",
+            "name": "bountyBps",
+            "type": "uint16"
+          }
+        ],
+        "internalType": "struct BetaHub.Params",
+        "name": "_params",
+        "type": "tuple"
+      },
+      {
+        "internalType": "string",
+        "name": "tokenName",
+        "type": "string"
+      },
+      {
+        "internalType": "string",
+        "name": "tokenSymbol",
+        "type": "string"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
+  },
+  {
+    "inputs": [],
+    "name": "AlreadyApproved",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "AlreadyProcessed",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "BadAnchorPayload",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "BadAnchorState",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "BondTooSmall",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ComponentHeldOrNotReady",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "CompositionExists",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "DuplicateComponent",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "IncompleteRemoteComponents",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidComponents",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidHeader",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidMerkleBranch",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidParams",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "KindMismatch",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "MalformedStatement",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "MalformedTx",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "NoComposition",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "NoLocalComponent",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "NoParty",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "NoPending",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "NotApproved",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "NotAuditor",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "NotOnStatementChain",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "NotOperator",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "NotPendingUser",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "PartyDead",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "PartyExists",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "Paused",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "PendingExists",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "QueuedByLiveOperator",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ReentrancyGuardReentrantCall",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "RefundNotReady",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "RemoteCountMismatch",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      }
+    ],
+    "name": "SafeERC20FailedOperation",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "SkipNotReady",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "StatementHashMismatch",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "TargetNotProcessed",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "TooManyLocal",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "TransferFailed",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "Unauthorized",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "UnbondNotReady",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "UnbondNotRequested",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "UnsupportedKind",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "UnsupportedNetwork",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "WitnessSerialization",
+    "type": "error"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "partyId",
+        "type": "bytes32"
+      },
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "txidLE",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint8",
+        "name": "kind",
+        "type": "uint8"
+      },
+      {
+        "indexed": false,
+        "internalType": "enum HubAnchorJudge.AnchorStatus",
+        "name": "status",
+        "type": "uint8"
+      }
+    ],
+    "name": "AnchorProcessed",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "txidLE",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "bool",
+        "name": "held",
+        "type": "bool"
+      }
+    ],
+    "name": "ComponentHeld",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint64",
+        "name": "id",
+        "type": "uint64"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "componentCount",
+        "type": "uint256"
+      }
+    ],
+    "name": "CompositionRegistered",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "pendingId",
+        "type": "bytes32"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "user",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      }
+    ],
+    "name": "Minted",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "partyId",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "enum HubPartyRegistry.PartyKind",
+        "name": "kind",
+        "type": "uint8"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "owner",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "bond",
+        "type": "uint256"
+      }
+    ],
+    "name": "PartyRegistered",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "pendingId",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint64[]",
+        "name": "remoteLockId",
+        "type": "uint64[]"
+      }
+    ],
+    "name": "PendingApproved",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "pendingId",
+        "type": "bytes32"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "user",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint64",
+        "name": "nonce",
+        "type": "uint64"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint64",
+        "name": "compositionId",
+        "type": "uint64"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint64",
+        "name": "units",
+        "type": "uint64"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint64",
+        "name": "deadline",
+        "type": "uint64"
+      }
+    ],
+    "name": "PendingCreated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "pendingId",
+        "type": "bytes32"
+      }
+    ],
+    "name": "PendingExpired",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "partyId",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "submitter",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "remainderTo",
+        "type": "address"
+      }
+    ],
+    "name": "Slashed",
+    "type": "event"
+  },
+  {
+    "inputs": [],
+    "name": "BPS_DENOM",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "KIND_ALIVE",
+    "outputs": [
+      {
+        "internalType": "uint8",
+        "name": "",
+        "type": "uint8"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "KIND_ATTEST",
+    "outputs": [
+      {
+        "internalType": "uint8",
+        "name": "",
+        "type": "uint8"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "KIND_CANCEL",
+    "outputs": [
+      {
+        "internalType": "uint8",
+        "name": "",
+        "type": "uint8"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "KIND_CLEAR",
+    "outputs": [
+      {
+        "internalType": "uint8",
+        "name": "",
+        "type": "uint8"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "KIND_MINT",
+    "outputs": [
+      {
+        "internalType": "uint8",
+        "name": "",
+        "type": "uint8"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "KIND_RELEASE",
+    "outputs": [
+      {
+        "internalType": "uint8",
+        "name": "",
+        "type": "uint8"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "KIND_VETO",
+    "outputs": [
+      {
+        "internalType": "uint8",
+        "name": "",
+        "type": "uint8"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "MAX_COMPONENTS",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "MAX_LOCAL_COMPONENTS",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "SELF_NETWORK_ID",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "SOLANA_NETWORK_ID",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "name": "anchors",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "partyId",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint8",
+        "name": "kind",
+        "type": "uint8"
+      },
+      {
+        "internalType": "enum HubAnchorJudge.AnchorStatus",
+        "name": "status",
+        "type": "uint8"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "statementHash",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint64",
+        "name": "blockHeight",
+        "type": "uint64"
+      },
+      {
+        "internalType": "uint64",
+        "name": "processedAt",
+        "type": "uint64"
+      },
+      {
+        "internalType": "uint64",
+        "name": "compositionId",
+        "type": "uint64"
+      },
+      {
+        "internalType": "uint8",
+        "name": "componentIndex",
+        "type": "uint8"
+      },
+      {
+        "internalType": "uint64",
+        "name": "lockId",
+        "type": "uint64"
+      },
+      {
+        "internalType": "uint64",
+        "name": "units",
+        "type": "uint64"
+      },
+      {
+        "internalType": "uint64",
+        "name": "challengeUntil",
+        "type": "uint64"
+      },
+      {
+        "internalType": "bool",
+        "name": "held",
+        "type": "bool"
+      },
+      {
+        "internalType": "bool",
+        "name": "settled",
+        "type": "bool"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "pendingId",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "partyId",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "address",
+        "name": "owner",
+        "type": "address"
+      }
+    ],
+    "name": "approveOperator",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint64",
+        "name": "nonce",
+        "type": "uint64"
+      },
+      {
+        "internalType": "uint64[]",
+        "name": "remoteLockId",
+        "type": "uint64[]"
+      }
+    ],
+    "name": "approvePending",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "name": "approvedOperators",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint64",
+        "name": "id",
+        "type": "uint64"
+      }
+    ],
+    "name": "compositionExists",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "user",
+        "type": "address"
+      },
+      {
+        "internalType": "uint64",
+        "name": "nonce",
+        "type": "uint64"
+      }
+    ],
+    "name": "exerciseMint",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "minted",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "user",
+        "type": "address"
+      },
+      {
+        "internalType": "uint64",
+        "name": "nonce",
+        "type": "uint64"
+      }
+    ],
+    "name": "expirePending",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "fundRewards",
+    "outputs": [],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint64",
+        "name": "id",
+        "type": "uint64"
+      }
+    ],
+    "name": "getComposition",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "networkId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "address",
+            "name": "tokenId",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "amountPerUnit",
+            "type": "uint256"
+          }
+        ],
+        "internalType": "struct HubCompositionRegistry.Component[]",
+        "name": "",
+        "type": "tuple[]"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "governance",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "insurance",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "ipowHeaders",
+    "outputs": [
+      {
+        "internalType": "contract IIPoWV1HeadersView",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint64",
+        "name": "compositionId",
+        "type": "uint64"
+      },
+      {
+        "internalType": "uint64",
+        "name": "nonce",
+        "type": "uint64"
+      },
+      {
+        "internalType": "uint64",
+        "name": "units",
+        "type": "uint64"
+      },
+      {
+        "internalType": "uint64",
+        "name": "deadline",
+        "type": "uint64"
+      }
+    ],
+    "name": "lockLocal",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "pendingId",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "name": "mintAttester",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "params",
+    "outputs": [
+      {
+        "internalType": "uint64",
+        "name": "tChallengeSecs",
+        "type": "uint64"
+      },
+      {
+        "internalType": "uint64",
+        "name": "tSkipSecs",
+        "type": "uint64"
+      },
+      {
+        "internalType": "uint64",
+        "name": "refundMarginSecs",
+        "type": "uint64"
+      },
+      {
+        "internalType": "uint64",
+        "name": "unbondDelaySecs",
+        "type": "uint64"
+      },
+      {
+        "internalType": "uint256",
+        "name": "minOperatorBond",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "minAuditorBond",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "slashWeiPerUnit",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "vetoSlashWei",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "vetoRewardWei",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint16",
+        "name": "bountyBps",
+        "type": "uint16"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "name": "parties",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "exists",
+        "type": "bool"
+      },
+      {
+        "internalType": "address",
+        "name": "owner",
+        "type": "address"
+      },
+      {
+        "internalType": "enum HubPartyRegistry.PartyKind",
+        "name": "kind",
+        "type": "uint8"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "anchorTxidLE",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint32",
+        "name": "anchorVout",
+        "type": "uint32"
+      },
+      {
+        "internalType": "uint64",
+        "name": "seq",
+        "type": "uint64"
+      },
+      {
+        "internalType": "uint256",
+        "name": "bond",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bool",
+        "name": "dead",
+        "type": "bool"
+      },
+      {
+        "internalType": "uint64",
+        "name": "unbondRequestedAt",
+        "type": "uint64"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "paused",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "name": "pending",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "user",
+        "type": "address"
+      },
+      {
+        "internalType": "uint64",
+        "name": "nonce",
+        "type": "uint64"
+      },
+      {
+        "internalType": "uint64",
+        "name": "compositionId",
+        "type": "uint64"
+      },
+      {
+        "internalType": "uint64",
+        "name": "units",
+        "type": "uint64"
+      },
+      {
+        "internalType": "uint64",
+        "name": "deadline",
+        "type": "uint64"
+      },
+      {
+        "internalType": "bool",
+        "name": "approved",
+        "type": "bool"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "queuedBy",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint64",
+        "name": "createdAt",
+        "type": "uint64"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "pendingId",
+        "type": "bytes32"
+      }
+    ],
+    "name": "pendingRemoteAnchorTxid",
+    "outputs": [
+      {
+        "internalType": "bytes32[]",
+        "name": "",
+        "type": "bytes32[]"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "pendingId",
+        "type": "bytes32"
+      }
+    ],
+    "name": "pendingRemoteLockId",
+    "outputs": [
+      {
+        "internalType": "uint64[]",
+        "name": "",
+        "type": "uint64[]"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "partyId",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "bytes",
+        "name": "statement",
+        "type": "bytes"
+      },
+      {
+        "internalType": "bytes",
+        "name": "txRaw",
+        "type": "bytes"
+      },
+      {
+        "internalType": "uint256",
+        "name": "blockHeight",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32[]",
+        "name": "branchLE",
+        "type": "bytes32[]"
+      },
+      {
+        "internalType": "uint256",
+        "name": "index",
+        "type": "uint256"
+      }
+    ],
+    "name": "processAnchor",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint64",
+        "name": "id",
+        "type": "uint64"
+      },
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "networkId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "address",
+            "name": "tokenId",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "amountPerUnit",
+            "type": "uint256"
+          }
+        ],
+        "internalType": "struct HubCompositionRegistry.Component[]",
+        "name": "components",
+        "type": "tuple[]"
+      }
+    ],
+    "name": "registerComposition",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "partyId",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "enum HubPartyRegistry.PartyKind",
+        "name": "kind",
+        "type": "uint8"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "anchorTxidLE",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint32",
+        "name": "anchorVout",
+        "type": "uint32"
+      }
+    ],
+    "name": "registerParty",
+    "outputs": [],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "partyId",
+        "type": "bytes32"
+      }
+    ],
+    "name": "requestUnbond",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "rewardPool",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint64",
+            "name": "tChallengeSecs",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64",
+            "name": "tSkipSecs",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64",
+            "name": "refundMarginSecs",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64",
+            "name": "unbondDelaySecs",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint256",
+            "name": "minOperatorBond",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "minAuditorBond",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "slashWeiPerUnit",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "vetoSlashWei",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "vetoRewardWei",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint16",
+            "name": "bountyBps",
+            "type": "uint16"
+          }
+        ],
+        "internalType": "struct BetaHub.Params",
+        "name": "p",
+        "type": "tuple"
+      },
+      {
+        "internalType": "bool",
+        "name": "_paused",
+        "type": "bool"
+      }
+    ],
+    "name": "setParams",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "txidLE",
+        "type": "bytes32"
+      }
+    ],
+    "name": "settleMint",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "partyId",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "bytes",
+        "name": "txRaw",
+        "type": "bytes"
+      },
+      {
+        "internalType": "uint256",
+        "name": "blockHeight",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32[]",
+        "name": "branchLE",
+        "type": "bytes32[]"
+      },
+      {
+        "internalType": "uint256",
+        "name": "index",
+        "type": "uint256"
+      }
+    ],
+    "name": "skipAnchor",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "token",
+    "outputs": [
+      {
+        "internalType": "contract HubToken",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "partyId",
+        "type": "bytes32"
+      }
+    ],
+    "name": "topUpBond",
+    "outputs": [],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "totalBonds",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "partyId",
+        "type": "bytes32"
+      }
+    ],
+    "name": "withdrawBond",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  }
+]

@@ -47,6 +47,15 @@ impl Registry {
             "polkadot" => Arc::new(
                 EvmStack::init(EvmNetwork::PolkadotHub, core_ctx).await?,
             ),
+            "base" => {
+                Arc::new(EvmStack::init(EvmNetwork::Base, core_ctx).await?)
+            },
+            "robinhood" => Arc::new(
+                EvmStack::init(EvmNetwork::Robinhood, core_ctx).await?,
+            ),
+            "hyperliquid" => Arc::new(
+                EvmStack::init(EvmNetwork::Hyperliquid, core_ctx).await?,
+            ),
             "solana" | "sol" => {
                 Arc::new(SvmStack::init(SolanaNetwork::Devnet, core_ctx).await?)
             },

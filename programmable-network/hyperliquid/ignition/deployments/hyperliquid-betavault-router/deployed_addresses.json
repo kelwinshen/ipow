@@ -1,0 +1,6 @@
+{
+  "BetaVaultRouterModule#BetaVaultAnchorFacet": "0x6354779b4Dbb564c712ea91c179eCF521C15BE73",
+  "BetaVaultRouterModule#BetaVaultCoreFacet": "0x24765955eCbffAaACB48a8c3747975d6C750C075",
+  "BetaVaultRouterModule#HyperliquidMockToken": "0x806Ae4940f1a68e5371D27f9C8cb9528872aeBd1",
+  "BetaVaultRouterModule#BetaVaultRouter": "0x554Fe13e4a5d0931e7c8F7d3E74Dea8Ca04C244a"
+}

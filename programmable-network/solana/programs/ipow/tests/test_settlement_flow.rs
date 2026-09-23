@@ -1,6 +1,7 @@
 use anchor_lang;
 use anchor_litesvm::{AnchorContext, AnchorLiteSVM, TestHelpers};
 use sha2::{Digest, Sha256};
+use solana_account::Account as SolanaAccount;
 use solana_keypair::Keypair;
 use solana_program::pubkey::Pubkey;
 use solana_signer::Signer;
@@ -41,67 +42,47 @@ fn setup_initialized() -> (AnchorContext, Keypair, Keypair, Pubkey) {
     (ctx, admin, operator, global_state)
 }
 
-/// Mirrors `bitcoin::pow::target_from_bits` from the program crate. Duplicated
-/// here (not imported) because `declare_program!` only generates IDL-derived
-/// client bindings, not access to the program crate's internal Rust
-/// functions — mining a header against a made-up transaction still needs the
-/// exact same target math the on-chain program uses to validate it.
-fn target_from_bits(bits: u32) -> [u8; 32] {
-    let mut target = [0u8; 32];
-    let exp = (bits >> 24) as usize;
-    let mantissa = bits & 0x007FFFFF;
+/// `commit_global_header` now enforces a real Bitcoin-difficulty-scale
+/// `POW_LIMIT` (see `bitcoin::pow::target_from_bits`'s own doc comment) —
+/// mining a header against a cheap, made-up target (this test used to mine
+/// against regtest's easy `0x207fffff` bits) is no longer accepted, since
+/// that's now exactly the gap the fix closes. Real proof-of-work at that
+/// scale (~2^224) needs ~4 billion hashes, impractical for a fast unit
+/// test, so this seeds a `GlobalHeader` account directly instead —
+/// mirroring `test_message_commitment.rs`'s `seed_message_commitment`,
+/// which already bypasses full instruction flow to seed account state
+/// directly for setup elsewhere in this workspace.
+fn seed_header(ctx: &mut AnchorContext, height: u64, merkle_root_le: [u8; 32]) -> Pubkey {
+    const GLOBAL_HEADER_DISCRIMINATOR: [u8; 8] = [0xfe, 0x2a, 0x4e, 0xdc, 0x67, 0x9f, 0x66, 0x78];
 
-    if exp > 3 {
-        let shift = exp - 3;
-        if shift < 32 {
-            target[32 - shift - 3] = (mantissa >> 16) as u8;
-            target[32 - shift - 2] = (mantissa >> 8) as u8;
-            target[32 - shift - 1] = mantissa as u8;
-        }
-    } else {
-        let shift = 3 - exp;
-        let shifted_mant = mantissa >> (8 * shift);
-        target[29] = (shifted_mant >> 16) as u8;
-        target[30] = (shifted_mant >> 8) as u8;
-        target[31] = shifted_mant as u8;
-    }
-    target
-}
+    let (header_pda, _) = ctx
+        .svm
+        .get_pda_with_bump(&[b"header", &height.to_le_bytes()], &ipow::ID);
 
-fn hash_meets_target(hash_le: &[u8; 32], target_be: &[u8; 32]) -> bool {
-    let mut hash_be = [0u8; 32];
-    for i in 0..32 {
-        hash_be[i] = hash_le[31 - i];
-    }
-    hash_be <= *target_be
-}
+    let mut data = GLOBAL_HEADER_DISCRIMINATOR.to_vec();
+    data.extend_from_slice(&height.to_le_bytes()); // height
+    data.extend_from_slice(&[0u8; 32]); // hash_le — unchecked by anything this test exercises
+    data.extend_from_slice(&[0u8; 32]); // prev_hash_le — likewise unchecked
+    data.extend_from_slice(&merkle_root_le);
+    data.extend_from_slice(&0x1d00ffffu32.to_le_bytes()); // n_bits — real mainnet genesis difficulty
+    data.extend_from_slice(&1_700_000_000u32.to_le_bytes()); // timestamp
+    data.extend_from_slice(&0i64.to_le_bytes()); // arrival_time
 
-/// Builds an 80-byte header carrying `merkle_root_le`, mining the nonce
-/// against an intentionally-easy target (regtest's well-known `0x207fffff`
-/// powLimit bits) so this completes in a handful of iterations rather than
-/// requiring real proof-of-work. `commit_global_header` doesn't check
-/// `prev_hash_le` against anything, so it's left zeroed.
-fn mine_header(merkle_root_le: [u8; 32]) -> [u8; 80] {
-    const N_BITS: u32 = 0x207fffff;
-    let target = target_from_bits(N_BITS);
+    let lamports = ctx.svm.minimum_balance_for_rent_exemption(data.len());
+    ctx.svm
+        .set_account(
+            header_pda,
+            SolanaAccount {
+                lamports,
+                data,
+                owner: ipow::ID,
+                executable: false,
+                rent_epoch: 0,
+            },
+        )
+        .unwrap();
 
-    let mut header = [0u8; 80];
-    header[0..4].copy_from_slice(&1u32.to_le_bytes());
-    header[36..68].copy_from_slice(&merkle_root_le);
-    header[68..72].copy_from_slice(&1_700_000_000u32.to_le_bytes());
-    header[72..76].copy_from_slice(&N_BITS.to_le_bytes());
-
-    for nonce in 0u32..10_000 {
-        header[76..80].copy_from_slice(&nonce.to_le_bytes());
-        let hash1 = Sha256::digest(header);
-        let hash2 = Sha256::digest(hash1);
-        let mut hash_le = [0u8; 32];
-        hash_le.copy_from_slice(&hash2);
-        if hash_meets_target(&hash_le, &target) {
-            return header;
-        }
-    }
-    panic!("failed to mine a header satisfying the easy test target");
+    header_pda
 }
 
 /// A minimal single-input, single-output legacy transaction paying
@@ -222,43 +203,18 @@ fn user_claims_bitcoin_to_native_conversion_via_a_real_committed_header_and_proo
         .unwrap()
         .assert_success();
 
-    // Craft a Bitcoin tx paying the approved output script, and mine a header
-    // whose merkle root is that transaction's own txid — a single-transaction
-    // block's merkle root is simply its one transaction's txid, so the
-    // Merkle branch submitted later is empty.
+    // Craft a Bitcoin tx paying the approved output script, and seed a
+    // header (bypassing real PoW mining — see seed_header's own comment)
+    // whose merkle root is that transaction's own txid — a
+    // single-transaction block's merkle root is simply its one
+    // transaction's txid, so the Merkle branch submitted later is empty.
     let tx_raw = tx_paying(&ipow_program, BITCOIN_AMOUNT + 1_000);
     let hash1 = Sha256::digest(&tx_raw);
     let hash2 = Sha256::digest(hash1);
     let mut txid_le = [0u8; 32];
     txid_le.copy_from_slice(&hash2);
 
-    let header_80 = mine_header(txid_le);
-    let header_pda = ctx
-        .svm
-        .get_pda_with_bump(&[b"header", &0u64.to_le_bytes()], &ipow::ID)
-        .0;
-    let dummy_tracker = Pubkey::new_unique();
-
-    let commit_header_ix = ctx
-        .program()
-        .accounts(ipow::client::accounts::CommitGlobalHeader {
-            global_state,
-            header: header_pda,
-            prev_height_tracker: dummy_tracker,
-            prev_epoch_start_header: None,
-            prev_epoch_end_header: None,
-            operator: operator.pubkey(),
-            system_program: anchor_lang::solana_program::system_program::ID,
-        })
-        .args(ipow::client::args::CommitGlobalHeader {
-            header_80,
-            height: 0,
-        })
-        .instruction()
-        .unwrap();
-    ctx.execute_instruction(commit_header_ix, &[&operator])
-        .unwrap()
-        .assert_success();
+    let header_pda = seed_header(&mut ctx, 0, txid_le);
 
     let proof_cache = ctx
         .svm

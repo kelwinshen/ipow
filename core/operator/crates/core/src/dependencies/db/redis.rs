@@ -173,4 +173,68 @@ impl RedisStorage {
         let _: () = conn.hdel(key, btc_tx_id).await?;
         Ok(())
     }
+
+    // --- BETA: statement-chain party head tracking ---
+    // Keyed by network (a Beta identity is per-network, not global — every
+    // `BetaVault`/`BetaHub` deployment has its own independent party
+    // registry) + hex party id, matching the "no shared chain across
+    // independent spoke deployments" lesson from this session's real
+    // 5-network mint (DESIGN_V2.md §8.20).
+
+    /// Current chain-head outpoint (`txid_be:vout`) for a Beta party
+    /// identity on one network — `None` if never set here (fall back to
+    /// the party's on-chain `registerParty` outpoint).
+    pub async fn get_beta_chain_head(
+        &self,
+        network: &str,
+        party_id_hex: &str,
+    ) -> Result<Option<String>> {
+        let mut conn = self.client.get_multiplexed_async_connection().await?;
+        let key = self.key(network, "beta:chain_head");
+        let val: Option<String> = conn.hget(key, party_id_hex).await?;
+        Ok(val)
+    }
+
+    pub async fn set_beta_chain_head(
+        &self,
+        network: &str,
+        party_id_hex: &str,
+        outpoint: &str,
+    ) -> Result<()> {
+        let mut conn = self.client.get_multiplexed_async_connection().await?;
+        let key = self.key(network, "beta:chain_head");
+        let _: () = conn.hset(key, party_id_hex, outpoint).await?;
+        Ok(())
+    }
+
+    /// Idempotency guard: has a statement anchor already been built and
+    /// broadcast for this `pendingId`+`componentIndex`? Prevents a
+    /// crashed/restarted engine from double-spending the chain head or
+    /// double-claiming the same pending mint.
+    pub async fn get_beta_statement_broadcast(
+        &self,
+        network: &str,
+        pending_id_hex: &str,
+        component_index: u8,
+    ) -> Result<Option<String>> {
+        let mut conn = self.client.get_multiplexed_async_connection().await?;
+        let key = self.key(network, "beta:statement_broadcast");
+        let field = format!("{pending_id_hex}:{component_index}");
+        let val: Option<String> = conn.hget(key, field).await?;
+        Ok(val)
+    }
+
+    pub async fn set_beta_statement_broadcast(
+        &self,
+        network: &str,
+        pending_id_hex: &str,
+        component_index: u8,
+        btc_txid_be: &str,
+    ) -> Result<()> {
+        let mut conn = self.client.get_multiplexed_async_connection().await?;
+        let key = self.key(network, "beta:statement_broadcast");
+        let field = format!("{pending_id_hex}:{component_index}");
+        let _: () = conn.hset(key, field, btc_txid_be).await?;
+        Ok(())
+    }
 }

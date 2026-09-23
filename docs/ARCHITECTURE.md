@@ -1,10 +1,24 @@
 # Architecture
 
 This describes how a conversion moves through the protocol, and what each
-piece (contract, operator service) is actually responsible for. It applies
-to all four networks — Ethereum, Hedera, and Polkadot Hub run the same
-Solidity contract; Solana runs an Anchor program implementing the same
-lifecycle.
+piece (contract, operator service) is actually responsible for — the
+original design, where a single fixed operator both approves and settles
+every conversion, fused directly into `iPoWV1.sol`/`ipow`'s own entry
+points (`commitNativeToBitcoin`/`commitBitcoinToNative`). It's still live
+today on every network below except Tempo. It applies to all EVM networks
+alike (Ethereum, Hedera, Polkadot Hub, Base, Robinhood Chain, Hyperliquid —
+same Solidity contract, or the router+facets split on Hyperliquid); Solana
+runs an Anchor program (`ipow`) implementing the same lifecycle.
+
+Two newer, separate pieces are **not** described by this document:
+**`iPoWV1Conversion.sol`/`ipow-conversion`**, a permissionless staked-auction
+variant of the same Bitcoin-SPV idea that needs no fixed operator at all
+(deployed on every network, Tempo included), and **Beta**
+(`BetaHub.sol`/`BetaVault.sol`/`beta-factory`), which mints a composed,
+multi-network token backed by locked value on each network in its
+composition. Both build on the same header-relay/SPV foundation this
+document explains, but with genuinely different flows — see
+[DESIGN_V2.md](DESIGN_V2.md) (top-level summary and §9) for those.
 
 The three conversion types below (Native→Bitcoin, Bitcoin→Native,
 Native→Native) aren't three separate features — Native→Native is the other

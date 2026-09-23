@@ -1,0 +1,8 @@
+{
+  "RouterModule#iPoWV1AdminFacet": "0x53e1291BdAff473694BbbB8DD257f9844e5f9F3c",
+  "RouterModule#iPoWV1ConversionEntryFacet": "0xF43DF008d31995690C75982937a368545953564A",
+  "RouterModule#iPoWV1ConversionSettlementFacet": "0x35e564d74B90a3A5bfcA8Dec65b1325C83d2e822",
+  "RouterModule#iPoWV1Router": "0xB7054E399E31A2cFE181c4fD59C7235562a6d45d",
+  "BetaVaultModule#iPoWV1": "0xB7054E399E31A2cFE181c4fD59C7235562a6d45d",
+  "BetaVaultModule#HyperliquidMockToken": "0xE8780640839860F9049132606d18c916956A44A5"
+}
