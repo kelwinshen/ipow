@@ -8,7 +8,7 @@ use crate::spl_accounts::{SplAccounts, SplAccountsBumps, __client_accounts_spl_a
 use crate::utils::{transfer_native_from_escrow, transfer_value_in, transfer_value_out};
 
 /// Windowed staked auction for the claiming role, lifted directly from
-/// `ipow-message-relay`'s `propose_claim` — see `docs/DESIGN_V2.md`.
+/// `ipow-message-relay`'s `propose_claim` — see `docs/design/ipow-implementation.md`.
 /// Replaces `approve_conversion`'s single `global_state.operator` gate.
 ///
 /// Competes on **rate**, not stake: `stake_amount` is a fixed anti-
@@ -112,7 +112,7 @@ pub fn handler<'info>(
     // persists across operator turnover) but always resets `operator_duty_
     // expires_at` to 0. A `Deposited`/`Approved` conversion with a nonzero
     // `operator_duty_expires_at` is a genuinely in-progress duty, not
-    // reopened — must not be claimable. See `docs/DESIGN_V2.md`'s reclaim
+    // reopened — must not be claimable. See `docs/design/ipow-implementation.md`'s reclaim
     // section.
     require!(
         conversion.status == ConversionStatus::Committed

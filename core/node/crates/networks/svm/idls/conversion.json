@@ -1,0 +1,2321 @@
+{
+  "address": "9Argk3M83p8t5pWG92PhwEhYzysWt5n82siEWyb29w7D",
+  "metadata": {
+    "name": "conversion",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Conversion: an application on the iPoW protocol that swaps SOL or a token for real BTC and back. Design: docs/drafts/ipow-conversion-app.md."
+  },
+  "instructions": [
+    {
+      "name": "buy",
+      "discriminator": [
+        102,
+        6,
+        61,
+        18,
+        1,
+        218,
+        235,
+        234
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "swap",
+          "writable": true
+        },
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "protocol",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                173,
+                211,
+                162,
+                204,
+                92,
+                244,
+                151,
+                148,
+                167,
+                47,
+                74,
+                192,
+                205,
+                126,
+                110,
+                225,
+                68,
+                169,
+                236,
+                243,
+                195,
+                149,
+                250,
+                203,
+                170,
+                54,
+                50,
+                155,
+                197,
+                150,
+                224,
+                231
+              ]
+            }
+          }
+        },
+        {
+          "name": "application"
+        },
+        {
+          "name": "job",
+          "writable": true
+        },
+        {
+          "name": "tag_record",
+          "writable": true
+        },
+        {
+          "name": "protocol_vault",
+          "writable": true
+        },
+        {
+          "name": "protocol_program",
+          "address": "ChYhovM8vm2tuMRaRFn4m6etG979bjixVa71fXBDwjPL"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "mint",
+          "optional": true
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "sats",
+          "type": "u64"
+        },
+        {
+          "name": "confirmations",
+          "type": "u16"
+        },
+        {
+          "name": "paid",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "cancel",
+      "discriminator": [
+        232,
+        219,
+        223,
+        41,
+        219,
+        236,
+        220,
+        190
+      ],
+      "accounts": [
+        {
+          "name": "swap",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  119,
+                  97,
+                  112
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "swap.id",
+                "account": "Swap"
+              }
+            ]
+          }
+        },
+        {
+          "name": "job",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  111,
+                  98
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "swap.job_id",
+                "account": "Swap"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                173,
+                211,
+                162,
+                204,
+                92,
+                244,
+                151,
+                148,
+                167,
+                47,
+                74,
+                192,
+                205,
+                126,
+                110,
+                225,
+                68,
+                169,
+                236,
+                243,
+                195,
+                149,
+                250,
+                203,
+                170,
+                54,
+                50,
+                155,
+                197,
+                150,
+                224,
+                231
+              ]
+            }
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "compensate",
+      "discriminator": [
+        27,
+        75,
+        62,
+        233,
+        36,
+        91,
+        225,
+        117
+      ],
+      "accounts": [
+        {
+          "name": "swap",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  119,
+                  97,
+                  112
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "swap.id",
+                "account": "Swap"
+              }
+            ]
+          }
+        },
+        {
+          "name": "job",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  111,
+                  98
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "swap.job_id",
+                "account": "Swap"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                173,
+                211,
+                162,
+                204,
+                92,
+                244,
+                151,
+                148,
+                167,
+                47,
+                74,
+                192,
+                205,
+                126,
+                110,
+                225,
+                68,
+                169,
+                236,
+                243,
+                195,
+                149,
+                250,
+                203,
+                170,
+                54,
+                50,
+                155,
+                197,
+                150,
+                224,
+                231
+              ]
+            }
+          }
+        },
+        {
+          "name": "user",
+          "writable": true
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "credit",
+          "docs": [
+            "address; it may not exist yet. Required, so nobody can leave it out",
+            "and mark the swap compensated with nothing paid."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  114,
+                  101,
+                  100,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "config"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                173,
+                211,
+                162,
+                204,
+                92,
+                244,
+                151,
+                148,
+                167,
+                47,
+                74,
+                192,
+                205,
+                126,
+                110,
+                225,
+                68,
+                169,
+                236,
+                243,
+                195,
+                149,
+                250,
+                203,
+                170,
+                54,
+                50,
+                155,
+                197,
+                150,
+                224,
+                231
+              ]
+            }
+          }
+        },
+        {
+          "name": "protocol",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                173,
+                211,
+                162,
+                204,
+                92,
+                244,
+                151,
+                148,
+                167,
+                47,
+                74,
+                192,
+                205,
+                126,
+                110,
+                225,
+                68,
+                169,
+                236,
+                243,
+                195,
+                149,
+                250,
+                203,
+                170,
+                54,
+                50,
+                155,
+                197,
+                150,
+                224,
+                231
+              ]
+            }
+          }
+        },
+        {
+          "name": "protocol_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                173,
+                211,
+                162,
+                204,
+                92,
+                244,
+                151,
+                148,
+                167,
+                47,
+                74,
+                192,
+                205,
+                126,
+                110,
+                225,
+                68,
+                169,
+                236,
+                243,
+                195,
+                149,
+                250,
+                203,
+                170,
+                54,
+                50,
+                155,
+                197,
+                150,
+                224,
+                231
+              ]
+            }
+          }
+        },
+        {
+          "name": "protocol_program",
+          "address": "ChYhovM8vm2tuMRaRFn4m6etG979bjixVa71fXBDwjPL"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "complete_buy",
+      "discriminator": [
+        230,
+        182,
+        88,
+        32,
+        170,
+        100,
+        116,
+        219
+      ],
+      "accounts": [
+        {
+          "name": "swap",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  119,
+                  97,
+                  112
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "swap.id",
+                "account": "Swap"
+              }
+            ]
+          }
+        },
+        {
+          "name": "job",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  111,
+                  98
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "swap.job_id",
+                "account": "Swap"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                173,
+                211,
+                162,
+                204,
+                92,
+                244,
+                151,
+                148,
+                167,
+                47,
+                74,
+                192,
+                205,
+                126,
+                110,
+                225,
+                68,
+                169,
+                236,
+                243,
+                195,
+                149,
+                250,
+                203,
+                170,
+                54,
+                50,
+                155,
+                197,
+                150,
+                224,
+                231
+              ]
+            }
+          }
+        },
+        {
+          "name": "user",
+          "writable": true
+        },
+        {
+          "name": "mint",
+          "optional": true
+        },
+        {
+          "name": "escrow",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "to",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "token_program",
+          "optional": true
+        }
+      ],
+      "args": [
+        {
+          "name": "receipt_raw",
+          "type": "bytes"
+        },
+        {
+          "name": "payment_raw",
+          "type": "bytes"
+        },
+        {
+          "name": "vout",
+          "type": "u32"
+        }
+      ]
+    },
+    {
+      "name": "complete_sell",
+      "discriminator": [
+        155,
+        155,
+        112,
+        18,
+        14,
+        173,
+        31,
+        127
+      ],
+      "accounts": [
+        {
+          "name": "swap",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  119,
+                  97,
+                  112
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "swap.id",
+                "account": "Swap"
+              }
+            ]
+          }
+        },
+        {
+          "name": "job",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  111,
+                  98
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "swap.job_id",
+                "account": "Swap"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                173,
+                211,
+                162,
+                204,
+                92,
+                244,
+                151,
+                148,
+                167,
+                47,
+                74,
+                192,
+                205,
+                126,
+                110,
+                225,
+                68,
+                169,
+                236,
+                243,
+                195,
+                149,
+                250,
+                203,
+                170,
+                54,
+                50,
+                155,
+                197,
+                150,
+                224,
+                231
+              ]
+            }
+          }
+        },
+        {
+          "name": "operator",
+          "writable": true
+        },
+        {
+          "name": "mint",
+          "optional": true
+        },
+        {
+          "name": "escrow",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "to",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "token_program",
+          "optional": true
+        }
+      ],
+      "args": [
+        {
+          "name": "raw_tx",
+          "type": "bytes"
+        }
+      ]
+    },
+    {
+      "name": "fund",
+      "discriminator": [
+        218,
+        188,
+        111,
+        221,
+        152,
+        113,
+        174,
+        7
+      ],
+      "accounts": [
+        {
+          "name": "swap",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  119,
+                  97,
+                  112
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "swap.id",
+                "account": "Swap"
+              }
+            ]
+          }
+        },
+        {
+          "name": "job",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  111,
+                  98
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "swap.job_id",
+                "account": "Swap"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                173,
+                211,
+                162,
+                204,
+                92,
+                244,
+                151,
+                148,
+                167,
+                47,
+                74,
+                192,
+                205,
+                126,
+                110,
+                225,
+                68,
+                169,
+                236,
+                243,
+                195,
+                149,
+                250,
+                203,
+                170,
+                54,
+                50,
+                155,
+                197,
+                150,
+                224,
+                231
+              ]
+            }
+          }
+        },
+        {
+          "name": "script_record",
+          "docs": [
+            "Fails if the script was named before."
+          ],
+          "writable": true
+        },
+        {
+          "name": "anchor_node"
+        },
+        {
+          "name": "operator",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "mint",
+          "optional": true
+        },
+        {
+          "name": "escrow",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "from",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "token_program",
+          "optional": true
+        },
+        {
+          "name": "associated_token_program",
+          "optional": true,
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        }
+      ],
+      "args": [
+        {
+          "name": "script",
+          "type": "bytes"
+        }
+      ]
+    },
+    {
+      "name": "initialize",
+      "discriminator": [
+        175,
+        175,
+        109,
+        31,
+        13,
+        152,
+        155,
+        237
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "application",
+          "writable": true
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "protocol_program",
+          "address": "ChYhovM8vm2tuMRaRFn4m6etG979bjixVa71fXBDwjPL"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "prove_my_payment",
+      "discriminator": [
+        140,
+        232,
+        85,
+        194,
+        15,
+        54,
+        230,
+        170
+      ],
+      "accounts": [
+        {
+          "name": "swap",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  119,
+                  97,
+                  112
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "swap.id",
+                "account": "Swap"
+              }
+            ]
+          }
+        },
+        {
+          "name": "job",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  111,
+                  98
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "swap.job_id",
+                "account": "Swap"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                173,
+                211,
+                162,
+                204,
+                92,
+                244,
+                151,
+                148,
+                167,
+                47,
+                74,
+                192,
+                205,
+                126,
+                110,
+                225,
+                68,
+                169,
+                236,
+                243,
+                195,
+                149,
+                250,
+                203,
+                170,
+                54,
+                50,
+                155,
+                197,
+                150,
+                224,
+                231
+              ]
+            }
+          }
+        },
+        {
+          "name": "anchor_node"
+        },
+        {
+          "name": "pay_node"
+        },
+        {
+          "name": "walk_low"
+        },
+        {
+          "name": "walk_high"
+        },
+        {
+          "name": "user",
+          "writable": true
+        },
+        {
+          "name": "mint",
+          "optional": true
+        },
+        {
+          "name": "escrow",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "to",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "token_program",
+          "optional": true
+        }
+      ],
+      "args": [
+        {
+          "name": "payment_raw",
+          "type": "bytes"
+        },
+        {
+          "name": "vout",
+          "type": "u32"
+        },
+        {
+          "name": "pay_block",
+          "type": {
+            "defined": {
+              "name": "BlockRef"
+            }
+          }
+        },
+        {
+          "name": "siblings",
+          "type": {
+            "vec": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        },
+        {
+          "name": "tx_index",
+          "type": "u64"
+        },
+        {
+          "name": "top",
+          "type": {
+            "defined": {
+              "name": "BlockRef"
+            }
+          }
+        },
+        {
+          "name": "parent_epoch_time",
+          "type": "u32"
+        }
+      ]
+    },
+    {
+      "name": "reclaim",
+      "discriminator": [
+        44,
+        177,
+        236,
+        249,
+        145,
+        109,
+        163,
+        186
+      ],
+      "accounts": [
+        {
+          "name": "swap",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  119,
+                  97,
+                  112
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "swap.id",
+                "account": "Swap"
+              }
+            ]
+          }
+        },
+        {
+          "name": "job",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  111,
+                  98
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "swap.job_id",
+                "account": "Swap"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                173,
+                211,
+                162,
+                204,
+                92,
+                244,
+                151,
+                148,
+                167,
+                47,
+                74,
+                192,
+                205,
+                126,
+                110,
+                225,
+                68,
+                169,
+                236,
+                243,
+                195,
+                149,
+                250,
+                203,
+                170,
+                54,
+                50,
+                155,
+                197,
+                150,
+                224,
+                231
+              ]
+            }
+          }
+        },
+        {
+          "name": "operator",
+          "writable": true
+        },
+        {
+          "name": "mint",
+          "optional": true
+        },
+        {
+          "name": "escrow",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "to",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "token_program",
+          "optional": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "refund_sell",
+      "discriminator": [
+        76,
+        231,
+        155,
+        233,
+        178,
+        30,
+        61,
+        44
+      ],
+      "accounts": [
+        {
+          "name": "swap",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  119,
+                  97,
+                  112
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "swap.id",
+                "account": "Swap"
+              }
+            ]
+          }
+        },
+        {
+          "name": "job",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  111,
+                  98
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "swap.job_id",
+                "account": "Swap"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                173,
+                211,
+                162,
+                204,
+                92,
+                244,
+                151,
+                148,
+                167,
+                47,
+                74,
+                192,
+                205,
+                126,
+                110,
+                225,
+                68,
+                169,
+                236,
+                243,
+                195,
+                149,
+                250,
+                203,
+                170,
+                54,
+                50,
+                155,
+                197,
+                150,
+                224,
+                231
+              ]
+            }
+          }
+        },
+        {
+          "name": "user",
+          "writable": true
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "credit",
+          "docs": [
+            "address; it may not exist yet. Required, so nobody can leave it out",
+            "and mark the swap compensated with nothing paid."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  114,
+                  101,
+                  100,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "config"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                173,
+                211,
+                162,
+                204,
+                92,
+                244,
+                151,
+                148,
+                167,
+                47,
+                74,
+                192,
+                205,
+                126,
+                110,
+                225,
+                68,
+                169,
+                236,
+                243,
+                195,
+                149,
+                250,
+                203,
+                170,
+                54,
+                50,
+                155,
+                197,
+                150,
+                224,
+                231
+              ]
+            }
+          }
+        },
+        {
+          "name": "protocol",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                173,
+                211,
+                162,
+                204,
+                92,
+                244,
+                151,
+                148,
+                167,
+                47,
+                74,
+                192,
+                205,
+                126,
+                110,
+                225,
+                68,
+                169,
+                236,
+                243,
+                195,
+                149,
+                250,
+                203,
+                170,
+                54,
+                50,
+                155,
+                197,
+                150,
+                224,
+                231
+              ]
+            }
+          }
+        },
+        {
+          "name": "protocol_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                173,
+                211,
+                162,
+                204,
+                92,
+                244,
+                151,
+                148,
+                167,
+                47,
+                74,
+                192,
+                205,
+                126,
+                110,
+                225,
+                68,
+                169,
+                236,
+                243,
+                195,
+                149,
+                250,
+                203,
+                170,
+                54,
+                50,
+                155,
+                197,
+                150,
+                224,
+                231
+              ]
+            }
+          }
+        },
+        {
+          "name": "protocol_program",
+          "address": "ChYhovM8vm2tuMRaRFn4m6etG979bjixVa71fXBDwjPL"
+        },
+        {
+          "name": "mint",
+          "optional": true
+        },
+        {
+          "name": "escrow",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "to",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "token_program",
+          "optional": true
+        }
+      ],
+      "args": [
+        {
+          "name": "raw_tx",
+          "type": "bytes"
+        }
+      ]
+    },
+    {
+      "name": "sell",
+      "discriminator": [
+        51,
+        230,
+        133,
+        164,
+        1,
+        127,
+        131,
+        173
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "swap",
+          "writable": true
+        },
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "protocol",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                173,
+                211,
+                162,
+                204,
+                92,
+                244,
+                151,
+                148,
+                167,
+                47,
+                74,
+                192,
+                205,
+                126,
+                110,
+                225,
+                68,
+                169,
+                236,
+                243,
+                195,
+                149,
+                250,
+                203,
+                170,
+                54,
+                50,
+                155,
+                197,
+                150,
+                224,
+                231
+              ]
+            }
+          }
+        },
+        {
+          "name": "application"
+        },
+        {
+          "name": "job",
+          "writable": true
+        },
+        {
+          "name": "tag_record",
+          "writable": true
+        },
+        {
+          "name": "protocol_vault",
+          "writable": true
+        },
+        {
+          "name": "protocol_program",
+          "address": "ChYhovM8vm2tuMRaRFn4m6etG979bjixVa71fXBDwjPL"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "mint",
+          "optional": true
+        },
+        {
+          "name": "escrow",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "from",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "token_program",
+          "optional": true
+        },
+        {
+          "name": "associated_token_program",
+          "optional": true,
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "sats",
+          "type": "u64"
+        },
+        {
+          "name": "script",
+          "type": "bytes"
+        },
+        {
+          "name": "confirmations",
+          "type": "u16"
+        },
+        {
+          "name": "paid",
+          "type": "u64"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Config",
+      "discriminator": [
+        155,
+        12,
+        170,
+        224,
+        30,
+        250,
+        204,
+        130
+      ]
+    },
+    {
+      "name": "ScriptRecord",
+      "discriminator": [
+        218,
+        99,
+        92,
+        185,
+        249,
+        0,
+        224,
+        169
+      ]
+    },
+    {
+      "name": "Swap",
+      "discriminator": [
+        53,
+        206,
+        146,
+        152,
+        44,
+        97,
+        120,
+        177
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "InvalidAmount"
+    },
+    {
+      "code": 6001,
+      "name": "InvalidScript"
+    },
+    {
+      "code": 6002,
+      "name": "TooLarge"
+    },
+    {
+      "code": 6003,
+      "name": "WrongState"
+    },
+    {
+      "code": 6004,
+      "name": "NotOperator"
+    },
+    {
+      "code": 6005,
+      "name": "FundingTimeOver"
+    },
+    {
+      "code": 6006,
+      "name": "FundingTimeNotOver"
+    },
+    {
+      "code": 6007,
+      "name": "NotProven"
+    },
+    {
+      "code": 6008,
+      "name": "LockNotEnded"
+    },
+    {
+      "code": 6009,
+      "name": "WrongTransaction"
+    },
+    {
+      "code": 6010,
+      "name": "NotPaid"
+    },
+    {
+      "code": 6011,
+      "name": "NotRefundable"
+    },
+    {
+      "code": 6012,
+      "name": "NotReclaimable"
+    },
+    {
+      "code": 6013,
+      "name": "OutsidePaymentBlocks"
+    },
+    {
+      "code": 6014,
+      "name": "TooFewConfirmations"
+    },
+    {
+      "code": 6015,
+      "name": "NotLinked"
+    },
+    {
+      "code": 6016,
+      "name": "NotInBlock"
+    },
+    {
+      "code": 6017,
+      "name": "WrongAccount"
+    },
+    {
+      "code": 6018,
+      "name": "MalformedTx"
+    },
+    {
+      "code": 6019,
+      "name": "WrongTokenProgram"
+    },
+    {
+      "code": 6020,
+      "name": "Overflow"
+    },
+    {
+      "code": 6021,
+      "name": "NotAnchored"
+    },
+    {
+      "code": 6022,
+      "name": "AnchorTooOld"
+    },
+    {
+      "code": 6023,
+      "name": "NotSlashed"
+    }
+  ],
+  "types": [
+    {
+      "name": "BlockRef",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "height",
+            "type": "u32"
+          },
+          {
+            "name": "epoch_time",
+            "type": "u32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Config",
+      "docs": [
+        "The program's one settings record. Its address is also the key this",
+        "application registered with the protocol: it signs the application's",
+        "calls, and receives the escrow share of a slashed job."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "swap_count",
+            "type": "u64"
+          },
+          {
+            "name": "compensation",
+            "docs": [
+              "Escrow shares of slashed jobs, withdrawn and not yet passed on."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Job",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "id",
+            "type": "u64"
+          },
+          {
+            "name": "application",
+            "type": "pubkey"
+          },
+          {
+            "name": "payer",
+            "docs": [
+              "Who paid the fees and receives them back (D62, D65)."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "tag",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "escrow",
+            "docs": [
+              "x (D40)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "commitment_fee",
+            "docs": [
+              "The fee at the price of the moment, and what was sent above the fees",
+              "(D24, D79)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "escrow_fee",
+            "type": "u64"
+          },
+          {
+            "name": "bid",
+            "type": "u64"
+          },
+          {
+            "name": "operator",
+            "type": "pubkey"
+          },
+          {
+            "name": "has_operator",
+            "type": "bool"
+          },
+          {
+            "name": "confirmations",
+            "type": "u16"
+          },
+          {
+            "name": "claim_kind",
+            "docs": [
+              "0 for a settlement, otherwise the kind of claim, counted from 1."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "opened_at",
+            "type": "i64"
+          },
+          {
+            "name": "last_bid_at",
+            "type": "i64"
+          },
+          {
+            "name": "fees_returned",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "anchor",
+            "type": {
+              "defined": {
+                "name": "BlockRef"
+              }
+            }
+          },
+          {
+            "name": "anchored_at",
+            "type": "i64"
+          },
+          {
+            "name": "proof_block",
+            "type": {
+              "defined": {
+                "name": "BlockRef"
+              }
+            }
+          },
+          {
+            "name": "tip",
+            "docs": [
+              "The block on top of the proof that was shown with it."
+            ],
+            "type": {
+              "defined": {
+                "name": "BlockRef"
+              }
+            }
+          },
+          {
+            "name": "deepest",
+            "docs": [
+              "The oldest block of the operator's branch asked for and shown (D81)."
+            ],
+            "type": {
+              "defined": {
+                "name": "BlockRef"
+              }
+            }
+          },
+          {
+            "name": "parents_shown",
+            "docs": [
+              "How many parents were shown; the next question is this + 1 (D91)."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "txid",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "proven_at",
+            "type": "i64"
+          },
+          {
+            "name": "lock_end",
+            "type": "i64"
+          },
+          {
+            "name": "slashed",
+            "type": "bool"
+          },
+          {
+            "name": "settled",
+            "type": "bool"
+          },
+          {
+            "name": "attester",
+            "docs": [
+              "D42: who locked x in the operator's place, if anyone."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "has_attester",
+            "type": "bool"
+          },
+          {
+            "name": "attested_at",
+            "type": "i64"
+          },
+          {
+            "name": "open_challenges",
+            "docs": [
+              "How many challenges of the job are open."
+            ],
+            "type": "u32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Protocol",
+      "docs": [
+        "The single record of the protocol. It holds no key: nothing can change",
+        "after deployment (D59)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "job_count",
+            "type": "u64"
+          },
+          {
+            "name": "challenge_count",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "vault_bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ScriptRecord",
+      "docs": [
+        "Marks an operator's script used, so a payment to it belongs to one swap."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "swap_id",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Side",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Sell"
+          },
+          {
+            "name": "Buy"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Swap",
+      "docs": [
+        "A swap. Holds the coin itself when the coin is SOL; a token is held in",
+        "the swap's associated token account."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "id",
+            "type": "u64"
+          },
+          {
+            "name": "side",
+            "type": {
+              "defined": {
+                "name": "Side"
+              }
+            }
+          },
+          {
+            "name": "state",
+            "type": {
+              "defined": {
+                "name": "SwapState"
+              }
+            }
+          },
+          {
+            "name": "user",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "docs": [
+              "`Pubkey::default()` for SOL."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "sats",
+            "docs": [
+              "Sell: the least the user accepts. Buy: what the user pays."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "job_id",
+            "type": "u64"
+          },
+          {
+            "name": "script",
+            "docs": [
+              "Sell: the user's script, to be paid. Buy: the operator's script, set",
+              "when it locks the coin."
+            ],
+            "type": "bytes"
+          },
+          {
+            "name": "compensated",
+            "docs": [
+              "Whether the user received this application's share of the job's",
+              "escrow after a slash."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SwapState",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Open"
+          },
+          {
+            "name": "Funded"
+          },
+          {
+            "name": "Done"
+          },
+          {
+            "name": "Refunded"
+          },
+          {
+            "name": "Cancelled"
+          },
+          {
+            "name": "Reclaimed"
+          }
+        ]
+      }
+    }
+  ]
+}

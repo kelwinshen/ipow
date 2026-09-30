@@ -7,11 +7,11 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {HubPartyRegistry} from "./base/HubPartyRegistry.sol";
 import {HubCompositionRegistry} from "./base/HubCompositionRegistry.sol";
 import {HubAnchorJudge} from "./base/HubAnchorJudge.sol";
-import {IIPoWV1HeadersView} from "./libraries/AnchorChainLib.sol";
+import {IIPoWHeadersView} from "./libraries/AnchorChainLib.sol";
 import {HubToken} from "./HubToken.sol";
 
 /// @title BetaHub — an EVM chain acting as a mint hub, not just a spoke
-/// @notice DESIGN_V2.md §8.18. Every EVM chain in this repo (via
+/// @notice design/ipow-implementation.md §8.18. Every EVM chain in this repo (via
 /// `BetaVault.sol`) only ever locks value and judges its own leg's MINT
 /// claim — it never mints anything itself; only Solana's `beta-factory` can
 /// mint BETA. `BetaHub` lets THIS chain also mint its own token (`HubToken`,
@@ -78,7 +78,7 @@ contract BetaHub is HubCompositionRegistry, HubAnchorJudge {
 
     uint256 public constant BPS_DENOM = 10_000;
 
-    IIPoWV1HeadersView public ipowHeaders;
+    IIPoWHeadersView public ipowHeaders;
     Params public params;
     bool public paused;
     uint256 public rewardPool;
@@ -102,7 +102,7 @@ contract BetaHub is HubCompositionRegistry, HubAnchorJudge {
         if (_governance == address(0) || _ipowHeadersAddr == address(0)) revert InvalidParams();
         _validateParams(_params);
         governance = _governance;
-        ipowHeaders = IIPoWV1HeadersView(_ipowHeadersAddr);
+        ipowHeaders = IIPoWHeadersView(_ipowHeadersAddr);
         params = _params;
         token = new HubToken(tokenName, tokenSymbol, address(this));
     }
@@ -163,7 +163,7 @@ contract BetaHub is HubCompositionRegistry, HubAnchorJudge {
         rewardPool -= reward;
     }
 
-    function _ipowHeaders() internal view override returns (IIPoWV1HeadersView) {
+    function _ipowHeaders() internal view override returns (IIPoWHeadersView) {
         return ipowHeaders;
     }
 
@@ -173,7 +173,7 @@ contract BetaHub is HubCompositionRegistry, HubAnchorJudge {
     }
 
     /// @dev Same before/after-balance defensive pattern as `BetaVault.
-    /// _pullToken`/`iPoWV1Conversion._pullToken`. Unlike `BetaVault.deposit`
+    /// _pullToken`/`iPoWConversion._pullToken`. Unlike `BetaVault.deposit`
     /// (a single flat `Lock`, which can afford to freeze whatever amount
     /// was actually received), a composition may lock several local legs at
     /// once with no per-leg "amount actually received" field to freeze —

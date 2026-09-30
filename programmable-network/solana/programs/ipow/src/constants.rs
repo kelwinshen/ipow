@@ -11,5 +11,5 @@ pub const MAX_TIMESPAN_SEC: u64 = RETARGET_PERIOD_SEC * 4;
 /// `commit_global_header` is operator-first: anyone may extend the chain by
 /// one header once the current tip has sat unextended for this long. Keeps
 /// the operator's confirmation policy in the fast path while making header
-/// withholding impossible for longer than this (docs/DESIGN_V2.md §6.9).
+/// withholding impossible for longer than this (docs/design/ipow-implementation.md §6.9).
 pub const PERMISSIONLESS_HEADER_DELAY_SEC: i64 = 30 * 60;

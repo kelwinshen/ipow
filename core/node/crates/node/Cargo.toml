@@ -1,0 +1,39 @@
+[package]
+name = "ipow-node"
+description = "The iPoW node: runs the chosen roles on the chosen networks."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "ipow-node"
+path = "src/main.rs"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+ipow-protocol-core = { path = "../protocol" }
+ipow-bitcoin = { path = "../bitcoin" }
+ipow-network-evm = { path = "../networks/evm" }
+ipow-network-svm = { path = "../networks/svm" }
+dotenvy = "0.15"
+getrandom = "0.3"
+bitcoin = "0.32"
+hex = "0.4"
+bs58 = "0.5"
+anyhow.workspace = true
+async-trait.workspace = true
+clap.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+alloy = { version = "1", features = ["provider-http", "signer-local", "contract", "sol-types", "rpc-types", "network"] }
+solana-sdk = "3.0"
+tempfile = "3"
+ipow-network-evm = { path = "../networks/evm", features = ["testing"] }
+ipow-network-svm = { path = "../networks/svm", features = ["testing"] }
+ipow-testing = { path = "../testing" }
+bitcoin = "0.32"

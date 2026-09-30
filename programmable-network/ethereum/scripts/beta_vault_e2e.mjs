@@ -1,4 +1,4 @@
-// BETA v2 Sepolia driver for BetaVault + its iPoWV1 relay (docs/DESIGN_V2.md §6).
+// BETA v2 Sepolia driver for BetaVault + its iPoW relay (docs/design/ipow-implementation.md §6).
 // Reads SEPOLIA_RPC_URL / SEPOLIA_PRIVATE_KEY from ./.env and the deployed
 // addresses from ./ignition/deployments/chain-11155111/deployed_addresses.json
 // (override with IPOW_V1 / BETA_VAULT env vars).
@@ -29,10 +29,10 @@ const dsha = (b) => sha256(sha256(b));
 const provider = new ethers.JsonRpcProvider(env.SEPOLIA_RPC_URL);
 const wallet = new ethers.Wallet(env.SEPOLIA_PRIVATE_KEY, provider);
 const deployed = JSON.parse(fs.readFileSync("ignition/deployments/chain-11155111/deployed_addresses.json", "utf8"));
-const IPOW = process.env.IPOW_V1 ?? deployed["BetaVaultModule#iPoWV1"];
+const IPOW = process.env.IPOW_V1 ?? deployed["BetaVaultModule#iPoW"];
 const VAULT = process.env.BETA_VAULT ?? deployed["BetaVaultV4Module#BetaVault"] ?? deployed["BetaVaultV3Module#BetaVault"] ?? deployed["BetaVaultV2Module#BetaVault"] ?? deployed["BetaVaultModule#BetaVault"];
 const artifact = (n) => JSON.parse(fs.readFileSync(`artifacts/contracts/${n}.sol/${n}.json`, "utf8")).abi;
-const ipow = new ethers.Contract(IPOW, artifact("iPoWV1"), wallet);
+const ipow = new ethers.Contract(IPOW, artifact("iPoW"), wallet);
 const vault = new ethers.Contract(VAULT, artifact("BetaVault"), wallet);
 
 function readVarInt(b, o) { const p = b[o]; if (p < 0xfd) return [p, o + 1]; if (p === 0xfd) return [b.readUInt16LE(o + 1), o + 3]; if (p === 0xfe) return [b.readUInt32LE(o + 1), o + 5]; return [Number(b.readBigUInt64LE(o + 1)), o + 9]; }
@@ -50,7 +50,7 @@ const getJson = async (u) => { const r = await fetch(u); if (!r.ok) throw new Er
 const wait = async (p) => { const tx = await p; const rc = await tx.wait(); console.log("tx", tx.hash, "gas", rc.gasUsed.toString()); return rc; };
 
 const action = E("ACTION", "status");
-console.log("wallet", wallet.address, "iPoWV1", IPOW, "BetaVault", VAULT);
+console.log("wallet", wallet.address, "iPoW", IPOW, "BetaVault", VAULT);
 
 if (action === "status") {
   console.log("relay tip", (await ipow.globalTipHeight()).toString(), "operator", await ipow.operator());

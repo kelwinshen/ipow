@@ -2,7 +2,7 @@ import { expect } from "chai";
 import { network } from "hardhat";
 import { sha256, getBytes, hexlify, concat, toBeHex, zeroPadValue, AbiCoder, keccak256 } from "ethers";
 
-import { IPoWV1__factory, BetaVault__factory, MockERC20__factory } from "../types/ethers-contracts/index.ts";
+import { IPoW__factory, BetaVault__factory, MockERC20__factory } from "../types/ethers-contracts/index.ts";
 import { COMMIT_FEE_BPS, NATIVE_DECIMALS, SELF_NETWORK_ID } from "./helpers/deploy.ts";
 
 const { ethers } = await network.create();
@@ -78,8 +78,8 @@ function stmtCancel(lockId: bigint): string {
   return hexlify(concat([Uint8Array.of(KIND_CANCEL), u64be(lockId)]));
 }
 
-/// Seeds `iPoWV1`'s header maps via storage cheat-code (same slot layout
-/// `iPoWV1Conversion.test.ts::seedHeader` derives), plus a timestamp.
+/// Seeds `iPoW`'s header maps via storage cheat-code (same slot layout
+/// `iPoWConversion.test.ts::seedHeader` derives), plus a timestamp.
 async function seedHeader(ipowAddress: string, height: bigint, headerHashLE: string, merkleRootLE: string, timestamp: bigint) {
   const abi = AbiCoder.defaultAbiCoder();
   const heightSlot = keccak256(abi.encode(["uint256", "uint256"], [height, 9n]));
@@ -120,7 +120,7 @@ const PARAMS = {
 
 async function deploy() {
   const [gov, op, aud, user, other] = await ethers.getSigners();
-  const ipow = await new IPoWV1__factory(gov).deploy(NATIVE_DECIMALS, SELF_NETWORK_ID, await gov.getAddress(), COMMIT_FEE_BPS);
+  const ipow = await new IPoW__factory(gov).deploy(NATIVE_DECIMALS, SELF_NETWORK_ID, await gov.getAddress(), COMMIT_FEE_BPS);
   await ipow.waitForDeployment();
   const vault = await new BetaVault__factory(gov).deploy(await gov.getAddress(), await ipow.getAddress(), PARAMS);
   await vault.waitForDeployment();

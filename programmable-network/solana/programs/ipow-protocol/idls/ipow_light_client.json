@@ -1,0 +1,1273 @@
+{
+  "address": "Ctotq1SSaDJ2EUSe4sMdau92qBesyutH7GPaTRiYp4vJ",
+  "metadata": {
+    "name": "ipow_light_client",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "The iPoW light client: the store of Bitcoin blocks on Solana. Spec: docs/design/ipow-protocol.md, section 2."
+  },
+  "instructions": [
+    {
+      "name": "add_epoch_start",
+      "discriminator": [
+        37,
+        235,
+        69,
+        124,
+        29,
+        83,
+        178,
+        187
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "day_table",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  121,
+                  115
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "epoch_start",
+          "docs": [
+            "gives; checked and created in the handler."
+          ],
+          "writable": true
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "headers",
+          "type": "bytes"
+        },
+        {
+          "name": "height",
+          "type": "u32"
+        }
+      ]
+    },
+    {
+      "name": "begin_walk",
+      "discriminator": [
+        100,
+        27,
+        90,
+        227,
+        146,
+        159,
+        22,
+        109
+      ],
+      "accounts": [
+        {
+          "name": "walk",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  119,
+                  97,
+                  108,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "payer"
+              },
+              {
+                "kind": "arg",
+                "path": "walk_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "walk_id",
+          "type": "u64"
+        },
+        {
+          "name": "descendant",
+          "type": {
+            "defined": {
+              "name": "BlockRef"
+            }
+          }
+        },
+        {
+          "name": "ancestor",
+          "type": {
+            "defined": {
+              "name": "BlockRef"
+            }
+          }
+        },
+        {
+          "name": "prev_epoch_time",
+          "type": "u32"
+        }
+      ]
+    },
+    {
+      "name": "check_tx",
+      "discriminator": [
+        212,
+        152,
+        70,
+        27,
+        186,
+        58,
+        162,
+        242
+      ],
+      "accounts": [
+        {
+          "name": "node"
+        }
+      ],
+      "args": [
+        {
+          "name": "raw_tx",
+          "type": "bytes"
+        },
+        {
+          "name": "siblings",
+          "type": {
+            "vec": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        },
+        {
+          "name": "index",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "close_epoch_start",
+      "discriminator": [
+        68,
+        151,
+        121,
+        88,
+        200,
+        110,
+        91,
+        15
+      ],
+      "accounts": [
+        {
+          "name": "epoch_start",
+          "writable": true
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "relations": [
+            "epoch_start"
+          ]
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "close_node",
+      "discriminator": [
+        19,
+        61,
+        232,
+        69,
+        247,
+        135,
+        255,
+        107
+      ],
+      "accounts": [
+        {
+          "name": "node",
+          "writable": true
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "relations": [
+            "node"
+          ]
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "close_walk",
+      "discriminator": [
+        233,
+        217,
+        214,
+        194,
+        54,
+        29,
+        52,
+        173
+      ],
+      "accounts": [
+        {
+          "name": "walk",
+          "writable": true
+        },
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "walk"
+          ]
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "extend",
+      "discriminator": [
+        228,
+        127,
+        0,
+        1,
+        227,
+        154,
+        54,
+        168
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "parent",
+          "docs": [
+            "The stored block the first header names."
+          ]
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "headers",
+          "type": "bytes"
+        }
+      ]
+    },
+    {
+      "name": "extend_back",
+      "discriminator": [
+        217,
+        196,
+        126,
+        142,
+        214,
+        83,
+        229,
+        94
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "child"
+        },
+        {
+          "name": "parent",
+          "docs": [
+            "epoch time give; checked and created in `store_node`."
+          ],
+          "writable": true
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "header",
+          "type": {
+            "array": [
+              "u8",
+              80
+            ]
+          }
+        },
+        {
+          "name": "prev_epoch_time",
+          "type": "u32"
+        }
+      ]
+    },
+    {
+      "name": "initialize",
+      "discriminator": [
+        175,
+        175,
+        109,
+        31,
+        13,
+        152,
+        155,
+        237
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "day_table",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  121,
+                  115
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "program_data",
+          "docs": [
+            "handler against the upgradeable loader's layout."
+          ]
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "min_height",
+          "type": "u32"
+        },
+        {
+          "name": "max_target",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "pow_limit",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "jump",
+      "discriminator": [
+        115,
+        18,
+        221,
+        88,
+        166,
+        230,
+        219,
+        32
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "day_table",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  121,
+                  115
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "epoch_start"
+        },
+        {
+          "name": "node",
+          "docs": [
+            "time give; checked and created in `store_node`."
+          ],
+          "writable": true
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "header",
+          "type": {
+            "array": [
+              "u8",
+              80
+            ]
+          }
+        },
+        {
+          "name": "height",
+          "type": "u32"
+        }
+      ]
+    },
+    {
+      "name": "walk_step",
+      "discriminator": [
+        135,
+        202,
+        71,
+        101,
+        24,
+        105,
+        29,
+        121
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "walk",
+          "writable": true
+        }
+      ],
+      "args": []
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Config",
+      "discriminator": [
+        155,
+        12,
+        170,
+        224,
+        30,
+        250,
+        204,
+        130
+      ]
+    },
+    {
+      "name": "DayTable",
+      "discriminator": [
+        53,
+        121,
+        244,
+        236,
+        54,
+        222,
+        179,
+        242
+      ]
+    },
+    {
+      "name": "EpochStart",
+      "discriminator": [
+        23,
+        203,
+        216,
+        13,
+        194,
+        246,
+        242,
+        240
+      ]
+    },
+    {
+      "name": "Node",
+      "discriminator": [
+        208,
+        53,
+        1,
+        3,
+        49,
+        122,
+        180,
+        49
+      ]
+    },
+    {
+      "name": "Walk",
+      "discriminator": [
+        166,
+        62,
+        187,
+        229,
+        25,
+        189,
+        222,
+        4
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "BlockStored",
+      "discriminator": [
+        8,
+        43,
+        72,
+        97,
+        61,
+        174,
+        240,
+        245
+      ]
+    },
+    {
+      "name": "EpochStartRecorded",
+      "discriminator": [
+        97,
+        98,
+        105,
+        182,
+        179,
+        57,
+        75,
+        57
+      ]
+    },
+    {
+      "name": "Jumped",
+      "discriminator": [
+        128,
+        194,
+        141,
+        253,
+        12,
+        146,
+        229,
+        13
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "InvalidLength",
+      "msg": "Headers must be whole 80-byte headers, within the allowed count"
+    },
+    {
+      "code": 6001,
+      "name": "InvalidHeight",
+      "msg": "The stated block number is not allowed here"
+    },
+    {
+      "code": 6002,
+      "name": "BelowMinHeight",
+      "msg": "The stated block number is below the lowest allowed number (D93)"
+    },
+    {
+      "code": 6003,
+      "name": "InsufficientWork",
+      "msg": "The header's hash does not meet its own difficulty"
+    },
+    {
+      "code": 6004,
+      "name": "DifficultyTooLow",
+      "msg": "The difficulty is below the minimum of 2^45 (D38)"
+    },
+    {
+      "code": 6005,
+      "name": "DifficultyMismatch",
+      "msg": "The difficulty is not the one Bitcoin's rules give this block"
+    },
+    {
+      "code": 6006,
+      "name": "InvalidBits",
+      "msg": "The difficulty field is not a valid Bitcoin difficulty"
+    },
+    {
+      "code": 6007,
+      "name": "NotLinked",
+      "msg": "The block does not name the block before it"
+    },
+    {
+      "code": 6008,
+      "name": "TimeTooNew",
+      "msg": "The block's time is more than 2 hours ahead"
+    },
+    {
+      "code": 6009,
+      "name": "AnchorTooOld",
+      "msg": "The anchor is more than 2 hours old (D39)"
+    },
+    {
+      "code": 6010,
+      "name": "EpochStartTooOld",
+      "msg": "The epoch start is too old to serve any anchor (D57)"
+    },
+    {
+      "code": 6011,
+      "name": "EpochStartOutOfRange",
+      "msg": "The anchor is not within 4 weeks after its epoch start (D57)"
+    },
+    {
+      "code": 6012,
+      "name": "EpochStartTooWeak",
+      "msg": "The epoch start has less than half of the highest difficulty of the last 4 weeks (D45)"
+    },
+    {
+      "code": 6013,
+      "name": "EpochTimeMismatch",
+      "msg": "The first block of an epoch gives the epoch its time"
+    },
+    {
+      "code": 6014,
+      "name": "WrongAccount",
+      "msg": "This account is not the one the block must be stored in"
+    },
+    {
+      "code": 6015,
+      "name": "UnknownBlock",
+      "msg": "The block is not stored"
+    },
+    {
+      "code": 6016,
+      "name": "WalkTooLong",
+      "msg": "The walk is longer than the longest window, 100 blocks (D70)"
+    },
+    {
+      "code": 6017,
+      "name": "WalkFinished",
+      "msg": "The walk is already finished"
+    },
+    {
+      "code": 6018,
+      "name": "InvalidTransaction",
+      "msg": "A 64-byte transaction could be an inner node of the Merkle tree"
+    },
+    {
+      "code": 6019,
+      "name": "InvalidIndex",
+      "msg": "The position does not fit the proof"
+    },
+    {
+      "code": 6020,
+      "name": "NotInBlock",
+      "msg": "The transaction is not in the block"
+    },
+    {
+      "code": 6021,
+      "name": "NotAuthority",
+      "msg": "Only the program's upgrade authority may initialize"
+    },
+    {
+      "code": 6022,
+      "name": "TooEarlyToClose",
+      "msg": "A block or epoch start can be closed only 8 weeks after it was stored (D101)"
+    }
+  ],
+  "types": [
+    {
+      "name": "BlockRef",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "height",
+            "type": "u32"
+          },
+          {
+            "name": "epoch_time",
+            "type": "u32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "BlockStored",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "height",
+            "type": "u32"
+          },
+          {
+            "name": "epoch_time",
+            "type": "u32"
+          },
+          {
+            "name": "prev_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Config",
+      "docs": [
+        "Set once at initialize. The lowest allowed block number (D93) and the",
+        "difficulty limits. A deployment always has the limits of the rules; only",
+        "a test build can lower them."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "min_height",
+            "type": "u32"
+          },
+          {
+            "name": "max_target",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "pow_limit",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DaySlot",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "day",
+            "type": "u32"
+          },
+          {
+            "name": "lowest_target",
+            "docs": [
+              "The lowest target (highest difficulty) of the epoch starts whose",
+              "first block is from that day. All zero means none."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "DayTable",
+      "docs": [
+        "D45 reads the epoch starts of the last 4 weeks by day. The slot of a day",
+        "is `day % 32`, so a day older than 32 days is simply overwritten."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "slots",
+            "type": {
+              "array": [
+                {
+                  "defined": {
+                    "name": "DaySlot"
+                  }
+                },
+                32
+              ]
+            }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EpochStart",
+      "docs": [
+        "An epoch start: 6 blocks in a row with one difficulty (D44)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bits",
+            "type": "u32"
+          },
+          {
+            "name": "first_time",
+            "type": "u32"
+          },
+          {
+            "name": "height",
+            "type": "u32"
+          },
+          {
+            "name": "recorded_at",
+            "type": "i64"
+          },
+          {
+            "name": "payer",
+            "docs": [
+              "Who paid the rent; it goes back to them when the record is closed (D101)."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EpochStartRecorded",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "first_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "bits",
+            "type": "u32"
+          },
+          {
+            "name": "height",
+            "type": "u32"
+          },
+          {
+            "name": "first_time",
+            "type": "u32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Jumped",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "height",
+            "type": "u32"
+          },
+          {
+            "name": "epoch_time",
+            "type": "u32"
+          },
+          {
+            "name": "by",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Node",
+      "docs": [
+        "A stored Bitcoin block (D48). Its address comes from its hash, its",
+        "stated number and the time of the first block of its epoch, so a block",
+        "stored under a false number cannot disturb the entry honest operators",
+        "use (D64)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "prev_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "merkle_root",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "bits",
+            "type": "u32"
+          },
+          {
+            "name": "time",
+            "type": "u32"
+          },
+          {
+            "name": "height",
+            "type": "u32"
+          },
+          {
+            "name": "epoch_time",
+            "type": "u32"
+          },
+          {
+            "name": "stored_at",
+            "type": "i64"
+          },
+          {
+            "name": "anchored_at",
+            "docs": [
+              "When the block first passed the jump guards, by anyone. Zero if never."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "payer",
+            "docs": [
+              "Who paid the rent; it goes back to them when the block is closed (D101)."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Walk",
+      "docs": [
+        "A walk down from a block through the blocks before it, done over several",
+        "transactions. The same checks as `walk` in `iPoWLightClient.sol`."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "descendant",
+            "type": {
+              "defined": {
+                "name": "BlockRef"
+              }
+            }
+          },
+          {
+            "name": "prev_epoch_time",
+            "docs": [
+              "The epoch time of the older epoch, if the walk crosses into one."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "ancestor",
+            "docs": [
+              "The block the walk must reach. It is read last. A walk finishes only",
+              "when it reaches exactly this block: `finished` means \"linked\"."
+            ],
+            "type": {
+              "defined": {
+                "name": "BlockRef"
+              }
+            }
+          },
+          {
+            "name": "next",
+            "docs": [
+              "The next block to read."
+            ],
+            "type": {
+              "defined": {
+                "name": "BlockRef"
+              }
+            }
+          },
+          {
+            "name": "child_bits",
+            "docs": [
+              "The difficulty of the block read before `next`, and whether that",
+              "block was the first of its epoch."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "child_first_of_epoch",
+            "type": "bool"
+          },
+          {
+            "name": "read_any",
+            "type": "bool"
+          },
+          {
+            "name": "finished",
+            "docs": [
+              "Set when the ancestor has been reached, read and checked."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "last",
+            "docs": [
+              "The block read last. When finished, the ancestor."
+            ],
+            "type": {
+              "defined": {
+                "name": "BlockRef"
+              }
+            }
+          },
+          {
+            "name": "work",
+            "docs": [
+              "The mining work of every block read, except the last one."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    }
+  ]
+}

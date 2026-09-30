@@ -7,7 +7,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {HubPartyRegistry} from "./base/HubPartyRegistry.sol";
 import {HubCompositionRegistry} from "./base/HubCompositionRegistry.sol";
 import {HubAnchorJudge} from "./base/HubAnchorJudge.sol";
-import {IIPoWV1HeadersView} from "./libraries/AnchorChainLib.sol";
+import {IIPoWHeadersView} from "./libraries/AnchorChainLib.sol";
 import {HubToken} from "./HubToken.sol";
 
 /// @title BetaHubPathUSD — Tempo-only `BetaHub` variant (mirrors BetaVaultPathUSD.sol)
@@ -85,7 +85,7 @@ contract BetaHubPathUSD is HubCompositionRegistry, HubAnchorJudge {
 
     uint256 public constant BPS_DENOM = 10_000;
 
-    IIPoWV1HeadersView public ipowHeaders;
+    IIPoWHeadersView public ipowHeaders;
     /// PathUSD, Tempo's real value-bearing ERC20 — every bond and every
     /// internal payout (`_pay`) moves this, never native `msg.value`. Same
     /// role as `BetaVaultPathUSD.BOND_TOKEN`.
@@ -116,7 +116,7 @@ contract BetaHubPathUSD is HubCompositionRegistry, HubAnchorJudge {
         }
         _validateParams(_params);
         governance = _governance;
-        ipowHeaders = IIPoWV1HeadersView(_ipowHeadersAddr);
+        ipowHeaders = IIPoWHeadersView(_ipowHeadersAddr);
         BOND_TOKEN = IERC20(_bondToken);
         params = _params;
         token = new HubToken(tokenName, tokenSymbol, address(this));
@@ -236,7 +236,7 @@ contract BetaHubPathUSD is HubCompositionRegistry, HubAnchorJudge {
         rewardPool -= reward;
     }
 
-    function _ipowHeaders() internal view override returns (IIPoWV1HeadersView) {
+    function _ipowHeaders() internal view override returns (IIPoWHeadersView) {
         return ipowHeaders;
     }
 

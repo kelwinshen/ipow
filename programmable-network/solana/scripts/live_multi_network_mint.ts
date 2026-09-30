@@ -14,7 +14,7 @@
 // scripts/live_multi_network_evm.mjs), pointed at the SAME shared Bitcoin
 // statement-chain head — the whole point being that ONE real Bitcoin
 // transaction per remote leg gets independently re-verified by Solana's own
-// header relay (`ipow`) and by that leg's own EVM chain's iPoWV1.
+// header relay (`ipow`) and by that leg's own EVM chain's iPoW.
 //
 //   npx ts-node scripts/live_multi_network_mint.ts <action>
 // actions: register-composition | register-parties | lock-and-approve |

@@ -2,9 +2,9 @@
 
 Same Solidity contracts as [`programmable-network/ethereum`](../ethereum),
 deployed to Base testnet. Base Sepolia is Coinbase's standard OP-Stack L2 testnet — no chain-specific contract changes needed, a plain EVM network from Hardhat's side. See the
-[root architecture doc](../../docs/ARCHITECTURE.md) for how a conversion
+[root architecture doc](../../docs/design/ipow-implementation.md) for how a conversion
 actually flows, and
-[DESIGN_V2.md §8](../../docs/DESIGN_V2.md) for BETA's composition design.
+[design/ipow-implementation.md §8](../../docs/design/ipow-implementation.md) for BETA's composition design.
 
 ## Setup
 
@@ -25,16 +25,16 @@ identical) — see that package's README for the breakdown.
 ## Deploying
 
 ```sh
-npx hardhat ignition deploy ignition/modules/IPoWV1.ts --network baseSepolia
+npx hardhat ignition deploy ignition/modules/IPoW.ts --network baseSepolia
 ```
 
 Chain ID 84532. Current deployment: `0xB7054E399E31A2cFE181c4fD59C7235562a6d45d`.
 
-### BetaVault (DESIGN_V2.md §6/§8)
+### BetaVault (design/ipow-implementation.md §6/§8)
 
 ```sh
 npx hardhat ignition deploy ignition/modules/BetaVault.ts --network baseSepolia \
-  --parameters '{"BetaVaultModule":{"ipowHeaders":"<iPoWV1 address above>"}}'
+  --parameters '{"BetaVaultModule":{"ipowHeaders":"<iPoW address above>"}}'
 ```
 
 Current deployment: `0x6354779b4Dbb564c712ea91c179eCF521C15BE73` (plus a
@@ -42,7 +42,7 @@ Current deployment: `0x6354779b4Dbb564c712ea91c179eCF521C15BE73` (plus a
 deployed alongside it purely to exercise §8.13's ERC20 local-leg
 support — not part of the protocol itself).
 
-### BetaHub (DESIGN_V2.md §8.18/§8.19)
+### BetaHub (design/ipow-implementation.md §8.18/§8.19)
 
 ```sh
 npx hardhat ignition deploy ignition/modules/BetaHub.ts --network baseSepolia
@@ -51,21 +51,21 @@ npx hardhat ignition deploy ignition/modules/BetaHub.ts --network baseSepolia
 Current deployment: `0x24765955eCbffAaACB48a8c3747975d6C750C075`
 (`HubToken`/"iBETA" alongside it).
 
-### iPoWV1Conversion (DESIGN_V2.md §1–§2/§9.2)
+### iPoWConversion (design/ipow-implementation.md §1–§2/§9.2)
 
 The permissionless-auction Conversion base primitive — its own dedicated
-`iPoWV1` header source, deliberately separate from Beta's above (same
+`iPoW` header source, deliberately separate from Beta's above (same
 split every other network uses). No operator automation needed — this
 one is permissionless by design.
 
 ```sh
-npx hardhat ignition deploy ignition/modules/IPoWV1Conversion.ts --network baseSepolia
+npx hardhat ignition deploy ignition/modules/IPoWConversion.ts --network baseSepolia
 ```
 
 Current deployment: `0xa43f67C41Fc6e8474278d5a7C1540862CC2a16bA`
-(its own `iPoWV1`: `0x5F63BF3638f8E2BcBD56a4E43cEC7D39637A6f80`).
-Cross-registered with every other network's own `iPoWV1Conversion` via
-`addNetwork` — see DESIGN_V2.md §9.2.
+(its own `iPoW`: `0x5F63BF3638f8E2BcBD56a4E43cEC7D39637A6f80`).
+Cross-registered with every other network's own `iPoWConversion` via
+`addNetwork` — see design/ipow-implementation.md §9.2.
 
 ## Post-deploy configuration
 

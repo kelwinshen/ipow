@@ -1,0 +1,59 @@
+# Example settings of an iPoW node. Copy to node.yml and fill in the
+# addresses. This file holds no secrets: keys and endpoints come from the
+# environment variables it names (put them in .env, which git ignores).
+
+# Any mix of: operator, guardian, attester.
+roles: [guardian]
+
+bitcoin:
+  explorer: https://mempool.space/api
+  # Needed only when roles include operator: a mainnet WIF key.
+  # wallet_key_env: BTC_WALLET_KEY
+  # The highest fee rate the wallet pays, in sat/vB (default 200).
+  # max_fee_rate: 200
+
+# Seconds between two rounds of a role on a network.
+interval_seconds: 15
+
+networks:
+  - name: ethereum-sepolia
+    kind: evm
+    rpc_env: SEPOLIA_RPC_URL
+    key_env: SEPOLIA_KEY
+    light_client: "0x0000000000000000000000000000000000000000"
+    protocol: "0x0000000000000000000000000000000000000000"
+    # Limits in wei. Only the sections of the chosen roles are needed.
+    guardian: { max_deposit: "100000000000000000" }
+    # operator: { max_bid: "2000000000000000000" }
+    # Conversion's swaps, for an operator: prices in satoshis per whole coin.
+    # conversion:
+    #   address: "0x0000000000000000000000000000000000000000"
+    #   coins:
+    #     - { token: native, decimals: 18, pay_sats: 3000000, ask_sats: 3100000 }
+    # attester: { max_lock: "1000000000000000000" }
+
+  - name: solana-devnet
+    kind: svm
+    rpc_env: SOLANA_RPC_URL
+    # A JSON array of 64 bytes, as solana-keygen writes it, or base58.
+    key_env: SOLANA_KEY
+    light_client: "Ctotq1SSaDJ2EUSe4sMdau92qBesyutH7GPaTRiYp4vJ"
+    protocol: "ChYhovM8vm2tuMRaRFn4m6etG979bjixVa71fXBDwjPL"
+    # Limits in lamports.
+    guardian: { max_deposit: "10000000" }
+
+# The protocol's vault between an EVM network and Solana (spec section 11),
+# for the operator and guardian roles. Amounts: bond in wei, veth_bond in
+# gwei, checkpoint payments in each network's smallest unit.
+# vault:
+#   ethereum: ethereum-sepolia
+#   solana: solana-devnet
+#   ethereum_vault: "0x0000000000000000000000000000000000000000"
+#   solana_vault: "2e1ZUB5eqA6bQfH3f9pbfvibfie7WnvEJeKif53VAm7p"
+#   bond: "2000000000000000000"
+#   veth_bond: "0"
+#   deposits: 5
+#   min_fee_gwei: 0
+#   checkpoint_paid_ethereum: "100000000000000000"
+#   checkpoint_paid_solana: "100000000"
+#   journal: vault.journal     # keep it: the batches this operator wrote

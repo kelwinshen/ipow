@@ -179,7 +179,7 @@ impl RedisStorage {
     // `BetaVault`/`BetaHub` deployment has its own independent party
     // registry) + hex party id, matching the "no shared chain across
     // independent spoke deployments" lesson from this session's real
-    // 5-network mint (DESIGN_V2.md §8.20).
+    // 5-network mint (design/ipow-implementation.md §8.20).
 
     /// Current chain-head outpoint (`txid_be:vout`) for a Beta party
     /// identity on one network — `None` if never set here (fall back to

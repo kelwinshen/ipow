@@ -979,7 +979,7 @@
     "name": "ipowHeaders",
     "outputs": [
       {
-        "internalType": "contract IIPoWV1HeadersView",
+        "internalType": "contract IIPoWHeadersView",
         "name": "",
         "type": "address"
       }

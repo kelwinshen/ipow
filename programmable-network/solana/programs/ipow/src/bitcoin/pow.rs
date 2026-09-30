@@ -15,7 +15,7 @@ use crate::errors::IPoWError;
 /// itself is never bounded to something a real miner would have had to
 /// earn. Found and fixed after this exact gap let a test header (mined
 /// against a deliberately-easy target) go unnoticed as a live protocol gap
-/// rather than a test-only convenience — see `docs/DESIGN_V2.md`.
+/// rather than a test-only convenience — see `docs/design/ipow-implementation.md`.
 const POW_LIMIT: [u8; 32] = {
     let mut limit = [0u8; 32];
     limit[4] = 0xff;

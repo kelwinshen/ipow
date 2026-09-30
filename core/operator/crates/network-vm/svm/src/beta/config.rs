@@ -19,7 +19,7 @@ pub struct BetaSvmConfig {
     pub hub_program_id: String,
     /// `ipow`'s program id — the header-relay source `process_anchor`
     /// reads `GlobalHeader` accounts from. A genuinely different program
-    /// than Conversion's own (mirrors EVM Beta's separate `iPoWV1`
+    /// than Conversion's own (mirrors EVM Beta's separate `iPoW`
     /// instance), but on Solana a program is a singleton per deployment,
     /// so unlike EVM this is very likely the *same* `ipow` program
     /// Conversion's `networks.solana_devnet.contract_address` should

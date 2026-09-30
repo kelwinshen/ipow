@@ -23,12 +23,12 @@ impl From<EvmNetwork> for SupportedNetwork {
             EvmNetwork::Base => SupportedNetwork::ETH,
             EvmNetwork::Robinhood => SupportedNetwork::ETH,
             // HyperEVM's native gas token is HYPE, not ETH — confirmed via
-            // eth_estimateGas (see DESIGN_V2.md §8.16) — a genuinely
+            // eth_estimateGas (see design/ipow-implementation.md §8.16) — a genuinely
             // distinct priced asset, not a relabeling of ETH.
             EvmNetwork::Hyperliquid => SupportedNetwork::HYPE,
             // Tempo has no native-value gas token at all — every real
             // value movement goes through its ERC20 feeToken, PathUSD
-            // (DESIGN_V2.md §8.21). There's no `SupportedNetwork` variant
+            // (design/ipow-implementation.md §8.21). There's no `SupportedNetwork` variant
             // for a stablecoin, and nothing wires Tempo into the
             // Conversion/`networks:` pricing role this pass (only Beta's
             // spoke role, which never reads this conversion) — ETH here
@@ -52,7 +52,7 @@ impl EvmNetwork {
         }
     }
 
-    /// iPoW's own protocol-wide network id registry (DESIGN_V2.md §8.19:
+    /// iPoW's own protocol-wide network id registry (design/ipow-implementation.md §8.19:
     /// 1=Hedera, 2=Ethereum, 3=Solana (reserved), 4=Polkadot, 5=Base,
     /// 6=Robinhood, 7=Tempo, 8=Hyperliquid). Fixed by convention, not read
     /// from any contract — `BetaVault.sol` (a spoke) doesn't even expose

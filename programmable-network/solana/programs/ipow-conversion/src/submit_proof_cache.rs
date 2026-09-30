@@ -149,7 +149,7 @@ pub fn handler<'info>(
         // own loop — see its comment. `Pool.total_locked_deposits` for each
         // extra token's own pool is deliberately not touched here (that
         // bookkeeping is never load-bearing for correctness — see
-        // docs/DESIGN_V2.md's "No liquidity pool" section); only the real
+        // docs/design/ipow-implementation.md's "No liquidity pool" section); only the real
         // transfers matter.
         const ACCOUNTS_PER_EXTRA: usize = 5;
         require!(

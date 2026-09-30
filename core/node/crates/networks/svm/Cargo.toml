@@ -1,0 +1,38 @@
+[package]
+name = "ipow-network-svm"
+description = "The iPoW protocol on Solana, for the node."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+ipow-protocol-core = { path = "../../protocol" }
+anchor-lang = "1.0.2"
+anchor-spl = { version = "1.0.2", default-features = false, features = ["token", "token_2022", "associated_token"] }
+solana-client = "3.1"
+solana-sdk = "3.0"
+solana-commitment-config = "3"
+solana-address-lookup-table-interface = { version = "3.2", features = ["bincode"] }
+bincode = "1"
+sha2 = "0.10"
+bs58 = "0.5"
+serde_json = "1"
+getrandom = "0.3"
+anyhow.workspace = true
+async-trait.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+litesvm = { version = "0.11", optional = true }
+ipow-testing = { path = "../../testing", optional = true }
+
+[features]
+# An in-process Solana with the programs loaded, for the tests of this
+# crate and of the node.
+testing = ["dep:litesvm", "dep:ipow-testing"]
+
+[dev-dependencies]
+ipow-network-svm = { path = ".", features = ["testing"] }
+ipow-testing = { path = "../../testing" }
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("idl-build"))', 'cfg(target_os, values("solana"))'] }

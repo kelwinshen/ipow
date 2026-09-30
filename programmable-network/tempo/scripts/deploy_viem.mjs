@@ -66,10 +66,10 @@ async function deploy(name, abi, bytecode, args) {
   return receipt.contractAddress;
 }
 
-// iPoWV1 already genuinely deployed in the prior run (verified by bytecode
+// iPoW already genuinely deployed in the prior run (verified by bytecode
 // match) — reuse it rather than spend the sponsor's funds redeploying.
 const ipowAddr = "0x53e1291bdaff473694bbbb8dd257f9844e5f9f3c";
-console.log("reusing already-deployed iPoWV1:", ipowAddr);
+console.log("reusing already-deployed iPoW:", ipowAddr);
 
 const vaultArt = artifact("BetaVault");
 const params = {
@@ -90,6 +90,6 @@ const betaVaultAddr = await deploy("BetaVault", vaultArt.abi, vaultArt.bytecode,
 const mockArt = artifact("MockERC20");
 const mockTokenAddr = await deploy("MockERC20", mockArt.abi, mockArt.bytecode, ["Mock BETA-leg USD", "mUSD"]);
 
-console.log("\niPoWV1:   ", ipowAddr);
+console.log("\niPoW:   ", ipowAddr);
 console.log("BetaVault:", betaVaultAddr);
 console.log("MockERC20:", mockTokenAddr);

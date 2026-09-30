@@ -9,7 +9,7 @@ use crate::state::{Conversion, ConversionGlobalState, ConversionStatus, Pool, Su
 use crate::utils::transfer_value_in;
 
 /// Permissionless, atomic "open + fully fund" path for `bitcoin->token`
-/// conversions that carry a multi-token bundle — see `docs/DESIGN_V2.md`
+/// conversions that carry a multi-token bundle — see `docs/design/ipow-implementation.md`
 /// §2. Collapses what would otherwise be `commit_bitcoin_to_token` +
 /// `propose_claim_conversion` + `finalize_claim_conversion` into one
 /// instruction: the opener self-funds the *entire* fixed bundle (primary +

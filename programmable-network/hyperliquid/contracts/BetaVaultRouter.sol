@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {BetaVaultStorage, IIPoWV1HeadersView} from "./base/BetaVaultStorage.sol";
+import {BetaVaultStorage, IIPoWHeadersView} from "./base/BetaVaultStorage.sol";
 import {BetaVaultCoreFacet} from "./facets/BetaVaultCoreFacet.sol";
 import {BetaVaultAnchorFacet} from "./facets/BetaVaultAnchorFacet.sol";
 
 /**
  * @title BetaVaultRouter
- * @notice Hyperliquid-only stand-in for plain `BetaVault` (DESIGN_V2.md
- * §8.17) — same reasoning, and the exact same pattern, as `iPoWV1Router`
+ * @notice Hyperliquid-only stand-in for plain `BetaVault` (design/ipow-implementation.md
+ * §8.17) — same reasoning, and the exact same pattern, as `iPoWRouter`
  * (§8.16): dispatches to `BetaVaultCoreFacet` and `BetaVaultAnchorFacet` via
  * `delegatecall`. From any external caller's perspective this behaves
  * exactly like `BetaVault`. Every state variable lives in the router's own
  * storage; each facet only ever executes against it via `delegatecall`.
  *
- * Deliberately immutable, same as `iPoWV1Router`: both facet addresses are
+ * Deliberately immutable, same as `iPoWRouter`: both facet addresses are
  * set once in the constructor and never change. No admin function exists to
  * swap a facet.
  */
@@ -27,7 +27,7 @@ contract BetaVaultRouter is BetaVaultStorage {
         if (_coreFacet == address(0) || _anchorFacet == address(0)) revert InvalidConstructor();
         _validate(_params);
         governance = _governance;
-        ipowHeaders = IIPoWV1HeadersView(_ipowHeaders);
+        ipowHeaders = IIPoWHeadersView(_ipowHeaders);
         params = _params;
         coreFacet = _coreFacet;
         anchorFacet = _anchorFacet;
@@ -57,7 +57,7 @@ contract BetaVaultRouter is BetaVaultStorage {
     }
 
     /// @dev Explicit selector -> facet mapping, same style as
-    /// `iPoWV1Router._facetFor` — cheap (immutable comparisons, no SLOAD),
+    /// `iPoWRouter._facetFor` — cheap (immutable comparisons, no SLOAD),
     /// every entry individually visible here for review rather than hidden
     /// behind a constructor-populated mapping.
     function _facetFor(bytes4 selector) internal view returns (address) {

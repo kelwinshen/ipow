@@ -25,7 +25,7 @@ use tracing::{error, info, warn};
 // data concurrently, so a large batch doesn't hammer a rate-limited provider.
 const REMOTE_FETCH_CONCURRENCY: usize = 8;
 
-use crate::{bindings::ipow_v1, dependencies::context::EvmContext};
+use crate::{bindings::ipow, dependencies::context::EvmContext};
 use anyhow::Result;
 
 pub struct EvmConvertingAdapter {
@@ -35,7 +35,7 @@ pub struct EvmConvertingAdapter {
 }
 
 impl EvmConvertingAdapter {
-    fn map_to_core(evm: ipow_v1::Conversion) -> Conversion {
+    fn map_to_core(evm: ipow::Conversion) -> Conversion {
         Conversion {
             user: evm.user,
             is_native_to_bitcoin: evm.is_native_to_bitcoin,
@@ -120,7 +120,7 @@ impl ConvertingAdapter for EvmConvertingAdapter {
             );
 
             let c_op = self.ctx.c_op.clone();
-            let fetched: Vec<Result<Option<(U256, ipow_v1::Conversion)>>> =
+            let fetched: Vec<Result<Option<(U256, ipow::Conversion)>>> =
                 stream::iter(active_ids)
                     .map(|tx_id| {
                         let c_op = c_op.clone();

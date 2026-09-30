@@ -5,7 +5,7 @@ import {BetaHubStorage} from "../base/BetaHubStorage.sol";
 
 /**
  * @title BetaHubMintFacet
- * @notice Hyperliquid-only facet (DESIGN_V2.md §8.19): the `Pending` mint
+ * @notice Hyperliquid-only facet (design/ipow-implementation.md §8.19): the `Pending` mint
  * lifecycle — `lockLocal`/`approvePending`/`exerciseMint`/`settleMint`/
  * `expirePending`. Reused near-verbatim from `BetaHub.sol`'s own body —
  * see that file's comments for the design reasoning.

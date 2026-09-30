@@ -5,13 +5,13 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-import {IIPoWV1HeadersView} from "../libraries/AnchorChainLib.sol";
+import {IIPoWHeadersView} from "../libraries/AnchorChainLib.sol";
 import {HubToken} from "../HubToken.sol";
 
 /**
  * @title BetaHubStorage
- * @notice Hyperliquid-only split of `BetaHub` (DESIGN_V2.md §8.18/§8.19),
- * same reasoning and pattern as `iPoWV1Router`/`BetaVaultRouter`'s splits
+ * @notice Hyperliquid-only split of `BetaHub` (design/ipow-implementation.md §8.18/§8.19),
+ * same reasoning and pattern as `iPoWRouter`/`BetaVaultRouter`'s splits
  * (§8.16/§8.17): `BetaHub`'s deployed bytecode (~19,118 bytes on the
  * reference `ethereum/` build) needs ~3.82M gas of code-deposit cost alone
  * (200 gas/byte) — above HyperEVM testnet's 3,000,000 block gas limit — so
@@ -32,7 +32,7 @@ import {HubToken} from "../HubToken.sol";
  * `BetaHub`'s own additions, with no virtual-hook indirection (each facet
  * just reads `params.xyz` directly). `SELF_NETWORK_ID` moves from
  * `immutable` to regular storage — immutables don't propagate through
- * `delegatecall`, same fix `iPoWV1Storage`/`BetaVaultStorage` needed.
+ * `delegatecall`, same fix `iPoWStorage`/`BetaVaultStorage` needed.
  */
 abstract contract BetaHubStorage is ReentrancyGuard {
     using SafeERC20 for IERC20;
@@ -209,7 +209,7 @@ abstract contract BetaHubStorage is ReentrancyGuard {
 
     uint256 public constant BPS_DENOM = 10_000;
 
-    IIPoWV1HeadersView public ipowHeaders;
+    IIPoWHeadersView public ipowHeaders;
     Params public params;
     bool public paused;
     uint256 public rewardPool;

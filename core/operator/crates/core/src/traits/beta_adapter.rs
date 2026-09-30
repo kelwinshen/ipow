@@ -1,14 +1,14 @@
 //! Beta's own trait, parallel to `ApprovingAdapter`/`ConvertingAdapter` but
 //! in Beta's vocabulary (`Pending`/`Composition`/`Party`), not Conversion's
-//! (`Conversion`/`tx_id: U256`). See DESIGN_V2.md's Beta engine plan for
+//! (`Conversion`/`tx_id: U256`). See design/ipow-implementation.md's Beta engine plan for
 //! why this is a separate trait rather than an extension of the existing
-//! ones: Beta's `iPoWV1` header source is a different deployed instance
+//! ones: Beta's `iPoW` header source is a different deployed instance
 //! than Conversion's, and the two apps' lifecycles don't share a phase
 //! model beyond both needing Bitcoin-anchor confirmation + a merkle proof.
 //!
-//! Header freshness for whichever `iPoWV1` a `BetaAdapter` impl reads from
+//! Header freshness for whichever `iPoW` a `BetaAdapter` impl reads from
 //! is NOT part of this trait — reuse `StreamingAdapter` as-is, pointed at
-//! Beta's own `iPoWV1` deployment, exactly as Conversion's engine already
+//! Beta's own `iPoW` deployment, exactly as Conversion's engine already
 //! does for its own.
 
 use anyhow::Result;
@@ -73,7 +73,7 @@ pub enum AnchorStatus {
 /// spoke implements `BetaSpokeAdapter` below instead/also.
 #[async_trait]
 pub trait BetaHubAdapter: Send + Sync {
-    /// This hub's own `iPoWV1` header source address — NOT necessarily the
+    /// This hub's own `iPoW` header source address — NOT necessarily the
     /// same deployment Conversion's engine points at on this chain.
     fn ipow_headers_address(&self) -> String;
 

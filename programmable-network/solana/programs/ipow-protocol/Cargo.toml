@@ -1,0 +1,39 @@
+[package]
+name = "ipow-protocol"
+version = "0.1.0"
+description = "The iPoW protocol on Solana: operators, jobs, fees, the auction, the duty, punishment, claims and attest. Spec: docs/design/ipow-protocol.md."
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "ipow_protocol"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build", "ipow-light-client/idl-build"]
+anchor-debug = []
+custom-heap = []
+custom-panic = []
+
+[dependencies]
+anchor-lang = { version = "1.0.0", features = ["init-if-needed"] }
+ipow-light-client = { path = "../ipow-light-client", features = ["no-entrypoint"] }
+sha2 = "0.11.0"
+
+[dev-dependencies]
+solana-clock = "3.0"
+anchor-lang = { version = "1.0.0", features = ["init-if-needed"] }
+litesvm = "0.11.0"
+anchor-litesvm = "0.4.0"
+solana-program = "3.0.0"
+solana-signer = "3.0.0"
+solana-keypair = "3.0.1"
+sha2 = "0.11.0"
+hex = "0.4.3"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }

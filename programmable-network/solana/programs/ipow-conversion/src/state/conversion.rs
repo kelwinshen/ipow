@@ -22,7 +22,7 @@ pub enum ConversionStatus {
     Refunded,
 }
 
-/// See `docs/DESIGN_V2.md` for the full design this implements. Two
+/// See `docs/design/ipow-implementation.md` for the full design this implements. Two
 /// structural changes from the version that still lives, unmodified,
 /// inside `ipow`:
 ///

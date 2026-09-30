@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {iPoWV1Types} from "../base/iPoWV1Types.sol";
+import {iPoWTypes} from "../base/iPoWTypes.sol";
 
 /// @title BitcoinPrimitives
-/// @notice Stateless Bitcoin-consensus math and parsing used by iPoWV1: header field
+/// @notice Stateless Bitcoin-consensus math and parsing used by iPoW: header field
 /// extraction, PoW/difficulty math, Merkle proof verification, and raw tx parsing.
 /// @dev All functions are `internal`, so this gets inlined into the caller's bytecode
-/// rather than deployed separately — `iPoWV1` stays a single deployed contract.
+/// rather than deployed separately — `iPoW` stays a single deployed contract.
 library BitcoinPrimitives {
     function _readCompact(bytes calldata header80) internal pure returns (uint32 nBits) {
         nBits = uint32(uint8(header80[72])) |
@@ -115,7 +115,7 @@ library BitcoinPrimitives {
         returns (uint64 valueSats, bytes memory program)
     {
         uint256 o = 0;
-        if(txRaw.length < 4) revert iPoWV1Types.TransactionTooShort();
+        if(txRaw.length < 4) revert iPoWTypes.TransactionTooShort();
 
         o += 4;
 
@@ -133,16 +133,16 @@ library BitcoinPrimitives {
             o += 36;
             (uint256 slen, uint256 s2) = _readVarInt(txRaw, o);
             o = s2 + slen + 4;
-            if (o > txRaw.length) revert iPoWV1Types.TransactionOverflow();
+            if (o > txRaw.length) revert iPoWTypes.TransactionOverflow();
         }
 
         (uint256 outCount, uint256 s3) = _readVarInt(txRaw, o);
         o = s3;
 
-        if (voutIndex >= outCount) revert iPoWV1Types.VoutOutOfBounds();
+        if (voutIndex >= outCount) revert iPoWTypes.VoutOutOfBounds();
 
         for (uint256 j = 0; j < outCount; j++) {
-            if (o + 8 > txRaw.length) revert iPoWV1Types.ValueOutOfBounds();
+            if (o + 8 > txRaw.length) revert iPoWTypes.ValueOutOfBounds();
 
             if (j == voutIndex) {
                 valueSats = _readLE8(txRaw, o);
@@ -152,7 +152,7 @@ library BitcoinPrimitives {
             (uint256 progLen, uint256 s4) = _readVarInt(txRaw, o);
             o = s4;
 
-            if (o + progLen > txRaw.length) revert iPoWV1Types.ProgramOutOfBounds();
+            if (o + progLen > txRaw.length) revert iPoWTypes.ProgramOutOfBounds();
 
             if (j == voutIndex) {
                 program = new bytes(progLen);
@@ -173,32 +173,32 @@ library BitcoinPrimitives {
         pure
         returns (uint256 v, uint256 next)
     {
-        if (o >= b.length) revert iPoWV1Types.VarIntOutOfBounds();
+        if (o >= b.length) revert iPoWTypes.VarIntOutOfBounds();
 
         uint8 p = uint8(b[o]);
         if (p < 0xFD) {
             v = p;
             next = o + 1;
         } else if (p == 0xFD) {
-            if (o + 3 > b.length) revert iPoWV1Types.Var16OutOfBounds();
+            if (o + 3 > b.length) revert iPoWTypes.Var16OutOfBounds();
             v = uint16(uint8(b[o + 1])) | (uint16(uint8(b[o + 2])) << 8);
             next = o + 3;
         } else if (p == 0xFE) {
-            if (o + 5 > b.length) revert iPoWV1Types.Var32OutOfBounds();
+            if (o + 5 > b.length) revert iPoWTypes.Var32OutOfBounds();
             v = uint32(uint8(b[o + 1])) |
                 (uint32(uint8(b[o + 2])) << 8) |
                 (uint32(uint8(b[o + 3])) << 16) |
                 (uint32(uint8(b[o + 4])) << 24);
             next = o + 5;
         } else {
-            if (o + 9 > b.length) revert iPoWV1Types.Var64OutOfBounds();
+            if (o + 9 > b.length) revert iPoWTypes.Var64OutOfBounds();
             v = _readLE8(b, o + 1);
             next = o + 9;
         }
     }
 
     function _readLE8(bytes memory b, uint256 o) internal pure returns (uint64 v) {
-        if (o + 8 > b.length) revert iPoWV1Types.LE8OutOfBounds();
+        if (o + 8 > b.length) revert iPoWTypes.LE8OutOfBounds();
         v = uint64(uint8(b[o])) |
             (uint64(uint8(b[o + 1])) << 8) |
             (uint64(uint8(b[o + 2])) << 16) |
@@ -210,7 +210,7 @@ library BitcoinPrimitives {
     }
 
     function _hashHeaderLE(bytes calldata header80) internal pure returns (bytes32 outer) {
-        if(header80.length != 80) revert iPoWV1Types.InvalidHeader();
+        if(header80.length != 80) revert iPoWTypes.InvalidHeader();
         bytes memory tmp = new bytes(80);
         assembly ("memory-safe") {
             calldatacopy(add(tmp, 32), header80.offset, 80)

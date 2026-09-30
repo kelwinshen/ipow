@@ -1,14 +1,14 @@
 import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
 
-// BETA (DESIGN_V2.md §6/§8) on Polkadot Hub TestNet: same contract as the
+// BETA (design/ipow-implementation.md §6/§8) on Polkadot Hub TestNet: same contract as the
 // Ethereum package's BetaVaultV5 (§8.13's ERC20 local-leg support, current
-// MINT statement format), pointed at the iPoWV1 relay already deployed
+// MINT statement format), pointed at the iPoW relay already deployed
 // here. Polkadot Hub's REVM backend follows the standard 18-decimal
 // weibar convention (unlike Hedera — see hedera/ignition/modules/
 // BetaVault.ts), so these params match the Ethereum deployment's exactly.
 export default buildModule("BetaVaultModule", (m) => {
   const deployer = m.getAccount(0);
-  const ipow = m.contractAt("iPoWV1", m.getParameter("ipowHeaders", "0x2dD223DcD7F69539Ea895A29095c69c16b088aDb"));
+  const ipow = m.contractAt("iPoW", m.getParameter("ipowHeaders", "0x2dD223DcD7F69539Ea895A29095c69c16b088aDb"));
   const params = {
     ethWeiPerUnit: 1_000_000_000_000_000n, // 0.001 native
     tFinSecs: 14400n,

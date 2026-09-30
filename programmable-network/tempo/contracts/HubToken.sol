@@ -5,7 +5,7 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC20Burnable} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
 
 /// @title HubToken
-/// @notice The ERC20 a `BetaHub` deployment mints — DESIGN_V2.md §8.18.
+/// @notice The ERC20 a `BetaHub` deployment mints — design/ipow-implementation.md §8.18.
 /// Deliberately not named "Beta"/"BETA": that's already `BetaToken.sol`'s
 /// name, for the unrelated single-chain `BetaMint` mechanism. Each `BetaHub`
 /// deploys and owns its own `HubToken` instance with its own name/symbol

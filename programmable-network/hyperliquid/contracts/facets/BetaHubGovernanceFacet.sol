@@ -5,7 +5,7 @@ import {BetaHubStorage} from "../base/BetaHubStorage.sol";
 
 /**
  * @title BetaHubGovernanceFacet
- * @notice Hyperliquid-only facet (DESIGN_V2.md §8.19): governance
+ * @notice Hyperliquid-only facet (design/ipow-implementation.md §8.19): governance
  * (`setParams`), party/bond registration (mirrors `HubPartyRegistry`
  * verbatim), and composition registration (mirrors `HubCompositionRegistry`
  * verbatim). Only ever executed via `BetaHubRouter`'s `delegatecall`.

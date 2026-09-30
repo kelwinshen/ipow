@@ -3,7 +3,7 @@ use anchor_lang::prelude::*;
 use crate::errors::ConversionError;
 use crate::state::{ConversionGlobalState, SupportedNetwork};
 
-/// Mirrors `iPoWV1.sol`/`iPoWV1Conversion.sol`'s own `removeNetwork` —
+/// Mirrors `iPoW.sol`/`iPoWConversion.sol`'s own `removeNetwork` —
 /// `add_network.rs` had no counterpart before this. Closing the PDA
 /// (rather than merely flipping `is_active = false`) is the Solana-native
 /// equivalent of the EVM side's `delete networkConfigs[networkId]`: the

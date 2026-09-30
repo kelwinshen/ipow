@@ -1,4 +1,4 @@
-// BETA v2 devnet driver for `beta_factory` (docs/DESIGN_V2.md §6).
+// BETA v2 devnet driver for `beta_factory` (docs/design/ipow-implementation.md §6).
 // Wallet/cluster: ~/.config/solana/id.json on devnet (same as the scratch
 // scripts). Every action is one instruction; statements are printed as
 // hex for `core/operator`'s `anchor_statement` example, which turns them

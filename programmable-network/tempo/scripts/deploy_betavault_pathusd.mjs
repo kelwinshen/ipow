@@ -1,4 +1,4 @@
-// Deploys BetaVaultPathUSD (DESIGN_V2.md §8.21) — Tempo-only BetaVault
+// Deploys BetaVaultPathUSD (design/ipow-implementation.md §8.21) — Tempo-only BetaVault
 // variant using PathUSD for bonds/payouts instead of native value, which
 // Tempo's transaction type unconditionally rejects. Same viem-native,
 // fee-sponsored deploy path as scripts/deploy_viem.mjs; same "never trust

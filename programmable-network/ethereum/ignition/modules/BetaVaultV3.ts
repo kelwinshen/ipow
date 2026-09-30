@@ -1,11 +1,11 @@
 import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
 
-// BETA v3 (docs/DESIGN_V2.md §7): optimistic settlement — challenge window,
-// attest/clear/alive, escrow-paid releases. Reuses the Sepolia iPoWV1 relay
+// BETA v3 (docs/design/ipow-implementation.md §7): optimistic settlement — challenge window,
+// attest/clear/alive, escrow-paid releases. Reuses the Sepolia iPoW relay
 // deployed by BetaVaultModule. Testnet-sized bonds.
 export default buildModule("BetaVaultV3Module", (m) => {
   const deployer = m.getAccount(0);
-  const ipow = m.contractAt("iPoWV1", m.getParameter("ipowHeaders", "0xB8ab960D1121F33B48b4086aBFCDD8B750081588"));
+  const ipow = m.contractAt("iPoW", m.getParameter("ipowHeaders", "0xB8ab960D1121F33B48b4086aBFCDD8B750081588"));
   const params = {
     ethWeiPerUnit: 1_000_000_000_000_000n, // 0.001 ETH
     tFinSecs: 3600n,

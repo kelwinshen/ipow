@@ -1,10 +1,10 @@
 import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
 
-// Hyperliquid-only deploy path (DESIGN_V2.md §8.16): HyperEVM testnet's block
-// gas limit (3,000,000) is below what the monolithic `iPoWV1` needs to deploy
+// Hyperliquid-only deploy path (design/ipow-implementation.md §8.16): HyperEVM testnet's block
+// gas limit (3,000,000) is below what the monolithic `iPoW` needs to deploy
 // (~4.79M), so this network deploys the three facets + the immutable router
-// instead of `IPoWV1.ts`'s single `iPoWV1` contract. The router satisfies the
-// exact same external interface (including BetaVault's `IIPoWV1HeadersView`
+// instead of `IPoW.ts`'s single `iPoW` contract. The router satisfies the
+// exact same external interface (including BetaVault's `IIPoWHeadersView`
 // dependency, via its own inherited public getters) — `BetaVault.ts`'s
 // `ipowHeaders` parameter should point at this module's `router` address.
 export default buildModule("RouterModule", (m) => {
@@ -16,11 +16,11 @@ export default buildModule("RouterModule", (m) => {
   const operator = m.getParameter("operator", m.getAccount(0));
   const commitFeeBps = m.getParameter("commitFeeBps", 50n);
 
-  const adminFacet = m.contract("iPoWV1AdminFacet", []);
-  const conversionEntryFacet = m.contract("iPoWV1ConversionEntryFacet", []);
-  const conversionSettlementFacet = m.contract("iPoWV1ConversionSettlementFacet", []);
+  const adminFacet = m.contract("iPoWAdminFacet", []);
+  const conversionEntryFacet = m.contract("iPoWConversionEntryFacet", []);
+  const conversionSettlementFacet = m.contract("iPoWConversionSettlementFacet", []);
 
-  const router = m.contract("iPoWV1Router", [
+  const router = m.contract("iPoWRouter", [
     nativeDecimals,
     selfNetworkId,
     operator,

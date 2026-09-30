@@ -1,0 +1,639 @@
+{
+  "address": "3DuG4iNPptEyCAA7FM1YQja43G6HkTAwrswT3Ds2d94R",
+  "metadata": {
+    "name": "beta_basket",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "BETA: tokens backed by a basket of up to 8 parts, one per network, on one network. Design: docs/drafts/ipow-beta-app.md."
+  },
+  "instructions": [
+    {
+      "name": "burn",
+      "docs": [
+        "Burns `amount` BETA of the caller, who receives of each part its",
+        "share of what the basket holds, rounded down, less the creator's fee.",
+        "A part whose bit is set in `defer` is not moved now: it is owed to the",
+        "caller, and collected later, the fee taken then. After the `PER_PART`",
+        "accounts of every part come the caller's owed records of the deferred",
+        "parts, in order."
+      ],
+      "discriminator": [
+        116,
+        110,
+        29,
+        56,
+        107,
+        219,
+        42,
+        93
+      ],
+      "accounts": [
+        {
+          "name": "basket",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  97,
+                  115,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "basket.creator",
+                "account": "Basket"
+              },
+              {
+                "kind": "account",
+                "path": "basket.id",
+                "account": "Basket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "beta",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  101,
+                  116,
+                  97
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "basket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user_beta",
+          "writable": true
+        },
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "defer",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "collect_owed",
+      "docs": [
+        "Pays the caller what it is owed of part `index`, less the creator's",
+        "burn fee, taken here rather than when the part was deferred, and",
+        "closes the record, its rent back to the caller. The remaining",
+        "accounts are that part's `PER_PART` accounts."
+      ],
+      "discriminator": [
+        65,
+        184,
+        127,
+        10,
+        101,
+        208,
+        228,
+        191
+      ],
+      "accounts": [
+        {
+          "name": "basket",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  97,
+                  115,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "basket.creator",
+                "account": "Basket"
+              },
+              {
+                "kind": "account",
+                "path": "basket.id",
+                "account": "Basket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owed",
+          "writable": true
+        },
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "index",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "create_basket",
+      "docs": [
+        "Creates basket `id` of the caller, and its BETA token. The remaining",
+        "accounts are the parts' mints, in order; each part's issuer powers",
+        "are read from its mint and recorded."
+      ],
+      "discriminator": [
+        47,
+        105,
+        155,
+        148,
+        15,
+        169,
+        202,
+        211
+      ],
+      "accounts": [
+        {
+          "name": "basket",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  97,
+                  115,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "creator"
+              },
+              {
+                "kind": "arg",
+                "path": "id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "beta",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  101,
+                  116,
+                  97
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "basket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "creator",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "id",
+          "type": "u64"
+        },
+        {
+          "name": "parts",
+          "type": {
+            "vec": {
+              "defined": {
+                "name": "Part"
+              }
+            }
+          }
+        },
+        {
+          "name": "mint_fee_bps",
+          "type": "u16"
+        },
+        {
+          "name": "burn_fee_bps",
+          "type": "u16"
+        }
+      ]
+    },
+    {
+      "name": "mint",
+      "docs": [
+        "Mints `amount` BETA (smallest units) to the caller. The first mint",
+        "deposits each part's amount per BETA; after that, each part in",
+        "proportion to what the basket holds per BETA, rounded up, so new",
+        "holders never pay for a past loss. The creator's fee, a share of",
+        "each part, is paid on top. The remaining accounts are `PER_PART` per",
+        "part."
+      ],
+      "discriminator": [
+        51,
+        57,
+        225,
+        47,
+        182,
+        146,
+        137,
+        166
+      ],
+      "accounts": [
+        {
+          "name": "basket",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  97,
+                  115,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "basket.creator",
+                "account": "Basket"
+              },
+              {
+                "kind": "account",
+                "path": "basket.id",
+                "account": "Basket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "beta",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  101,
+                  116,
+                  97
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "basket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user_beta",
+          "writable": true
+        },
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "associated_token_program",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "set_fee_to",
+      "docs": [
+        "Hands the fee to another address. Only the one receiving it may.",
+        "Handing it to the basket itself sends every later fee into the",
+        "backing, for good: the basket can never sign to hand it on."
+      ],
+      "discriminator": [
+        28,
+        120,
+        246,
+        29,
+        244,
+        114,
+        219,
+        250
+      ],
+      "accounts": [
+        {
+          "name": "basket",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  97,
+                  115,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "basket.creator",
+                "account": "Basket"
+              },
+              {
+                "kind": "account",
+                "path": "basket.id",
+                "account": "Basket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "fee_to",
+          "signer": true,
+          "relations": [
+            "basket"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "fee_to",
+          "type": "pubkey"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Basket",
+      "discriminator": [
+        219,
+        79,
+        107,
+        135,
+        231,
+        243,
+        218,
+        248
+      ]
+    },
+    {
+      "name": "Owed",
+      "discriminator": [
+        229,
+        81,
+        192,
+        139,
+        155,
+        99,
+        16,
+        56
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "BadParts",
+      "msg": "A basket has 1 to 8 parts, each a different token with an amount"
+    },
+    {
+      "code": 6001,
+      "name": "FeeTooHigh",
+      "msg": "A fee is at most 1%"
+    },
+    {
+      "code": 6002,
+      "name": "WrongAccount",
+      "msg": "The accounts of the parts are not the ones expected"
+    },
+    {
+      "code": 6003,
+      "name": "BadMint",
+      "msg": "A part must be a token of the classic program or of Token-2022, without transfer fees, transfer hooks, confidential transfers, or a ban on transfers"
+    },
+    {
+      "code": 6004,
+      "name": "ZeroAmount"
+    },
+    {
+      "code": 6005,
+      "name": "Overflow"
+    },
+    {
+      "code": 6006,
+      "name": "NothingOwed"
+    },
+    {
+      "code": 6007,
+      "name": "FirstMintNotWhole",
+      "msg": "A basket's first mint is a whole number of BETA, so it holds exactly the parts it was created with"
+    },
+    {
+      "code": 6008,
+      "name": "PartEmpty",
+      "msg": "A part of the basket holds nothing: its issuer took it all. Nothing can be minted"
+    },
+    {
+      "code": 6009,
+      "name": "PartChanged",
+      "msg": "A part's token no longer has the rules recorded for it"
+    }
+  ],
+  "types": [
+    {
+      "name": "Basket",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "creator",
+            "type": "pubkey"
+          },
+          {
+            "name": "id",
+            "type": "u64"
+          },
+          {
+            "name": "fee_to",
+            "docs": [
+              "Receives the fees; the only thing that can change, by itself."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "mint_fee_bps",
+            "type": "u16"
+          },
+          {
+            "name": "burn_fee_bps",
+            "type": "u16"
+          },
+          {
+            "name": "parts",
+            "type": {
+              "vec": {
+                "defined": {
+                  "name": "Part"
+                }
+              }
+            }
+          },
+          {
+            "name": "beta",
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "beta_bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Owed",
+      "docs": [
+        "A part owed to a holder who deferred it in a burn."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Part",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "docs": [
+              "What one whole BETA holds of it when the basket is new, in its",
+              "smallest unit."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "token_program",
+            "docs": [
+              "The classic token program, or Token-2022."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "decimals",
+            "type": "u8"
+          },
+          {
+            "name": "powers",
+            "docs": [
+              "Its issuer's powers: `CAN_FREEZE`, `CAN_PAUSE`, `CAN_MOVE`,",
+              "`ALLOWED_ONLY`."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "owed",
+            "docs": [
+              "Set aside for burners who deferred this part, not yet collected."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    }
+  ]
+}

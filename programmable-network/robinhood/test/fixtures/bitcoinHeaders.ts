@@ -1,7 +1,7 @@
 import { sha256 } from "ethers";
 
 // Real Bitcoin mainnet block headers, used as fixtures wherever a test needs to pass
-// iPoWV1's genuine proof-of-work check.
+// iPoW's genuine proof-of-work check.
 //
 // GENESIS_HEADER_HEX is the raw 80-byte mainnet genesis block header (height 0):
 // version=1, prevHash=0x00..00, time=1231006505, bits=0x1d00ffff, nonce=2083236893.
@@ -20,7 +20,7 @@ export function sha256d(hex: string): string {
   return sha256(sha256(hex));
 }
 
-/** The little-endian block hash iPoWV1 stores/compares, derived (not hardcoded). */
+/** The little-endian block hash iPoW stores/compares, derived (not hardcoded). */
 export function computeHeaderHashLE(headerHex: string): string {
   return sha256d(headerHex);
 }

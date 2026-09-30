@@ -1,0 +1,90 @@
+name: check
+
+on:
+  push:
+    branches: [dev, master]
+  pull_request:
+
+jobs:
+  evm-networks:
+    name: contracts (${{ matrix.network }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        network:
+          - ethereum
+          - hedera
+          - polkadot
+          - base
+          - robinhood
+          - hyperliquid
+          - tempo
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Compile + test (local network only, no live RPC/keys needed)
+        run: pnpm --dir programmable-network/${{ matrix.network }} test
+
+  operator:
+    name: core/operator (cargo build + test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core/operator
+
+      - name: Build
+        working-directory: core/operator
+        run: cargo build --workspace
+
+      - name: Test
+        working-directory: core/operator
+        run: cargo test --workspace
+
+  solana:
+    name: solana programs (anchor build + test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: programmable-network/solana
+
+      - name: Install Solana CLI
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+
+      - name: Install Anchor CLI (via AVM)
+        run: |
+          cargo install --git https://github.com/coral-xyz/anchor avm --locked --force
+          avm install latest
+          avm use latest
+
+      - name: Build (cargo, no local validator needed for these litesvm tests)
+        working-directory: programmable-network/solana
+        run: cargo build --workspace
+
+      - name: Test
+        working-directory: programmable-network/solana
+        run: cargo test --workspace

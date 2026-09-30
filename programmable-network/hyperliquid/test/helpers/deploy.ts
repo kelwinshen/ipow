@@ -1,11 +1,11 @@
 import type { Signer } from "ethers";
 
-import { IPoWV1__factory, BetaVault__factory, BetaHub__factory } from "../../types/ethers-contracts/index.ts";
+import { IPoW__factory, BetaVault__factory, BetaHub__factory } from "../../types/ethers-contracts/index.ts";
 import type { BetaVault, BetaHub } from "../../types/ethers-contracts/index.ts";
-import { IPoWV1AdminFacet__factory } from "../../types/ethers-contracts/factories/facets/IPoWV1AdminFacet__factory.ts";
-import { IPoWV1ConversionEntryFacet__factory } from "../../types/ethers-contracts/factories/facets/IPoWV1ConversionEntryFacet__factory.ts";
-import { IPoWV1ConversionSettlementFacet__factory } from "../../types/ethers-contracts/factories/facets/IPoWV1ConversionSettlementFacet__factory.ts";
-import { IPoWV1Router__factory } from "../../types/ethers-contracts/factories/IPoWV1Router__factory.ts";
+import { IPoWAdminFacet__factory } from "../../types/ethers-contracts/factories/facets/IPoWAdminFacet__factory.ts";
+import { IPoWConversionEntryFacet__factory } from "../../types/ethers-contracts/factories/facets/IPoWConversionEntryFacet__factory.ts";
+import { IPoWConversionSettlementFacet__factory } from "../../types/ethers-contracts/factories/facets/IPoWConversionSettlementFacet__factory.ts";
+import { IPoWRouter__factory } from "../../types/ethers-contracts/factories/IPoWRouter__factory.ts";
 import { BetaVaultCoreFacet__factory } from "../../types/ethers-contracts/factories/facets/BetaVaultCoreFacet__factory.ts";
 import { BetaVaultAnchorFacet__factory } from "../../types/ethers-contracts/factories/facets/BetaVaultAnchorFacet__factory.ts";
 import { BetaVaultRouter__factory } from "../../types/ethers-contracts/factories/BetaVaultRouter__factory.ts";
@@ -34,26 +34,26 @@ export interface DeployOverrides {
 }
 
 /**
- * Deploys iPoWV1 via the generated typechain factory rather than
- * `ethers.deployContract("iPoWV1", ...)`. The latter's string-literal overload is
- * keyed to a capitalized `"IPoWV1"` (typechain's PascalCase-ing of a Solidity name
+ * Deploys iPoW via the generated typechain factory rather than
+ * `ethers.deployContract("iPoW", ...)`. The latter's string-literal overload is
+ * keyed to a capitalized `"IPoW"` (typechain's PascalCase-ing of a Solidity name
  * that starts with a lowercase letter), which doesn't match the real, case-sensitive
- * artifact name `iPoWV1` — so it type-checks against a loose `BaseContract` and loses
+ * artifact name `iPoW` — so it type-checks against a loose `BaseContract` and loses
  * all method/property typing. Going through the factory sidesteps that mismatch
- * entirely and returns a fully-typed `IPoWV1` contract instance.
+ * entirely and returns a fully-typed `IPoW` contract instance.
  *
  * `operatorSigner` is used both as the deployer and as the constructor's `_operator`
  * address, matching how every test in this suite deploys.
  */
-export async function deployIPoWV1(
+export async function deployIPoW(
   operatorSigner: Signer,
   overrides: DeployOverrides = {}
 ) {
   if (process.env.IPOW_SPLIT_DEPLOY === "1") {
-    return deployIPoWV1Split(operatorSigner, overrides);
+    return deployIPoWSplit(operatorSigner, overrides);
   }
   const operatorAddress = await operatorSigner.getAddress();
-  const contract = await new IPoWV1__factory(operatorSigner).deploy(
+  const contract = await new IPoW__factory(operatorSigner).deploy(
     overrides.nativeDecimals ?? NATIVE_DECIMALS,
     overrides.selfNetworkId ?? SELF_NETWORK_ID,
     operatorAddress,
@@ -63,10 +63,10 @@ export async function deployIPoWV1(
 }
 
 /**
- * Deploys the Hyperliquid-only router+facets split (DESIGN_V2.md §8.16)
- * instead of the monolithic `iPoWV1`, then returns a handle typed and ABI-
- * decoded exactly like `deployIPoWV1`'s — attached to the *router's*
- * address using the *monolithic* `IPoWV1` interface, since the router
+ * Deploys the Hyperliquid-only router+facets split (design/ipow-implementation.md §8.16)
+ * instead of the monolithic `iPoW`, then returns a handle typed and ABI-
+ * decoded exactly like `deployIPoW`'s — attached to the *router's*
+ * address using the *monolithic* `IPoW` interface, since the router
  * responds to the identical set of function selectors via its `fallback`
  * dispatch (the standard way to interact with a proxy/diamond: the logic
  * contracts' ABI, the proxy's address). This is what makes it possible to
@@ -75,19 +75,19 @@ export async function deployIPoWV1(
  * behavioral-equivalence check available without hand-duplicating every
  * test. See `package.json`'s `test:split` script.
  */
-export async function deployIPoWV1Split(
+export async function deployIPoWSplit(
   operatorSigner: Signer,
   overrides: DeployOverrides = {}
 ) {
   const operatorAddress = await operatorSigner.getAddress();
-  const adminFacet = await new IPoWV1AdminFacet__factory(operatorSigner).deploy();
+  const adminFacet = await new IPoWAdminFacet__factory(operatorSigner).deploy();
   await adminFacet.waitForDeployment();
-  const conversionEntryFacet = await new IPoWV1ConversionEntryFacet__factory(operatorSigner).deploy();
+  const conversionEntryFacet = await new IPoWConversionEntryFacet__factory(operatorSigner).deploy();
   await conversionEntryFacet.waitForDeployment();
-  const conversionSettlementFacet = await new IPoWV1ConversionSettlementFacet__factory(operatorSigner).deploy();
+  const conversionSettlementFacet = await new IPoWConversionSettlementFacet__factory(operatorSigner).deploy();
   await conversionSettlementFacet.waitForDeployment();
 
-  const router = await new IPoWV1Router__factory(operatorSigner).deploy(
+  const router = await new IPoWRouter__factory(operatorSigner).deploy(
     overrides.nativeDecimals ?? NATIVE_DECIMALS,
     overrides.selfNetworkId ?? SELF_NETWORK_ID,
     operatorAddress,
@@ -98,13 +98,13 @@ export async function deployIPoWV1Split(
   );
   await router.waitForDeployment();
 
-  return IPoWV1__factory.connect(await router.getAddress(), operatorSigner);
+  return IPoW__factory.connect(await router.getAddress(), operatorSigner);
 }
 
 /**
  * Deploys `BetaVault` via the generated typechain factory, or, on
  * `BETAVAULT_SPLIT_DEPLOY=1`, the Hyperliquid-only router+facets split
- * (DESIGN_V2.md §8.17) — same toggle pattern as `deployIPoWV1`'s
+ * (design/ipow-implementation.md §8.17) — same toggle pattern as `deployIPoW`'s
  * `IPOW_SPLIT_DEPLOY`. `governanceSigner` deploys and is passed as
  * `_governance`, matching how `test/BetaVault.test.ts` (ported from
  * `ethereum/test/BetaVault.test.ts`) deploys.
@@ -128,7 +128,7 @@ export async function deployBetaVault(
  * — attached to the *router's* address using the *monolithic* `BetaVault`
  * interface, since the router responds to the identical set of function
  * selectors via its `fallback` dispatch. Same proxy-attachment technique as
- * `deployIPoWV1Split` — see its comment.
+ * `deployIPoWSplit` — see its comment.
  */
 export async function deployBetaVaultSplit(
   governanceSigner: Signer,
@@ -156,7 +156,7 @@ export async function deployBetaVaultSplit(
 /**
  * Deploys `BetaHub` via the generated typechain factory, or, on
  * `BETAHUB_SPLIT_DEPLOY=1`, the Hyperliquid-only router+facets split
- * (DESIGN_V2.md §8.19) — same toggle pattern as `deployIPoWV1`'s
+ * (design/ipow-implementation.md §8.19) — same toggle pattern as `deployIPoW`'s
  * `IPOW_SPLIT_DEPLOY` and `deployBetaVault`'s `BETAVAULT_SPLIT_DEPLOY`.
  */
 export async function deployBetaHub(
@@ -180,7 +180,7 @@ export async function deployBetaHub(
  * + `BetaHubRouter`, then returns a handle typed and ABI-decoded exactly
  * like `deployBetaHub`'s — attached to the *router's* address using the
  * *monolithic* `BetaHub` interface. Same proxy-attachment technique as
- * `deployIPoWV1Split`/`deployBetaVaultSplit` — see their comments.
+ * `deployIPoWSplit`/`deployBetaVaultSplit` — see their comments.
  */
 export async function deployBetaHubSplit(
   governanceSigner: Signer,

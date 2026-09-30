@@ -1,8 +1,8 @@
 import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
 
-// BETA (DESIGN_V2.md §6/§8) on Hedera: same contract as the Ethereum
+// BETA (design/ipow-implementation.md §6/§8) on Hedera: same contract as the Ethereum
 // package's BetaVaultV5 (§8.13's ERC20 local-leg support, current MINT
-// statement format), pointed at the iPoWV1 relay already deployed here.
+// statement format), pointed at the iPoW relay already deployed here.
 //
 // All native-currency params below are tinybar-scaled (8 decimals), NOT
 // the usual 18-decimal weibar convention — see hedera/README.md and
@@ -16,7 +16,7 @@ import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
 // equivalent used on every other network, just correctly re-scaled.
 export default buildModule("BetaVaultModule", (m) => {
   const deployer = m.getAccount(0);
-  const ipow = m.contractAt("iPoWV1", m.getParameter("ipowHeaders", "0x36D7F82F8B2E800C877592F8DFFF0E8CFAc96CF3"));
+  const ipow = m.contractAt("iPoW", m.getParameter("ipowHeaders", "0x36D7F82F8B2E800C877592F8DFFF0E8CFAc96CF3"));
   const params = {
     ethWeiPerUnit: 100_000n, // 0.001 HBAR (tinybar-scaled)
     tFinSecs: 14400n,

@@ -5,9 +5,9 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-/// @dev Same read-only view into `iPoWV1`'s header relay that
-/// `iPoWV1Conversion` uses.
-interface IIPoWV1HeadersView {
+/// @dev Same read-only view into `iPoW`'s header relay that
+/// `iPoWConversion` uses.
+interface IIPoWHeadersView {
     function globalTipHeight() external view returns (uint256);
     function globalHeightToHashLE(uint256 height) external view returns (bytes32);
     function globalHeaders(bytes32 hashLE)
@@ -16,7 +16,7 @@ interface IIPoWV1HeadersView {
         returns (bytes32 prevHashLE, bytes32 merkleRootLE, uint32 nBits, uint32 timestamp, bool set, uint64 arrivalTime);
 }
 
-/// @title BetaVaultPathUSD — Tempo-only `BetaVault` variant (DESIGN_V2.md §8.21)
+/// @title BetaVaultPathUSD — Tempo-only `BetaVault` variant (design/ipow-implementation.md §8.21)
 /// @notice Confirmed live (2026-09-23): Tempo's custom `0x76` transaction type
 /// unconditionally rejects any transaction carrying native `value` — not a
 /// nonce/gas quirk like the earlier §8.15 findings, but a hard chain-level
@@ -184,7 +184,7 @@ contract BetaVaultPathUSD is ReentrancyGuard {
     }
 
     // ------------------------------------------------------------ state
-    IIPoWV1HeadersView public immutable ipowHeaders;
+    IIPoWHeadersView public immutable ipowHeaders;
     /// PathUSD, Tempo's real value-bearing ERC20 — every bond and every
     /// internal payout (`_pay`) moves this, never native `msg.value`.
     IERC20 public immutable BOND_TOKEN;
@@ -229,7 +229,7 @@ contract BetaVaultPathUSD is ReentrancyGuard {
         if (_governance == address(0) || _ipowHeaders == address(0) || _bondToken == address(0)) revert InvalidParams();
         _validate(_params);
         governance = _governance;
-        ipowHeaders = IIPoWV1HeadersView(_ipowHeaders);
+        ipowHeaders = IIPoWHeadersView(_ipowHeaders);
         BOND_TOKEN = IERC20(_bondToken);
         params = _params;
     }

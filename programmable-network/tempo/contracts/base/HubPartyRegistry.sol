@@ -5,7 +5,7 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 
 /// @title HubPartyRegistry
 /// @notice Bonded statement-maker registry for a `BetaHub` deployment
-/// (DESIGN_V2.md §8.18) — copied from `BetaVault.sol`'s own `Party`/bond
+/// (design/ipow-implementation.md §8.18) — copied from `BetaVault.sol`'s own `Party`/bond
 /// lifecycle (lines 201-334, 734-743), since it's the identical trust
 /// primitive: a governance-approved, bonded party posts Bitcoin-anchored
 /// statements about facts this contract can't otherwise observe.

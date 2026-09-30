@@ -1,4 +1,4 @@
-// Post-deploy admin/config CLI for the deployed iPoWV1 contract on this chain.
+// Post-deploy admin/config CLI for the deployed iPoW contract on this chain.
 //
 // Every action below maps 1:1 to an `onlyOperator` contract function, so the
 // signer resolved from the connected network's configured account (see
@@ -25,7 +25,7 @@ import path from "node:path";
 
 import { network } from "hardhat";
 
-import { IPoWV1__factory } from "../types/ethers-contracts/index.ts";
+import { IPoW__factory } from "../types/ethers-contracts/index.ts";
 
 // iPoW protocol network ID registry (assigned by the protocol, not tied to
 // each chain's own chain ID): 1 = Hedera, 2 = Ethereum, 3 = Solana, 4 = Polkadot.
@@ -67,9 +67,9 @@ async function getContract() {
     address = Object.values(deployedAddresses)[0] as string;
   }
 
-  const contract = IPoWV1__factory.connect(address, operator);
+  const contract = IPoW__factory.connect(address, operator);
   console.log(
-    `Connected to iPoWV1 at ${address} on chain ${net.chainId} as ${operator.address}`
+    `Connected to iPoW at ${address} on chain ${net.chainId} as ${operator.address}`
   );
   return { contract, ethers, operator };
 }

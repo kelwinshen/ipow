@@ -4,8 +4,8 @@ Three Anchor programs implementing the iPoW protocol natively for the SVM,
 deployed to devnet. Unlike the EVM networks (which all run the same
 Solidity source), Solana needs its own implementation of the same
 conversion lifecycle and Bitcoin SPV verification logic. See the
-[root architecture doc](../../docs/ARCHITECTURE.md) for how a conversion
-actually flows, and [DESIGN_V2.md](../../docs/DESIGN_V2.md) (top-level
+[root architecture doc](../../docs/design/ipow-implementation.md) for how a conversion
+actually flows, and [design/ipow-implementation.md](../../docs/design/ipow-implementation.md) (top-level
 summary and §9) for Beta's composition design and how Conversion and Beta
 relate — two independent layers sharing only the Bitcoin header relay, no
 CPI between them.
@@ -18,7 +18,7 @@ CPI between them.
   `EsmGbkui9ZFC6Fch9J6xoyNRZSp6TwfvcjS88beP1Vem`.
 - **`ipow-conversion`** (`programs/ipow-conversion/`) — the permissionless,
   staked-auction native↔Bitcoin swap (SVM counterpart of
-  `iPoWV1Conversion.sol`): commit, propose/finalize claim, submit proof,
+  `iPoWConversion.sol`): commit, propose/finalize claim, submit proof,
   `add_network`/`remove_network` cross-registration, `open_bundle_tunnel`.
   Program ID (devnet): `FbwXLABMqUeRPw85C7MpMS2LQi4mveXR9a9fA79DfS3V`. Has
   its own dedicated `ipow` header source, separate from Beta's below.
@@ -34,7 +34,7 @@ CPI between them.
   duplicated.
 
 An earlier `beta-mint` program (basket-mint/redeem via CPI into
-`ipow-conversion`) has been removed — see DESIGN_V2.md §9.1 for why
+`ipow-conversion`) has been removed — see design/ipow-implementation.md §9.1 for why
 Conversion and Beta were decoupled instead of composed via CPI.
 
 Each program's own `programs/<name>/src/` follows the same shape:

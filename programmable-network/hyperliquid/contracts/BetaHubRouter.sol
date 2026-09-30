@@ -5,14 +5,14 @@ import {BetaHubStorage} from "./base/BetaHubStorage.sol";
 import {BetaHubGovernanceFacet} from "./facets/BetaHubGovernanceFacet.sol";
 import {BetaHubAnchorFacet} from "./facets/BetaHubAnchorFacet.sol";
 import {BetaHubMintFacet} from "./facets/BetaHubMintFacet.sol";
-import {IIPoWV1HeadersView} from "./libraries/AnchorChainLib.sol";
+import {IIPoWHeadersView} from "./libraries/AnchorChainLib.sol";
 import {HubToken} from "./HubToken.sol";
 
 /**
  * @title BetaHubRouter
- * @notice Hyperliquid-only stand-in for plain `BetaHub` (DESIGN_V2.md
+ * @notice Hyperliquid-only stand-in for plain `BetaHub` (design/ipow-implementation.md
  * §8.19) — same reasoning, and the exact same pattern, as
- * `iPoWV1Router`/`BetaVaultRouter` (§8.16/§8.17): dispatches to
+ * `iPoWRouter`/`BetaVaultRouter` (§8.16/§8.17): dispatches to
  * `BetaHubGovernanceFacet`, `BetaHubAnchorFacet`, and `BetaHubMintFacet`
  * via `delegatecall`. From any external caller's perspective this behaves
  * exactly like `BetaHub`. Every state variable lives in the router's own
@@ -20,7 +20,7 @@ import {HubToken} from "./HubToken.sol";
  * Read-only accessors (`getComposition`, `compositionExists`,
  * `pendingRemoteLockId`, `pendingRemoteAnchorTxid`) need no dispatch at
  * all — they're inherited directly from `BetaHubStorage` as the router's
- * own public getters, same as `iPoWV1Router`'s header-relay reads.
+ * own public getters, same as `iPoWRouter`'s header-relay reads.
  *
  * Deliberately immutable, same as the other two routers: all three facet
  * addresses are set once in the constructor and never change.
@@ -45,7 +45,7 @@ contract BetaHubRouter is BetaHubStorage {
         if (_governanceFacet == address(0) || _anchorFacet == address(0) || _mintFacet == address(0)) revert InvalidConstructor();
         _validateParams(_params);
         governance = _governance;
-        ipowHeaders = IIPoWV1HeadersView(_ipowHeadersAddr);
+        ipowHeaders = IIPoWHeadersView(_ipowHeadersAddr);
         SELF_NETWORK_ID = _selfNetworkId;
         params = _params;
         governanceFacet = _governanceFacet;

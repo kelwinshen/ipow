@@ -89,7 +89,7 @@ pub(crate) use submit_proof_cache::__cpi_client_accounts_submit_proof_cache;
 declare_id!("FbwXLABMqUeRPw85C7MpMS2LQi4mveXR9a9fA79DfS3V");
 
 /// Value-moving Native<->Bitcoin conversion, split out as its own program —
-/// see `docs/DESIGN_V2.md`. Replaces the single-fixed-operator `Conversion`
+/// see `docs/design/ipow-implementation.md`. Replaces the single-fixed-operator `Conversion`
 /// that still lives, unmodified, inside `ipow`: the claiming role here is a
 /// permissionless windowed staked auction (`ipow-message-relay`'s
 /// `propose_claim`/`finalize_claim`/`reclaim_expired_message` mechanics,

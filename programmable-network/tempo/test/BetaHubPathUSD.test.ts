@@ -2,13 +2,13 @@ import { expect } from "chai";
 import { network } from "hardhat";
 import { sha256, getBytes, hexlify, concat, toBeHex, zeroPadValue, AbiCoder, keccak256 } from "ethers";
 
-import { IPoWV1__factory, BetaHubPathUSD__factory, HubToken__factory, MockERC20__factory } from "../types/ethers-contracts/index.ts";
+import { IPoW__factory, BetaHubPathUSD__factory, HubToken__factory, MockERC20__factory } from "../types/ethers-contracts/index.ts";
 import { COMMIT_FEE_BPS, NATIVE_DECIMALS, SELF_NETWORK_ID } from "./helpers/deploy.ts";
 
 const { ethers } = await network.create();
 
 // Same test infrastructure as test/BetaHub.test.ts (raw Bitcoin
-// statement-chain tx builders, iPoWV1 storage cheat-codes) — this suite
+// statement-chain tx builders, iPoW storage cheat-codes) — this suite
 // mirrors that one's cases exactly, swapping every native-value bond/
 // payout for a MockERC20 standing in for PathUSD, since BetaHubPathUSD's
 // whole point is that bonds/payouts move that token instead of msg.value.
@@ -119,7 +119,7 @@ const PARAMS = {
 
 async function deploy() {
   const [gov, op, op2, aud, user, other] = await ethers.getSigners();
-  const ipow = await new IPoWV1__factory(gov).deploy(NATIVE_DECIMALS, SELF_NETWORK_ID, await gov.getAddress(), COMMIT_FEE_BPS);
+  const ipow = await new IPoW__factory(gov).deploy(NATIVE_DECIMALS, SELF_NETWORK_ID, await gov.getAddress(), COMMIT_FEE_BPS);
   await ipow.waitForDeployment();
 
   const bond = await new MockERC20__factory(gov).deploy("Mock PathUSD", "mUSD");

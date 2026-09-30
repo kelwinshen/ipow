@@ -1,11 +1,11 @@
 import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
 
 // Redeploys BetaVault (insurance releases, reward pool, relaxed auditor
-// retirement — docs/DESIGN_V2.md §6.12) against the iPoWV1 relay already
+// retirement — docs/design/ipow-implementation.md §6.12) against the iPoW relay already
 // deployed by BetaVaultModule on Sepolia.
 export default buildModule("BetaVaultV2Module", (m) => {
   const deployer = m.getAccount(0);
-  const ipow = m.contractAt("iPoWV1", m.getParameter("ipowHeaders", "0xB8ab960D1121F33B48b4086aBFCDD8B750081588"));
+  const ipow = m.contractAt("iPoW", m.getParameter("ipowHeaders", "0xB8ab960D1121F33B48b4086aBFCDD8B750081588"));
   const params = {
     ethWeiPerUnit: 1_000_000_000_000_000n,
     windowBlocks: 6n,

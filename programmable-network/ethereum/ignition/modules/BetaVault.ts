@@ -1,6 +1,6 @@
 import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
 
-// BETA v2 on Sepolia (docs/DESIGN_V2.md §6): a fresh iPoWV1 header relay
+// BETA v2 on Sepolia (docs/design/ipow-implementation.md §6): a fresh iPoW header relay
 // carrying the §6.9 operator-first/permissionless-fallback change, and a
 // BetaVault reading it. Test-sized composition: 1 unit = 0.001 ETH.
 export default buildModule("BetaVaultModule", (m) => {
@@ -9,7 +9,7 @@ export default buildModule("BetaVaultModule", (m) => {
   const selfNetworkId = m.getParameter("selfNetworkId", 2n);
   const commitFeeBps = m.getParameter("commitFeeBps", 50n);
 
-  const ipow = m.contract("iPoWV1", [nativeDecimals, selfNetworkId, deployer, commitFeeBps]);
+  const ipow = m.contract("iPoW", [nativeDecimals, selfNetworkId, deployer, commitFeeBps]);
 
   const params = {
     ethWeiPerUnit: m.getParameter("ethWeiPerUnit", 1_000_000_000_000_000n), // 0.001 ETH

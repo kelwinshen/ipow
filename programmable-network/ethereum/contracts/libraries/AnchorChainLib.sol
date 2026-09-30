@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-/// @dev Same read-only view into `iPoWV1`'s header relay that `BetaVault.sol`
-/// and `iPoWV1Conversion.sol` use.
-interface IIPoWV1HeadersView {
+/// @dev Same read-only view into `iPoW`'s header relay that `BetaVault.sol`
+/// and `iPoWConversion.sol` use.
+interface IIPoWHeadersView {
     function globalTipHeight() external view returns (uint256);
     function globalHeightToHashLE(uint256 height) external view returns (bytes32);
     function globalHeaders(bytes32 hashLE)
@@ -13,7 +13,7 @@ interface IIPoWV1HeadersView {
 }
 
 /// @title AnchorChainLib
-/// @notice Pure Bitcoin-transaction byte-parsing (DESIGN_V2.md §8.18),
+/// @notice Pure Bitcoin-transaction byte-parsing (design/ipow-implementation.md §8.18),
 /// extracted near-verbatim from `BetaVault.sol`'s own private
 /// `_readVarInt`/`_parseAnchor` (lines 824-882) into a shared library so
 /// `BetaHub`'s `HubAnchorJudge` doesn't hand-duplicate the same intricate

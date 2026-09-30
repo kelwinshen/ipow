@@ -5,7 +5,7 @@ import {HubPartyRegistry} from "./HubPartyRegistry.sol";
 
 /// @title HubCompositionRegistry
 /// @notice Governance-registered mint "recipes" for a `BetaHub` deployment
-/// (DESIGN_V2.md §8.18) — mirrors Solana `beta-factory`'s `Composition`/
+/// (design/ipow-implementation.md §8.18) — mirrors Solana `beta-factory`'s `Composition`/
 /// `register_composition` (`state/composition.rs`, `register_composition.rs`)
 /// field-for-field.
 /// @dev `Component.amountPerUnit` is deliberately the only rate table this
@@ -31,10 +31,10 @@ abstract contract HubCompositionRegistry is HubPartyRegistry {
     /// Local (this-chain) components a composition may have — mirrors
     /// Solana's `MAX_LOCAL_COMPONENTS`.
     uint256 public constant MAX_LOCAL_COMPONENTS = 4;
-    /// iPoW protocol network-ID registry (docs/DESIGN_V2.md): Solana is
+    /// iPoW protocol network-ID registry (docs/design/ipow-implementation.md): Solana is
     /// reserved and, for this pass, unsupported as a remote leg — a spoke
     /// there needs a new Solana "spoke" program this repo doesn't have yet
-    /// (DESIGN_V2.md §8.18's "deliberately deferred" list). Reject rather
+    /// (design/ipow-implementation.md §8.18's "deliberately deferred" list). Reject rather
     /// than silently registering an unjudgeable leg.
     uint256 public constant SOLANA_NETWORK_ID = 3;
 

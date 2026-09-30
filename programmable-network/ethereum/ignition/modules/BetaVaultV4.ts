@@ -1,12 +1,12 @@
 import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
 
-// BETA v3 (docs/DESIGN_V2.md §7), redeployed with the mintAttester
+// BETA v3 (docs/design/ipow-implementation.md §7), redeployed with the mintAttester
 // overwrite fix (only the first attester of an unresolved MINT is
-// recorded — §7.4a-bis, 2026-09-22). Reuses the Sepolia iPoWV1 relay
+// recorded — §7.4a-bis, 2026-09-22). Reuses the Sepolia iPoW relay
 // already deployed by BetaVaultModule.
 export default buildModule("BetaVaultV4Module", (m) => {
   const deployer = m.getAccount(0);
-  const ipow = m.contractAt("iPoWV1", m.getParameter("ipowHeaders", "0xB8ab960D1121F33B48b4086aBFCDD8B750081588"));
+  const ipow = m.contractAt("iPoW", m.getParameter("ipowHeaders", "0xB8ab960D1121F33B48b4086aBFCDD8B750081588"));
   const params = {
     ethWeiPerUnit: 1_000_000_000_000_000n, // 0.001 ETH
     tFinSecs: 14400n, // 4h — raised 2026-09-22 after a near-miss during an explorer outage

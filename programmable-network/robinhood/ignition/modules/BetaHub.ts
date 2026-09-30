@@ -1,11 +1,11 @@
 import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
 
-// BetaHub (DESIGN_V2.md §8.18) on Robinhood Chain testnet: an EVM chain
+// BetaHub (design/ipow-implementation.md §8.18) on Robinhood Chain testnet: an EVM chain
 // acting as a mint hub, not just a spoke — same contract as the Ethereum
 // pilot's BetaHub. Standard 18-decimal weibar convention.
 export default buildModule("BetaHubModule", (m) => {
   const deployer = m.getAccount(0);
-  const ipow = m.contractAt("iPoWV1", m.getParameter("ipowHeaders", "0x53e1291BdAff473694BbbB8DD257f9844e5f9F3c"));
+  const ipow = m.contractAt("iPoW", m.getParameter("ipowHeaders", "0x53e1291BdAff473694BbbB8DD257f9844e5f9F3c"));
   const selfNetworkId = m.getParameter("selfNetworkId", 6n); // Robinhood Chain
   const params = {
     tChallengeSecs: 7n * 86400n,

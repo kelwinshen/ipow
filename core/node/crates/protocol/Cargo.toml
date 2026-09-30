@@ -1,0 +1,17 @@
+[package]
+name = "ipow-protocol-core"
+description = "What every network of the iPoW protocol offers, and the rules the roles share."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+async-trait.workspace = true
+serde.workspace = true
+serde_yaml.workspace = true
+thiserror.workspace = true
+sha2 = "0.10"
+
+[dev-dependencies]
+anyhow.workspace = true

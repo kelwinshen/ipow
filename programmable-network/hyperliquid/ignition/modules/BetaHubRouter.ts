@@ -1,6 +1,6 @@
 import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
 
-// Hyperliquid-only deploy path (DESIGN_V2.md §8.19): plain `BetaHub` needs
+// Hyperliquid-only deploy path (design/ipow-implementation.md §8.19): plain `BetaHub` needs
 // ~5.04M gas to deploy (deployed bytecode 19,118 bytes; code-deposit cost
 // alone — 200 gas/byte — is ~3.82M), above HyperEVM testnet's 3,000,000
 // block gas limit, so this network deploys `BetaHubGovernanceFacet` +

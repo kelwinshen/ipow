@@ -1,6 +1,6 @@
 //! Beta's own engine, parallel to `chain_operator.rs` but driving Beta's
 //! claim → relay → exercise lifecycle instead of Conversion's. See
-//! DESIGN_V2.md's Beta-engine plan for the full design rationale.
+//! design/ipow-implementation.md's Beta-engine plan for the full design rationale.
 //!
 //! **Deliberate v1 simplifications** (flagged, not silently assumed):
 //! - **One global Bitcoin statement chain**, tracked as a single Redis
@@ -14,7 +14,7 @@
 //!   This session's real 5-network mint hit a genuine bug from sharing
 //!   one linear chain across multiple spokes anchored "simultaneously"
 //!   (each spoke's own `Party` pointer could only advance one link at a
-//!   time — see DESIGN_V2.md §8.20's "shared chain" lesson, fixed there
+//!   time — see design/ipow-implementation.md §8.20's "shared chain" lesson, fixed there
 //!   by hand with a second registered party per spoke). Rather than
 //!   solve the general N-parallel-leg case here, this engine anchors one
 //!   remote component at a time, waiting for each to be relayed before
@@ -128,7 +128,7 @@ async fn tick_all(
 ) -> Result<()> {
     for handle in registry.by_self_network_id.values() {
         if let Some(hub) = &handle.hub {
-            // Header freshness for this hub's own `iPoWV1`, before doing
+            // Header freshness for this hub's own `iPoW`, before doing
             // anything that reads/writes anchor state against it.
             let tip = ipow_core::btc::btc_service::btc_tip_height(&core_ctx)
                 .await

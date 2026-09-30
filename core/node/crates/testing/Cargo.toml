@@ -1,0 +1,12 @@
+[package]
+name = "ipow-testing"
+description = "Test helpers shared by every network: a Bitcoin chain mined at a low difficulty, and a job carried to its proof."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+ipow-protocol-core = { path = "../protocol" }
+ipow-bitcoin = { path = "../bitcoin" }
+async-trait.workspace = true

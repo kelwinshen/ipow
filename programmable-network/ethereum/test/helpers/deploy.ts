@@ -1,6 +1,6 @@
 import type { Signer } from "ethers";
 
-import { IPoWV1__factory } from "../../types/ethers-contracts/index.ts";
+import { IPoW__factory } from "../../types/ethers-contracts/index.ts";
 
 // Shared constructor defaults used across the test suite.
 //
@@ -18,23 +18,23 @@ export interface DeployOverrides {
 }
 
 /**
- * Deploys iPoWV1 via the generated typechain factory rather than
- * `ethers.deployContract("iPoWV1", ...)`. The latter's string-literal overload is
- * keyed to a capitalized `"IPoWV1"` (typechain's PascalCase-ing of a Solidity name
+ * Deploys iPoW via the generated typechain factory rather than
+ * `ethers.deployContract("iPoW", ...)`. The latter's string-literal overload is
+ * keyed to a capitalized `"IPoW"` (typechain's PascalCase-ing of a Solidity name
  * that starts with a lowercase letter), which doesn't match the real, case-sensitive
- * artifact name `iPoWV1` — so it type-checks against a loose `BaseContract` and loses
+ * artifact name `iPoW` — so it type-checks against a loose `BaseContract` and loses
  * all method/property typing. Going through the factory sidesteps that mismatch
- * entirely and returns a fully-typed `IPoWV1` contract instance.
+ * entirely and returns a fully-typed `IPoW` contract instance.
  *
  * `operatorSigner` is used both as the deployer and as the constructor's `_operator`
  * address, matching how every test in this suite deploys.
  */
-export async function deployIPoWV1(
+export async function deployIPoW(
   operatorSigner: Signer,
   overrides: DeployOverrides = {}
 ) {
   const operatorAddress = await operatorSigner.getAddress();
-  const contract = await new IPoWV1__factory(operatorSigner).deploy(
+  const contract = await new IPoW__factory(operatorSigner).deploy(
     overrides.nativeDecimals ?? NATIVE_DECIMALS,
     overrides.selfNetworkId ?? SELF_NETWORK_ID,
     operatorAddress,

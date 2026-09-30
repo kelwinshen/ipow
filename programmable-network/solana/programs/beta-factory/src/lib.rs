@@ -101,7 +101,7 @@ use state::{Component, FactoryParams, PartyKind};
 
 declare_id!("BkNb9JfNbfbn3rMiA3j3z2pnFdNibxiYWWsKZ9VdzoD1");
 
-/// BETA v2 factory — `docs/DESIGN_V2.md` §6. One fungible BETA on Solana,
+/// BETA v2 factory — `docs/design/ipow-implementation.md` §6. One fungible BETA on Solana,
 /// its SOL half held here, its ETH half held by `BetaVault.sol`. Cross-chain
 /// claims are Bitcoin transactions on each party's statement chain; this
 /// program judges claims about Solana facts, acts provisionally on claims

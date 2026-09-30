@@ -2,11 +2,11 @@
 pragma solidity ^0.8.20;
 
 import {HubPartyRegistry} from "./HubPartyRegistry.sol";
-import {AnchorChainLib, IIPoWV1HeadersView} from "../libraries/AnchorChainLib.sol";
+import {AnchorChainLib, IIPoWHeadersView} from "../libraries/AnchorChainLib.sol";
 
 /// @title HubAnchorJudge
 /// @notice Statement-chain anchor judging for a `BetaHub` deployment
-/// (DESIGN_V2.md §8.18). `KIND_VETO`/`KIND_ATTEST`/`KIND_CLEAR`/`KIND_ALIVE`
+/// (design/ipow-implementation.md §8.18). `KIND_VETO`/`KIND_ATTEST`/`KIND_CLEAR`/`KIND_ALIVE`
 /// are reused near-verbatim from `BetaVault.sol`'s own handlers (lines
 /// 557-711) — they only ever touch `Party`/`ProcessedAnchor`, so retargeting
 /// them at a queued MINT *component* instead of a queued *release* needs no
@@ -104,7 +104,7 @@ abstract contract HubAnchorJudge is HubPartyRegistry {
     function _bountyBps() internal view virtual returns (uint16);
     function _bpsDenom() internal view virtual returns (uint256);
     function _rewardPoolSub(uint256 amount) internal virtual;
-    function _ipowHeaders() internal view virtual returns (IIPoWV1HeadersView);
+    function _ipowHeaders() internal view virtual returns (IIPoWHeadersView);
 
     event AnchorProcessed(bytes32 indexed partyId, bytes32 indexed txidLE, uint8 kind, AnchorStatus status);
     event ComponentHeld(bytes32 indexed txidLE, bool held);
@@ -303,7 +303,7 @@ abstract contract HubAnchorJudge is HubPartyRegistry {
         txidLE = AnchorChainLib.txidOf(txRaw);
         if (anchors[txidLE].status != AnchorStatus.None) revert AnchorChainLib.AlreadyProcessed();
 
-        IIPoWV1HeadersView ipowHeaders = _ipowHeaders();
+        IIPoWHeadersView ipowHeaders = _ipowHeaders();
         bytes32 headerHashLE = ipowHeaders.globalHeightToHashLE(blockHeight);
         (, bytes32 merkleRootLE, , uint32 ts, bool set, ) = ipowHeaders.globalHeaders(headerHashLE);
         if (!set) revert AnchorChainLib.InvalidHeader();

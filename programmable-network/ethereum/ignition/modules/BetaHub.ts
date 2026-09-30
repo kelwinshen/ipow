@@ -1,12 +1,12 @@
 import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
 
-// BetaHub (DESIGN_V2.md §8.18): an EVM chain acting as a mint hub, not just
-// a spoke. Reuses the same Sepolia iPoWV1 relay every BetaVault version has
-// (its public getters satisfy IIPoWV1HeadersView identically). Deploys its
+// BetaHub (design/ipow-implementation.md §8.18): an EVM chain acting as a mint hub, not just
+// a spoke. Reuses the same Sepolia iPoW relay every BetaVault version has
+// (its public getters satisfy IIPoWHeadersView identically). Deploys its
 // own HubToken ("iBETA") internally — no separate token deployment needed.
 export default buildModule("BetaHubModule", (m) => {
   const deployer = m.getAccount(0);
-  const ipow = m.contractAt("iPoWV1", m.getParameter("ipowHeaders", "0xB8ab960D1121F33B48b4086aBFCDD8B750081588"));
+  const ipow = m.contractAt("iPoW", m.getParameter("ipowHeaders", "0xB8ab960D1121F33B48b4086aBFCDD8B750081588"));
   const selfNetworkId = m.getParameter("selfNetworkId", 2n); // Ethereum
   const params = {
     tChallengeSecs: 7n * 86400n,

@@ -26,7 +26,7 @@ use tracing::{error, info, warn};
 const REMOTE_FETCH_CONCURRENCY: usize = 8;
 
 use crate::{
-    bindings::ipow_v1::Conversion, dependencies::context::EvmContext,
+    bindings::ipow::Conversion, dependencies::context::EvmContext,
 };
 use anyhow::{Result, anyhow};
 

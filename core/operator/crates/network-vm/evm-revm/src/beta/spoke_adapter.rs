@@ -48,7 +48,7 @@ impl BetaSpokeAdapter for EvmBetaSpokeAdapter {
         );
         // Tempo's RPC rejects eth_estimateGas whenever EIP-1559 fee
         // fields are present in the estimation call — confirmed against
-        // real deploy transactions there (DESIGN_V2.md §8.15); an
+        // real deploy transactions there (design/ipow-implementation.md §8.15); an
         // explicit gas limit skips ethers-rs's automatic estimation
         // entirely, the same workaround `tempo/scripts/deploy_raw.mjs`
         // uses. Unverified for a *call* (only proven for deploys) — flag

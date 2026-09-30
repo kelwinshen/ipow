@@ -1,0 +1,8 @@
+target
+# Secrets: keys and endpoints with keys never go into git.
+.env
+.env.*
+# The node's own record of what it did.
+*.db
+*.db-*
+*.journal

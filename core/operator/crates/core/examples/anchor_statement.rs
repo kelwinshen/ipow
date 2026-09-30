@@ -1,4 +1,4 @@
-//! BETA v2 (docs/DESIGN_V2.md §6.2): builds, signs and (optionally)
+//! BETA v2 (docs/design/ipow-implementation.md §6.2): builds, signs and (optionally)
 //! broadcasts one *statement-chain anchor* from the operator's mainnet
 //! wallet. Thin CLI wrapper over `ipow_core::btc::statement_chain` — the
 //! actual tx-building/signing logic now lives there so `beta_operator` can

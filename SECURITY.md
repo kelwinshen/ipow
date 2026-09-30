@@ -8,7 +8,8 @@ what's centralized today, not an aspirational description of the end state.
 ## What the contracts already protect against
 
 Bitcoin verification itself is trustless by design (see
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)): the contract validates header
+[docs/design/ipow-implementation.md](docs/design/ipow-implementation.md)):
+the contract validates header
 proof-of-work, difficulty retargeting, and Merkle proofs itself, so the
 operator can't forge what a header or proof says. Users also aren't at the
 operator's mercy for liveness — if the operator doesn't approve or complete

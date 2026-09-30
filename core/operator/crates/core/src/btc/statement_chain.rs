@@ -1,5 +1,5 @@
 //! Build, sign, and broadcast one statement-chain anchor transaction
-//! (DESIGN_V2.md §6.2). This is the same logic proven by hand all session
+//! (design/ipow-implementation.md §6.2). This is the same logic proven by hand all session
 //! via `examples/anchor_statement.rs` — promoted here to a real, callable
 //! library function so `beta_operator` can drive it in a loop instead of a
 //! human re-running the CLI example.

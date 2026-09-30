@@ -6,7 +6,7 @@ import {BetaVaultStorage} from "../base/BetaVaultStorage.sol";
 
 /**
  * @title BetaVaultAnchorFacet
- * @notice Hyperliquid-only facet (DESIGN_V2.md §8.17): the statement-chain
+ * @notice Hyperliquid-only facet (design/ipow-implementation.md §8.17): the statement-chain
  * anchor pipeline — verifying a Bitcoin tx against the header relay,
  * advancing a party's pointer, and judging/acting on the parsed payload by
  * kind (MINT/RELEASE/VETO/CANCEL/ATTEST/CLEAR/ALIVE, §6.4–6.7). Only ever

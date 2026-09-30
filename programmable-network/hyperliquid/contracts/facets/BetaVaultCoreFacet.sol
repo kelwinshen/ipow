@@ -6,7 +6,7 @@ import {BetaVaultStorage} from "../base/BetaVaultStorage.sol";
 
 /**
  * @title BetaVaultCoreFacet
- * @notice Hyperliquid-only facet (DESIGN_V2.md §8.17): governance, party
+ * @notice Hyperliquid-only facet (design/ipow-implementation.md §8.17): governance, party
  * registration/bonding, deposit/refund, and the v3 slow-path release
  * settlement functions. Only ever executed via `BetaVaultRouter`'s
  * `delegatecall` — direct calls to this contract's own address have no

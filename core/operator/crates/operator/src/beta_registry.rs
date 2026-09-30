@@ -1,6 +1,6 @@
 //! Resolves every configured Beta network into its adapters, keyed by
 //! iPoW's own numeric network id (5=Base, 6=Robinhood, 7=Tempo,
-//! 8=Hyperliquid, 2=Ethereum, 1=Hedera, 4=Polkadot — DESIGN_V2.md §8.19)
+//! 8=Hyperliquid, 2=Ethereum, 1=Hedera, 4=Polkadot — design/ipow-implementation.md §8.19)
 //! so the engine can dispatch a composition component to the right chain.
 //!
 //! Header freshness reuses `EvmStreamingAdapter`/`EvmChainProvider`
@@ -36,7 +36,7 @@ use ipow_svm::{
 };
 use std::{collections::HashMap, sync::Arc};
 
-/// Solana's own protocol network id (reserved, per DESIGN_V2.md's
+/// Solana's own protocol network id (reserved, per design/ipow-implementation.md's
 /// registry) — used only as this registry's own map key, since nothing
 /// ever targets Solana as a *remote* leg (`HubCompositionRegistry`'s own
 /// EVM-side guard rejects it, and no Solana spoke program exists) and
@@ -159,7 +159,7 @@ async fn build_evm_handle(
     });
 
     // Reuse the Conversion engine's own header-relay machinery unchanged,
-    // pointed at Beta's `iPoWV1` instance instead of Conversion's.
+    // pointed at Beta's `iPoW` instance instead of Conversion's.
     let streaming_evm_cfg = EvmConfig {
         network: evm_network,
         rpc_url: beta_ctx.cfg.rpc_url.clone(),

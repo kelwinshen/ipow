@@ -1,12 +1,12 @@
 import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
 
-// BetaHub (DESIGN_V2.md §8.18) on Polkadot Hub TestNet: an EVM chain
+// BetaHub (design/ipow-implementation.md §8.18) on Polkadot Hub TestNet: an EVM chain
 // acting as a mint hub, not just a spoke — same contract as the Ethereum
 // pilot's BetaHub. Standard 18-decimal weibar convention (no Hedera-style
 // rescaling needed here).
 export default buildModule("BetaHubModule", (m) => {
   const deployer = m.getAccount(0);
-  const ipow = m.contractAt("iPoWV1", m.getParameter("ipowHeaders", "0x2dD223DcD7F69539Ea895A29095c69c16b088aDb"));
+  const ipow = m.contractAt("iPoW", m.getParameter("ipowHeaders", "0x2dD223DcD7F69539Ea895A29095c69c16b088aDb"));
   const selfNetworkId = m.getParameter("selfNetworkId", 4n); // Polkadot
   const params = {
     tChallengeSecs: 7n * 86400n,

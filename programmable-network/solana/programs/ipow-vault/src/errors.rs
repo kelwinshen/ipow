@@ -1,0 +1,30 @@
+use anchor_lang::prelude::*;
+
+#[error_code]
+pub enum VaultError {
+    ZeroAmount,
+    NotReal,
+    NotInBlock,
+    WrongCoin,
+    NoCoin,
+    WrongTag,
+    ChainEnded,
+    NotCertified,
+    EscrowTooLow,
+    BondNotFree,
+    NotOpen,
+    AlreadyHeld,
+    NotHeld,
+    WindowOver,
+    WindowNotOver,
+    AlreadyDecided,
+    NotDecided,
+    NotAccepted,
+    NothingToCollect,
+    NotInClaim,
+    WrongAccount,
+    ZeroAddress,
+    Overflow,
+    TooLarge,
+    NotAuthority,
+}

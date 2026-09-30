@@ -1,7 +1,7 @@
 [package]
 name = "beta-factory"
 version = "0.1.0"
-description = "BETA v2 factory (docs/DESIGN_V2.md §6): one fungible BETA on Solana backed by SOL held here and ETH held in BetaVault.sol on Ethereum. Cross-chain claims travel as Bitcoin transactions on each registered party's statement chain; this program judges the claims that are about Solana facts (burns, pending locks), acts provisionally on the ones about Ethereum (mints, rate-limited and vetoable), and slashes bonds it holds. Reads ipow's header relay read-only, like ipow-conversion."
+description = "BETA v2 factory (docs/design/ipow-implementation.md §6): one fungible BETA on Solana backed by SOL held here and ETH held in BetaVault.sol on Ethereum. Cross-chain claims travel as Bitcoin transactions on each registered party's statement chain; this program judges the claims that are about Solana facts (burns, pending locks), acts provisionally on the ones about Ethereum (mints, rate-limited and vetoable), and slashes bonds it holds. Reads ipow's header relay read-only, like ipow-conversion."
 edition = "2021"
 
 [lib]

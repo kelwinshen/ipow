@@ -707,6 +707,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 
 [[package]]
+name = "beta-basket"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "anchor-litesvm",
+ "anchor-spl",
+ "litesvm",
+ "litesvm-token",
+ "solana-keypair",
+ "solana-program",
+ "solana-signer",
+]
+
+[[package]]
 name = "beta-factory"
 version = "0.1.0"
 dependencies = [
@@ -991,6 +1005,24 @@ name = "constant_time_eq"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
+
+[[package]]
+name = "conversion"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "anchor-litesvm",
+ "anchor-spl",
+ "ipow-light-client",
+ "ipow-protocol",
+ "litesvm",
+ "litesvm-token",
+ "sha2 0.11.0",
+ "solana-clock",
+ "solana-keypair",
+ "solana-program",
+ "solana-signer",
+]
 
 [[package]]
 name = "core-foundation"
@@ -1944,6 +1976,56 @@ dependencies = [
  "solana-transaction",
  "spl-associated-token-account-interface",
  "spl-token-2022-interface",
+]
+
+[[package]]
+name = "ipow-light-client"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "anchor-litesvm",
+ "hex",
+ "litesvm",
+ "serde_json",
+ "sha2 0.11.0",
+ "solana-clock",
+ "solana-keypair",
+ "solana-program",
+ "solana-signer",
+]
+
+[[package]]
+name = "ipow-protocol"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "anchor-litesvm",
+ "hex",
+ "ipow-light-client",
+ "litesvm",
+ "sha2 0.11.0",
+ "solana-clock",
+ "solana-keypair",
+ "solana-program",
+ "solana-signer",
+]
+
+[[package]]
+name = "ipow-vault"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "anchor-litesvm",
+ "anchor-spl",
+ "ipow-light-client",
+ "ipow-protocol",
+ "litesvm",
+ "litesvm-token",
+ "sha2 0.11.0",
+ "solana-clock",
+ "solana-keypair",
+ "solana-program",
+ "solana-signer",
 ]
 
 [[package]]

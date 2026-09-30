@@ -1,0 +1,26 @@
+[package]
+name = "ipow-network-evm"
+description = "The iPoW protocol on EVM networks, for the node."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+ipow-protocol-core = { path = "../../protocol" }
+alloy = { version = "1", features = ["provider-http", "signer-local", "contract", "sol-types", "rpc-types", "network"] }
+anyhow.workspace = true
+async-trait.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+# For `testing`.
+ipow-testing = { path = "../../testing", optional = true }
+serde_json = { version = "1", optional = true }
+
+[features]
+# Local-network helpers for the tests of this crate and of the node.
+testing = ["dep:ipow-testing", "dep:serde_json", "alloy/json-rpc"]
+
+[dev-dependencies]
+tracing-subscriber.workspace = true
+ipow-network-evm = { path = ".", features = ["testing"] }
+ipow-bitcoin = { path = "../../bitcoin" }

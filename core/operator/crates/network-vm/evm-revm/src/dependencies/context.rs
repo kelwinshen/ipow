@@ -1,5 +1,5 @@
 use crate::{
-    bindings::ipow_v1::IPoWV1,
+    bindings::ipow::IPoW,
     dependencies::config::EvmConfig,
 };
 use ethers::{
@@ -15,8 +15,8 @@ type ResilientSigner = SignerMiddleware<Arc<ResilientProvider>, LocalWallet>;
 #[derive(Clone)]
 pub struct EvmContext {
     pub provider: Arc<ResilientProvider>,
-    pub contract: Arc<IPoWV1<ResilientProvider>>,
-    pub c_op: Arc<IPoWV1<ResilientSigner>>,
+    pub contract: Arc<IPoW<ResilientProvider>>,
+    pub c_op: Arc<IPoW<ResilientSigner>>,
     pub cfg: Arc<EvmConfig>,
 }
 
@@ -41,14 +41,14 @@ impl EvmContext {
 
         // Read-only contract
         let contract =
-            Arc::new(IPoWV1::new(contract_address, provider.clone()));
+            Arc::new(IPoW::new(contract_address, provider.clone()));
         // Signer middleware
         let signer_inner = SignerMiddleware::new(provider.clone(), wallet);
         let signer = Arc::new(signer_inner);
 
         // Operator-enabled contract
         let c_op =
-            Arc::new(IPoWV1::new(contract_address, signer.clone()));
+            Arc::new(IPoW::new(contract_address, signer.clone()));
 
         Ok(Self { provider, contract, c_op, cfg })
     }

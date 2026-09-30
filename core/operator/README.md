@@ -5,11 +5,11 @@ Bitcoin headers, and running two genuinely independent engines —
 **Conversion** (approving/settling native↔Bitcoin swaps) and **Beta**
 (claim → relay → exercise for the composed, multi-network BETA token) —
 across every supported network: Ethereum, Hedera, Polkadot Hub, Base,
-Robinhood Chain, Hyperliquid, Tempo, and Solana. See the
-[root architecture doc](../../docs/ARCHITECTURE.md) for how a conversion
-flows end to end, [docs/DESIGN_V2.md](../../docs/DESIGN_V2.md) for Beta's
-own design, and [architecture.md](./docs/architecture.md) in this package
-for how the service itself is structured.
+Robinhood Chain, Hyperliquid, Tempo, and Solana. See
+[docs/design/ipow-implementation.md](../../docs/design/ipow-implementation.md)
+for how a conversion flows end to end and for Beta's own design, and
+[architecture.md](./docs/architecture.md) in this package for how the
+service itself is structured.
 
 ## Layout
 

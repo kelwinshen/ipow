@@ -3,8 +3,8 @@ use anchor_lang::prelude::*;
 use crate::errors::ConversionError;
 use crate::state::{ConversionGlobalState, SupportedNetwork};
 
-/// Same validation `iPoWV1.sol`'s own `addNetwork` already enforces
-/// (mirrored into `iPoWV1Conversion.sol` too): `network_id == 0`,
+/// Same validation `iPoW.sol`'s own `addNetwork` already enforces
+/// (mirrored into `iPoWConversion.sol` too): `network_id == 0`,
 /// `min_addr_len == 0`, or `min_addr_len > max_addr_len` all revert
 /// `InvalidNetworkConfig`. Re-registering an already-active `network_id`
 /// is separately guarded by `init` on `network_config` below — Anchor

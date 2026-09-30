@@ -2,13 +2,13 @@ import { expect } from "chai";
 import { network } from "hardhat";
 import { sha256, getBytes, hexlify, concat, toBeHex, zeroPadValue, AbiCoder, keccak256 } from "ethers";
 
-import { IPoWV1__factory, BetaVault__factory, HubToken__factory, MockERC20__factory } from "../types/ethers-contracts/index.ts";
+import { IPoW__factory, BetaVault__factory, HubToken__factory, MockERC20__factory } from "../types/ethers-contracts/index.ts";
 import { COMMIT_FEE_BPS, NATIVE_DECIMALS, SELF_NETWORK_ID, deployBetaHub } from "./helpers/deploy.ts";
 
 const { ethers } = await network.create();
 
 // Same infrastructure as test/BetaVault.test.ts (chain-agnostic: raw
-// Bitcoin statement-chain tx builders and iPoWV1 storage cheat-codes),
+// Bitcoin statement-chain tx builders and iPoW storage cheat-codes),
 // reused near-verbatim — see that file's own comments for why each piece
 // works the way it does.
 const KIND_MINT = 1;
@@ -118,7 +118,7 @@ const SOL_USER = "0x" + "aa".repeat(32); // used as a remote leg's own opaque so
 
 async function deploy() {
   const [gov, op, op2, aud, user, other] = await ethers.getSigners();
-  const ipow = await new IPoWV1__factory(gov).deploy(NATIVE_DECIMALS, SELF_NETWORK_ID, await gov.getAddress(), COMMIT_FEE_BPS);
+  const ipow = await new IPoW__factory(gov).deploy(NATIVE_DECIMALS, SELF_NETWORK_ID, await gov.getAddress(), COMMIT_FEE_BPS);
   await ipow.waitForDeployment();
   const hub = await deployBetaHub(gov, await ipow.getAddress(), SELF_NETWORK_ID, PARAMS, "iBETA", "iBETA");
   await hub.waitForDeployment();

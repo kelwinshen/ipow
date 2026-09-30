@@ -1,8 +1,8 @@
 //! Beta's own per-network config — deliberately separate from
-//! `EvmConfig`/`dependencies::config::EvmConfig`: Beta's `iPoWV1` header
+//! `EvmConfig`/`dependencies::config::EvmConfig`: Beta's `iPoW` header
 //! source is a genuinely different deployed instance than Conversion's on
 //! the same chain (verified this session: Ethereum Sepolia's Conversion
-//! `iPoWV1` is `0x28eCB9ec...`, Beta's is `0xB8ab960D...`), and not every
+//! `iPoW` is `0x28eCB9ec...`, Beta's is `0xB8ab960D...`), and not every
 //! network the operator knows for Conversion has Beta deployed at all.
 //!
 //! Reads from a separate `beta_networks:` section in `config.yml` (not
@@ -20,7 +20,7 @@ pub struct BetaConfig {
     pub network: EvmNetwork,
     pub rpc_url: String,
     pub operator_private_key: String,
-    /// Beta's own `iPoWV1` header-source address on this chain.
+    /// Beta's own `iPoW` header-source address on this chain.
     pub ipow_headers_address: String,
     /// Set only on networks configured as a mint hub (`BetaHub`).
     pub hub_address: Option<String>,

@@ -1,0 +1,42 @@
+[package]
+name = "ipow-light-client"
+version = "0.1.0"
+description = "The iPoW light client: the store of Bitcoin blocks on Solana. Spec: docs/design/ipow-protocol.md, section 2."
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "ipow_light_client"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build"]
+anchor-debug = []
+custom-heap = []
+custom-panic = []
+# Test builds only: lets `initialize` lower the minimum difficulty so that a
+# test can mine its own blocks, and skips the check that only the upgrade
+# authority may initialize. Never enabled for a deployment.
+test-limits = []
+
+[dependencies]
+anchor-lang = { version = "1.0.0", features = ["init-if-needed"] }
+sha2 = "0.11.0"
+
+[dev-dependencies]
+solana-clock = "3.0"
+anchor-lang = { version = "1.0.0", features = ["init-if-needed"] }
+litesvm = "0.11.0"
+anchor-litesvm = "0.4.0"
+solana-program = "3.0.0"
+solana-signer = "3.0.0"
+solana-keypair = "3.0.1"
+hex = "0.4.3"
+serde_json = "1"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }

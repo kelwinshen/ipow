@@ -957,7 +957,7 @@ fn reclaim_forfeits_stake_to_user_and_lets_a_new_claimant_finish() {
 /// real SPL token, not native SOL. Same auction cycle as the native test
 /// above, but `native_amount` pays out in the SPL mint while the commit
 /// fee and auction stake stay native SOL throughout — exactly the split
-/// `docs/DESIGN_V2.md` describes.
+/// `docs/design/ipow-implementation.md` describes.
 #[test]
 fn spl_token_bitcoin_to_native_conversion_pays_out_the_real_mint() {
     let (mut ctx, admin, ipow_global_state, conversion_global_state) = setup_initialized();
@@ -2540,7 +2540,7 @@ fn open_bundle_tunnel_rejects_network_id_zero() {
         .assert_anchor_error("IncorrectNetwork");
 }
 
-/// `add_network` must reject the same malformed configs `iPoWV1.sol`'s
+/// `add_network` must reject the same malformed configs `iPoW.sol`'s
 /// own `addNetwork` already rejects: `network_id == 0`, `min_addr_len ==
 /// 0`, and `min_addr_len > max_addr_len`.
 #[test]

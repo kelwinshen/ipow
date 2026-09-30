@@ -1,4 +1,4 @@
-//! Beta's Bitcoin statement wire formats (DESIGN_V2.md §6.2/§8.20/§8.21).
+//! Beta's Bitcoin statement wire formats (design/ipow-implementation.md §6.2/§8.20/§8.21).
 //!
 //! These are the exact byte layouts `BetaVault.sol`/`BetaHub.sol`/
 //! `beta-factory`'s `_parseAnchor`/`process_anchor.rs` expect, embedded as

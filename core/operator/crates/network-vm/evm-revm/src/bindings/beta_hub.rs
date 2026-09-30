@@ -745,7 +745,7 @@ pub mod beta_hub {
                                     kind: ::ethers::core::abi::ethabi::ParamType::Address,
                                     internal_type: ::core::option::Option::Some(
                                         ::std::borrow::ToOwned::to_owned(
-                                            "contract IIPoWV1HeadersView",
+                                            "contract IIPoWHeadersView",
                                         ),
                                     ),
                                 },

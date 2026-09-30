@@ -8,7 +8,7 @@ struct Target {
 }
 
 const TARGETS: &[Target] = &[
-    Target { name: "IPoWV1", abi_path: "abi/IPoWV1.abi", out_file: "ipow_v1.rs" },
+    Target { name: "IPoW", abi_path: "abi/IPoW.abi", out_file: "ipow.rs" },
     Target { name: "BetaHub", abi_path: "abi/BetaHub.abi", out_file: "beta_hub.rs" },
     Target { name: "BetaVault", abi_path: "abi/BetaVault.abi", out_file: "beta_vault.rs" },
 ];

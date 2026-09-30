@@ -1,0 +1,4042 @@
+{
+  "address": "ChYhovM8vm2tuMRaRFn4m6etG979bjixVa71fXBDwjPL",
+  "metadata": {
+    "name": "ipow_protocol",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "The iPoW protocol on Solana: operators, jobs, fees, the auction, the duty, punishment, claims and attest. Spec: docs/design/ipow-protocol.md."
+  },
+  "instructions": [
+    {
+      "name": "advance_chain_head",
+      "discriminator": [
+        245,
+        186,
+        168,
+        191,
+        123,
+        27,
+        99,
+        175
+      ],
+      "accounts": [
+        {
+          "name": "operator",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  112,
+                  101,
+                  114,
+                  97,
+                  116,
+                  111,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "node",
+          "docs": [
+            "in `read_node`."
+          ]
+        },
+        {
+          "name": "used_tx",
+          "docs": [
+            "The transaction's record: it can only be created once (D80)."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  115,
+                  101,
+                  100,
+                  95,
+                  116,
+                  120
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "txid"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "txid",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "block",
+          "type": {
+            "defined": {
+              "name": "BlockRef"
+            }
+          }
+        },
+        {
+          "name": "raw_tx",
+          "type": "bytes"
+        },
+        {
+          "name": "siblings",
+          "type": {
+            "vec": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        },
+        {
+          "name": "tx_index",
+          "type": "u64"
+        },
+        {
+          "name": "head_index",
+          "type": "u32"
+        }
+      ]
+    },
+    {
+      "name": "anchor_job",
+      "discriminator": [
+        111,
+        22,
+        151,
+        214,
+        201,
+        45,
+        189,
+        89
+      ],
+      "accounts": [
+        {
+          "name": "job",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  111,
+                  98
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "job.id",
+                "account": "Job"
+              }
+            ]
+          }
+        },
+        {
+          "name": "node"
+        },
+        {
+          "name": "owner",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "anchor",
+          "type": {
+            "defined": {
+              "name": "BlockRef"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ask_parent",
+      "discriminator": [
+        72,
+        194,
+        188,
+        161,
+        77,
+        22,
+        64,
+        40
+      ],
+      "accounts": [
+        {
+          "name": "protocol",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "job",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  111,
+                  98
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "job.id",
+                "account": "Job"
+              }
+            ]
+          }
+        },
+        {
+          "name": "challenge",
+          "writable": true
+        },
+        {
+          "name": "note_record",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  110,
+                  111,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "note"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "guardian",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "note",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "salt",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "paid",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "attest",
+      "discriminator": [
+        83,
+        148,
+        120,
+        119,
+        144,
+        139,
+        117,
+        160
+      ],
+      "accounts": [
+        {
+          "name": "job",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  111,
+                  98
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "job.id",
+                "account": "Job"
+              }
+            ]
+          }
+        },
+        {
+          "name": "attester",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  112,
+                  101,
+                  114,
+                  97,
+                  116,
+                  111,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "operator",
+          "docs": [
+            "The operator's record, when the attester is someone else."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "owner",
+          "signer": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "bid",
+      "discriminator": [
+        199,
+        56,
+        85,
+        38,
+        146,
+        243,
+        37,
+        158
+      ],
+      "accounts": [
+        {
+          "name": "job",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  111,
+                  98
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "job.id",
+                "account": "Job"
+              }
+            ]
+          }
+        },
+        {
+          "name": "operator",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  112,
+                  101,
+                  114,
+                  97,
+                  116,
+                  111,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "previous",
+          "docs": [
+            "The operator that held the best bid, when it is someone else."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "owner",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "challenge_fork",
+      "discriminator": [
+        144,
+        151,
+        99,
+        196,
+        18,
+        219,
+        116,
+        254
+      ],
+      "accounts": [
+        {
+          "name": "protocol",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "job",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  111,
+                  98
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "job.id",
+                "account": "Job"
+              }
+            ]
+          }
+        },
+        {
+          "name": "challenge",
+          "writable": true
+        },
+        {
+          "name": "note_record",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  110,
+                  111,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "note"
+              }
+            ]
+          }
+        },
+        {
+          "name": "operator_node"
+        },
+        {
+          "name": "guardian_node"
+        },
+        {
+          "name": "walk_proof_to_operator"
+        },
+        {
+          "name": "walk_tip_to_proof"
+        },
+        {
+          "name": "walk_guardian"
+        },
+        {
+          "name": "operator_checkpoint",
+          "writable": true
+        },
+        {
+          "name": "guardian_checkpoint",
+          "writable": true
+        },
+        {
+          "name": "proof_checkpoint",
+          "writable": true
+        },
+        {
+          "name": "guardian_first_checkpoint",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "guardian",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "note",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "salt",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "paid",
+          "type": "u64"
+        },
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "ForkArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "expire",
+      "discriminator": [
+        243,
+        83,
+        205,
+        58,
+        57,
+        201,
+        247,
+        146
+      ],
+      "accounts": [
+        {
+          "name": "job",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  111,
+                  98
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "job.id",
+                "account": "Job"
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer_credit",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  114,
+                  101,
+                  100,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "job.payer",
+                "account": "Job"
+              }
+            ]
+          }
+        },
+        {
+          "name": "funder",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "extend_branch",
+      "discriminator": [
+        45,
+        49,
+        104,
+        56,
+        140,
+        136,
+        206,
+        85
+      ],
+      "accounts": [
+        {
+          "name": "challenge",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  108,
+                  108,
+                  101,
+                  110,
+                  103,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "challenge.id",
+                "account": "Challenge"
+              }
+            ]
+          }
+        },
+        {
+          "name": "job",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  111,
+                  98
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "challenge.job_id",
+                "account": "Challenge"
+              }
+            ]
+          }
+        },
+        {
+          "name": "from_checkpoint"
+        },
+        {
+          "name": "new_checkpoint",
+          "writable": true
+        },
+        {
+          "name": "walk"
+        },
+        {
+          "name": "funder",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "guardian_side",
+          "type": "bool"
+        },
+        {
+          "name": "from",
+          "type": {
+            "defined": {
+              "name": "BlockRef"
+            }
+          }
+        },
+        {
+          "name": "new_tip",
+          "type": {
+            "defined": {
+              "name": "BlockRef"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "initialize_protocol",
+      "discriminator": [
+        188,
+        233,
+        252,
+        106,
+        134,
+        146,
+        202,
+        91
+      ],
+      "accounts": [
+        {
+          "name": "protocol",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "docs": [
+            "this program, so only this program can take lamports out of it."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "lock_bond",
+      "discriminator": [
+        30,
+        142,
+        81,
+        179,
+        253,
+        64,
+        109,
+        162
+      ],
+      "accounts": [
+        {
+          "name": "protocol",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "operator",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  112,
+                  101,
+                  114,
+                  97,
+                  116,
+                  111,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "open_job",
+      "discriminator": [
+        163,
+        204,
+        98,
+        140,
+        176,
+        150,
+        55,
+        123
+      ],
+      "accounts": [
+        {
+          "name": "protocol",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "application",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  112,
+                  112,
+                  108,
+                  105,
+                  99,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "key"
+              }
+            ]
+          }
+        },
+        {
+          "name": "job",
+          "writable": true
+        },
+        {
+          "name": "tag_record",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  97,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "key"
+              },
+              {
+                "kind": "arg",
+                "path": "tag"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "key",
+          "docs": [
+            "The application's own key."
+          ],
+          "signer": true
+        },
+        {
+          "name": "funder",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "tag",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "escrow",
+          "type": "u64"
+        },
+        {
+          "name": "escrow_fee_bps",
+          "type": "u16"
+        },
+        {
+          "name": "confirmations",
+          "type": "u16"
+        },
+        {
+          "name": "claim_kind",
+          "type": "u16"
+        },
+        {
+          "name": "payer",
+          "type": "pubkey"
+        },
+        {
+          "name": "paid",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "prove_job",
+      "discriminator": [
+        135,
+        144,
+        10,
+        154,
+        150,
+        208,
+        211,
+        205
+      ],
+      "accounts": [
+        {
+          "name": "job",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  111,
+                  98
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "job.id",
+                "account": "Job"
+              }
+            ]
+          }
+        },
+        {
+          "name": "application",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  112,
+                  112,
+                  108,
+                  105,
+                  99,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "job.application",
+                "account": "Job"
+              }
+            ]
+          }
+        },
+        {
+          "name": "operator",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  112,
+                  101,
+                  114,
+                  97,
+                  116,
+                  111,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "proof_node"
+        },
+        {
+          "name": "walk_to_proof"
+        },
+        {
+          "name": "walk_to_tip"
+        },
+        {
+          "name": "used_tx",
+          "docs": [
+            "The transaction's record: it can only be created once (D80)."
+          ],
+          "writable": true
+        },
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "proof",
+          "type": {
+            "defined": {
+              "name": "Proof"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "register_application",
+      "discriminator": [
+        0,
+        213,
+        216,
+        252,
+        200,
+        84,
+        146,
+        166
+      ],
+      "accounts": [
+        {
+          "name": "application",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  112,
+                  112,
+                  108,
+                  105,
+                  99,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "key"
+              }
+            ]
+          }
+        },
+        {
+          "name": "key",
+          "docs": [
+            "The application's own key. A program registers with one of its PDAs."
+          ],
+          "signer": true
+        },
+        {
+          "name": "funder",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "challenge_periods",
+          "type": {
+            "vec": "u32"
+          }
+        }
+      ]
+    },
+    {
+      "name": "register_chain_head",
+      "discriminator": [
+        102,
+        98,
+        109,
+        214,
+        79,
+        248,
+        111,
+        246
+      ],
+      "accounts": [
+        {
+          "name": "operator",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  112,
+                  101,
+                  114,
+                  97,
+                  116,
+                  111,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "node",
+          "docs": [
+            "in `read_node`."
+          ]
+        },
+        {
+          "name": "used_tx",
+          "docs": [
+            "The transaction's record: it can only be created once (D80)."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  115,
+                  101,
+                  100,
+                  95,
+                  116,
+                  120
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "txid"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "txid",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "block",
+          "type": {
+            "defined": {
+              "name": "BlockRef"
+            }
+          }
+        },
+        {
+          "name": "raw_tx",
+          "type": "bytes"
+        },
+        {
+          "name": "siblings",
+          "type": {
+            "vec": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        },
+        {
+          "name": "tx_index",
+          "type": "u64"
+        },
+        {
+          "name": "coin_index",
+          "type": "u32"
+        },
+        {
+          "name": "tag_index",
+          "type": "u32"
+        }
+      ]
+    },
+    {
+      "name": "report_missed_duty",
+      "discriminator": [
+        122,
+        204,
+        184,
+        141,
+        158,
+        186,
+        9,
+        55
+      ],
+      "accounts": [
+        {
+          "name": "job",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  111,
+                  98
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "job.id",
+                "account": "Job"
+              }
+            ]
+          }
+        },
+        {
+          "name": "operator",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  112,
+                  101,
+                  114,
+                  97,
+                  116,
+                  111,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "job.operator",
+                "account": "Job"
+              }
+            ]
+          }
+        },
+        {
+          "name": "note_record",
+          "docs": [
+            "The note is used up; its rent goes back to the guardian."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  110,
+                  111,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "note"
+              }
+            ]
+          }
+        },
+        {
+          "name": "application_credit",
+          "writable": true
+        },
+        {
+          "name": "guardian_credit",
+          "writable": true
+        },
+        {
+          "name": "payer_credit",
+          "writable": true
+        },
+        {
+          "name": "guardian",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "note",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "salt",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "require_official",
+      "discriminator": [
+        66,
+        56,
+        98,
+        247,
+        216,
+        2,
+        126,
+        226
+      ],
+      "accounts": [
+        {
+          "name": "job",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  111,
+                  98
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "job.id",
+                "account": "Job"
+              }
+            ]
+          }
+        },
+        {
+          "name": "application",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  112,
+                  112,
+                  108,
+                  105,
+                  99,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "job.application",
+                "account": "Job"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "resolve_challenge",
+      "discriminator": [
+        81,
+        191,
+        124,
+        119,
+        131,
+        248,
+        157,
+        109
+      ],
+      "accounts": [
+        {
+          "name": "challenge",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  108,
+                  108,
+                  101,
+                  110,
+                  103,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "challenge.id",
+                "account": "Challenge"
+              }
+            ]
+          }
+        },
+        {
+          "name": "job",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  111,
+                  98
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "challenge.job_id",
+                "account": "Challenge"
+              }
+            ]
+          }
+        },
+        {
+          "name": "operator",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  112,
+                  101,
+                  114,
+                  97,
+                  116,
+                  111,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "job.operator",
+                "account": "Job"
+              }
+            ]
+          }
+        },
+        {
+          "name": "attester",
+          "docs": [
+            "The attester's record, when the job has one."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "operator_credit",
+          "writable": true
+        },
+        {
+          "name": "application_credit",
+          "writable": true
+        },
+        {
+          "name": "guardian_credit",
+          "writable": true
+        },
+        {
+          "name": "payer_credit",
+          "writable": true
+        },
+        {
+          "name": "guardian",
+          "writable": true
+        },
+        {
+          "name": "funder",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "seal_note",
+      "discriminator": [
+        54,
+        167,
+        88,
+        248,
+        255,
+        146,
+        236,
+        235
+      ],
+      "accounts": [
+        {
+          "name": "record",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  110,
+                  111,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "note"
+              }
+            ]
+          }
+        },
+        {
+          "name": "guardian",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "note",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "settle",
+      "discriminator": [
+        175,
+        42,
+        185,
+        87,
+        144,
+        131,
+        102,
+        212
+      ],
+      "accounts": [
+        {
+          "name": "job",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  111,
+                  98
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "job.id",
+                "account": "Job"
+              }
+            ]
+          }
+        },
+        {
+          "name": "operator",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  112,
+                  101,
+                  114,
+                  97,
+                  116,
+                  111,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "job.operator",
+                "account": "Job"
+              }
+            ]
+          }
+        },
+        {
+          "name": "operator_credit",
+          "writable": true
+        },
+        {
+          "name": "attester",
+          "docs": [
+            "The attester's record, when the job has one."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "attester_credit",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "funder",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "show_parent",
+      "discriminator": [
+        103,
+        66,
+        94,
+        216,
+        215,
+        142,
+        202,
+        255
+      ],
+      "accounts": [
+        {
+          "name": "challenge",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  108,
+                  108,
+                  101,
+                  110,
+                  103,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "challenge.id",
+                "account": "Challenge"
+              }
+            ]
+          }
+        },
+        {
+          "name": "job",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  111,
+                  98
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "challenge.job_id",
+                "account": "Challenge"
+              }
+            ]
+          }
+        },
+        {
+          "name": "child"
+        },
+        {
+          "name": "parent"
+        },
+        {
+          "name": "lc_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                176,
+                182,
+                51,
+                63,
+                236,
+                91,
+                180,
+                236,
+                123,
+                144,
+                59,
+                135,
+                174,
+                37,
+                67,
+                240,
+                60,
+                31,
+                249,
+                200,
+                191,
+                249,
+                240,
+                54,
+                138,
+                16,
+                96,
+                171,
+                157,
+                201,
+                60,
+                103
+              ]
+            }
+          }
+        },
+        {
+          "name": "operator_credit",
+          "writable": true
+        },
+        {
+          "name": "guardian",
+          "writable": true
+        },
+        {
+          "name": "funder",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "prev_epoch_time",
+          "type": "u32"
+        }
+      ]
+    },
+    {
+      "name": "withdraw_bond",
+      "discriminator": [
+        222,
+        199,
+        141,
+        31,
+        188,
+        93,
+        155,
+        40
+      ],
+      "accounts": [
+        {
+          "name": "protocol",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "operator",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  112,
+                  101,
+                  114,
+                  97,
+                  116,
+                  111,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "withdraw_credit",
+      "discriminator": [
+        8,
+        173,
+        134,
+        129,
+        40,
+        255,
+        134,
+        30
+      ],
+      "accounts": [
+        {
+          "name": "protocol",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "credit",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  114,
+                  101,
+                  100,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": []
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Application",
+      "discriminator": [
+        219,
+        9,
+        27,
+        113,
+        208,
+        126,
+        203,
+        30
+      ]
+    },
+    {
+      "name": "Challenge",
+      "discriminator": [
+        119,
+        250,
+        161,
+        121,
+        119,
+        81,
+        22,
+        208
+      ]
+    },
+    {
+      "name": "Checkpoint",
+      "discriminator": [
+        199,
+        62,
+        186,
+        186,
+        98,
+        119,
+        211,
+        139
+      ]
+    },
+    {
+      "name": "Credit",
+      "discriminator": [
+        6,
+        79,
+        161,
+        136,
+        156,
+        172,
+        190,
+        149
+      ]
+    },
+    {
+      "name": "Job",
+      "discriminator": [
+        75,
+        124,
+        80,
+        203,
+        161,
+        180,
+        202,
+        80
+      ]
+    },
+    {
+      "name": "Note",
+      "discriminator": [
+        203,
+        75,
+        252,
+        196,
+        81,
+        210,
+        122,
+        126
+      ]
+    },
+    {
+      "name": "Operator",
+      "discriminator": [
+        219,
+        31,
+        188,
+        145,
+        69,
+        139,
+        204,
+        117
+      ]
+    },
+    {
+      "name": "Protocol",
+      "discriminator": [
+        45,
+        39,
+        101,
+        43,
+        115,
+        72,
+        131,
+        40
+      ]
+    },
+    {
+      "name": "TagRecord",
+      "discriminator": [
+        80,
+        180,
+        179,
+        163,
+        183,
+        100,
+        159,
+        63
+      ]
+    },
+    {
+      "name": "UsedTx",
+      "discriminator": [
+        16,
+        106,
+        174,
+        217,
+        51,
+        148,
+        183,
+        102
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "ApplicationRegistered",
+      "discriminator": [
+        221,
+        135,
+        172,
+        203,
+        193,
+        254,
+        65,
+        211
+      ]
+    },
+    {
+      "name": "Attested",
+      "discriminator": [
+        184,
+        102,
+        113,
+        199,
+        220,
+        197,
+        96,
+        50
+      ]
+    },
+    {
+      "name": "BidPlaced",
+      "discriminator": [
+        135,
+        53,
+        176,
+        83,
+        193,
+        69,
+        108,
+        61
+      ]
+    },
+    {
+      "name": "BondLocked",
+      "discriminator": [
+        89,
+        45,
+        139,
+        7,
+        22,
+        105,
+        232,
+        59
+      ]
+    },
+    {
+      "name": "BondWithdrawn",
+      "discriminator": [
+        111,
+        192,
+        154,
+        231,
+        58,
+        115,
+        130,
+        103
+      ]
+    },
+    {
+      "name": "BranchExtended",
+      "discriminator": [
+        205,
+        169,
+        84,
+        54,
+        41,
+        234,
+        239,
+        181
+      ]
+    },
+    {
+      "name": "ChainHeadSet",
+      "discriminator": [
+        254,
+        18,
+        71,
+        231,
+        96,
+        16,
+        143,
+        233
+      ]
+    },
+    {
+      "name": "ChallengeFailed",
+      "discriminator": [
+        97,
+        122,
+        254,
+        218,
+        162,
+        152,
+        206,
+        197
+      ]
+    },
+    {
+      "name": "ChallengeRefunded",
+      "discriminator": [
+        162,
+        212,
+        42,
+        82,
+        3,
+        200,
+        229,
+        12
+      ]
+    },
+    {
+      "name": "ChallengeWon",
+      "discriminator": [
+        248,
+        25,
+        91,
+        251,
+        89,
+        32,
+        230,
+        169
+      ]
+    },
+    {
+      "name": "CreditWithdrawn",
+      "discriminator": [
+        139,
+        168,
+        232,
+        108,
+        145,
+        249,
+        85,
+        58
+      ]
+    },
+    {
+      "name": "Credited",
+      "discriminator": [
+        142,
+        248,
+        247,
+        7,
+        241,
+        250,
+        230,
+        55
+      ]
+    },
+    {
+      "name": "ForkChallenged",
+      "discriminator": [
+        197,
+        251,
+        42,
+        192,
+        83,
+        239,
+        241,
+        200
+      ]
+    },
+    {
+      "name": "JobAnchored",
+      "discriminator": [
+        232,
+        153,
+        233,
+        144,
+        20,
+        83,
+        114,
+        208
+      ]
+    },
+    {
+      "name": "JobExpired",
+      "discriminator": [
+        213,
+        123,
+        115,
+        173,
+        157,
+        242,
+        12,
+        71
+      ]
+    },
+    {
+      "name": "JobOpened",
+      "discriminator": [
+        194,
+        169,
+        75,
+        170,
+        253,
+        153,
+        200,
+        220
+      ]
+    },
+    {
+      "name": "JobProven",
+      "discriminator": [
+        134,
+        59,
+        3,
+        172,
+        8,
+        227,
+        137,
+        225
+      ]
+    },
+    {
+      "name": "JobSettled",
+      "discriminator": [
+        130,
+        105,
+        205,
+        34,
+        87,
+        86,
+        152,
+        27
+      ]
+    },
+    {
+      "name": "JobSlashed",
+      "discriminator": [
+        3,
+        89,
+        133,
+        162,
+        108,
+        47,
+        168,
+        1
+      ]
+    },
+    {
+      "name": "ParentAsked",
+      "discriminator": [
+        91,
+        29,
+        249,
+        120,
+        50,
+        113,
+        180,
+        46
+      ]
+    },
+    {
+      "name": "ParentShown",
+      "discriminator": [
+        100,
+        120,
+        233,
+        41,
+        49,
+        161,
+        139,
+        0
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "ZeroAmount",
+      "msg": "The amount is zero"
+    },
+    {
+      "code": 6001,
+      "name": "BondNotFree",
+      "msg": "Not enough free bond"
+    },
+    {
+      "code": 6002,
+      "name": "AlreadyRegistered",
+      "msg": "The application is already registered"
+    },
+    {
+      "code": 6003,
+      "name": "TooManyClaimKinds",
+      "msg": "At most 32 kinds of claim (D78)"
+    },
+    {
+      "code": 6004,
+      "name": "ChallengePeriodOutOfRange",
+      "msg": "A challenge period is between 36 hours and 7 days (D28)"
+    },
+    {
+      "code": 6005,
+      "name": "UnknownClaimKind",
+      "msg": "The application did not register this kind of claim"
+    },
+    {
+      "code": 6006,
+      "name": "ConfirmationsOutOfRange",
+      "msg": "Confirmations are 6 or more, and the window at most 100 blocks (D41, D70)"
+    },
+    {
+      "code": 6007,
+      "name": "EscrowFeeOutOfRange",
+      "msg": "The escrow fee is at most 100% of x (D77)"
+    },
+    {
+      "code": 6008,
+      "name": "EscrowTooLow",
+      "msg": "The escrow is below 5 times the commitment fee, or zero (D55, D56)"
+    },
+    {
+      "code": 6009,
+      "name": "FeesNotPaid",
+      "msg": "Less was paid than the fees"
+    },
+    {
+      "code": 6010,
+      "name": "AuctionClosed",
+      "msg": "Bidding has closed"
+    },
+    {
+      "code": 6011,
+      "name": "AuctionOpen",
+      "msg": "Bidding is still open"
+    },
+    {
+      "code": 6012,
+      "name": "BidTooLow",
+      "msg": "A bid is at least x, and at least 0.1% above the best bid (D32, D76)"
+    },
+    {
+      "code": 6013,
+      "name": "JobHasBid",
+      "msg": "The job has a winner"
+    },
+    {
+      "code": 6014,
+      "name": "FeesAlreadyReturned",
+      "msg": "The fees were already returned"
+    },
+    {
+      "code": 6015,
+      "name": "NothingToWithdraw",
+      "msg": "Nothing to withdraw"
+    },
+    {
+      "code": 6016,
+      "name": "Overflow",
+      "msg": "A number does not fit"
+    },
+    {
+      "code": 6017,
+      "name": "MalformedTx",
+      "msg": "The transaction is not valid"
+    },
+    {
+      "code": 6018,
+      "name": "WitnessSerialization",
+      "msg": "The transaction must be given without witness data"
+    },
+    {
+      "code": 6019,
+      "name": "ChainHeadExists",
+      "msg": "The operator already has a chain head"
+    },
+    {
+      "code": 6020,
+      "name": "NoChainHead",
+      "msg": "The operator has no chain head"
+    },
+    {
+      "code": 6021,
+      "name": "NotInBlock",
+      "msg": "The transaction is not in the block"
+    },
+    {
+      "code": 6022,
+      "name": "NoCoin",
+      "msg": "The output is not a coin"
+    },
+    {
+      "code": 6023,
+      "name": "WrongTag",
+      "msg": "The transaction does not carry the right tag"
+    },
+    {
+      "code": 6024,
+      "name": "WrongChainHead",
+      "msg": "The transaction does not spend the operator's chain head (D30)"
+    },
+    {
+      "code": 6025,
+      "name": "NotOperator",
+      "msg": "Only the operator of the job may do this"
+    },
+    {
+      "code": 6026,
+      "name": "NotAssigned",
+      "msg": "The job is not waiting for its proof"
+    },
+    {
+      "code": 6027,
+      "name": "AlreadyAnchored",
+      "msg": "The job has an anchor already"
+    },
+    {
+      "code": 6028,
+      "name": "NotAnchored",
+      "msg": "The job has no anchor"
+    },
+    {
+      "code": 6029,
+      "name": "UnknownBlock",
+      "msg": "The block is not stored in the light client"
+    },
+    {
+      "code": 6030,
+      "name": "AnchorTooOld",
+      "msg": "The anchor is more than 2 hours old (D39)"
+    },
+    {
+      "code": 6031,
+      "name": "DeadlinePassed",
+      "msg": "The deadline has passed (D27)"
+    },
+    {
+      "code": 6032,
+      "name": "DeadlineNotPassed",
+      "msg": "The deadline has not passed"
+    },
+    {
+      "code": 6033,
+      "name": "OutsideProofRange",
+      "msg": "The proof is not in blocks 1 to 25 of the window (D15)"
+    },
+    {
+      "code": 6034,
+      "name": "NotLinked",
+      "msg": "The blocks are not linked: a finished walk from the light client is needed"
+    },
+    {
+      "code": 6035,
+      "name": "NotEnoughConfirmations",
+      "msg": "Not enough blocks on top of the proof (D15, D41)"
+    },
+    {
+      "code": 6036,
+      "name": "NotProven",
+      "msg": "The job is not proven"
+    },
+    {
+      "code": 6037,
+      "name": "LockNotEnded",
+      "msg": "The lock has not ended"
+    },
+    {
+      "code": 6038,
+      "name": "NoNote",
+      "msg": "The guardian has no sealed note for this, sealed in an earlier slot (D47)"
+    },
+    {
+      "code": 6039,
+      "name": "ChallengeOpen",
+      "msg": "A challenge of the job is open"
+    },
+    {
+      "code": 6040,
+      "name": "WrongAccount",
+      "msg": "This account is not the one expected"
+    },
+    {
+      "code": 6041,
+      "name": "TransactionUsed",
+      "msg": "The transaction was used already (D80)"
+    },
+    {
+      "code": 6042,
+      "name": "ChallengeWindowClosed",
+      "msg": "No challenge opens in the last 12 hours of the lock (D99)"
+    },
+    {
+      "code": 6043,
+      "name": "WrongDeposit",
+      "msg": "The deposit is not the one this challenge needs (D81, D91)"
+    },
+    {
+      "code": 6044,
+      "name": "TooManyQuestions",
+      "msg": "At most 2,016 questions for a parent per job (D92)"
+    },
+    {
+      "code": 6045,
+      "name": "NoParent",
+      "msg": "Nobody can show a parent of this block"
+    },
+    {
+      "code": 6046,
+      "name": "ResponseTimeOver",
+      "msg": "The 12 hours to answer are over"
+    },
+    {
+      "code": 6047,
+      "name": "ResponseTimeNotOver",
+      "msg": "The 12 hours to answer are not over"
+    },
+    {
+      "code": 6048,
+      "name": "NoChallenge",
+      "msg": "This is not the kind of challenge this needs"
+    },
+    {
+      "code": 6049,
+      "name": "NotCompeting",
+      "msg": "The two blocks do not name the same parent, or are the same block"
+    },
+    {
+      "code": 6050,
+      "name": "NotHeavier",
+      "msg": "The guardian's branch does not have more work"
+    },
+    {
+      "code": 6051,
+      "name": "NotOnOperatorBranch",
+      "msg": "The branches must part at the anchor or after it (D81)"
+    },
+    {
+      "code": 6052,
+      "name": "NotShown",
+      "msg": "The block was not shown on that side before"
+    },
+    {
+      "code": 6053,
+      "name": "LockEnded",
+      "msg": "The lock has ended"
+    },
+    {
+      "code": 6054,
+      "name": "AlreadyAttested",
+      "msg": "The job has an attester already"
+    },
+    {
+      "code": 6055,
+      "name": "NotOfficial",
+      "msg": "The message is not official yet (D11, D97)"
+    },
+    {
+      "code": 6056,
+      "name": "ZeroAddress",
+      "msg": "The address is empty"
+    }
+  ],
+  "types": [
+    {
+      "name": "Application",
+      "docs": [
+        "A registered application (D63), with the challenge period of each kind",
+        "of claim, set once (D17)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "key",
+            "type": "pubkey"
+          },
+          {
+            "name": "challenge_periods",
+            "type": {
+              "vec": "u32"
+            }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ApplicationRegistered",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "application",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Attested",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "job_id",
+            "type": "u64"
+          },
+          {
+            "name": "attester",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "BidPlaced",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "job_id",
+            "type": "u64"
+          },
+          {
+            "name": "operator",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "BlockRef",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "height",
+            "type": "u32"
+          },
+          {
+            "name": "epoch_time",
+            "type": "u32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "BondLocked",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "operator",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "BondWithdrawn",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "operator",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "BranchExtended",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "challenge_id",
+            "type": "u64"
+          },
+          {
+            "name": "guardian_side",
+            "type": "bool"
+          },
+          {
+            "name": "tip_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "ChainHeadSet",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "operator",
+            "type": "pubkey"
+          },
+          {
+            "name": "txid",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "vout",
+            "type": "u32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Challenge",
+      "docs": [
+        "An open challenge of a proof (D49, D81). A job can have several (D88)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "id",
+            "type": "u64"
+          },
+          {
+            "name": "kind",
+            "type": {
+              "defined": {
+                "name": "ChallengeKind"
+              }
+            }
+          },
+          {
+            "name": "job_id",
+            "type": "u64"
+          },
+          {
+            "name": "guardian",
+            "type": "pubkey"
+          },
+          {
+            "name": "deposit",
+            "docs": [
+              "D81, D91: the commitment fee, times the number of the question."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "opened_at",
+            "type": "i64"
+          },
+          {
+            "name": "asked",
+            "docs": [
+              "Parent only: the block whose parent is asked for."
+            ],
+            "type": {
+              "defined": {
+                "name": "BlockRef"
+              }
+            }
+          },
+          {
+            "name": "operator_work",
+            "docs": [
+              "Fork only: the most mining work shown on each side, counted from the",
+              "block where the branches part. 256-bit numbers, big-endian."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "guardian_work",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ChallengeFailed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "challenge_id",
+            "type": "u64"
+          },
+          {
+            "name": "guardian",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ChallengeKind",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Parent"
+          },
+          {
+            "name": "Fork"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ChallengeRefunded",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "challenge_id",
+            "type": "u64"
+          },
+          {
+            "name": "guardian",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ChallengeWon",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "challenge_id",
+            "type": "u64"
+          },
+          {
+            "name": "guardian",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Checkpoint",
+      "docs": [
+        "A block shown on one side of a competing-branch challenge, and the work",
+        "of that side up to and with it. Any of them can be built on, so nobody",
+        "can freeze a side by showing a block that goes nowhere."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "work",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Config",
+      "docs": [
+        "Set once at initialize. The lowest allowed block number (D93) and the",
+        "difficulty limits. A deployment always has the limits of the rules; only",
+        "a test build can lower them."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "min_height",
+            "type": "u32"
+          },
+          {
+            "name": "max_target",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "pow_limit",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Credit",
+      "docs": [
+        "Money an address can withdraw."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "CreditWithdrawn",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "to",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Credited",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "to",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ForkArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "operator_block",
+            "docs": [
+              "A block of the operator's branch, from the anchor to the proof's block."
+            ],
+            "type": {
+              "defined": {
+                "name": "BlockRef"
+              }
+            }
+          },
+          {
+            "name": "guardian_block",
+            "docs": [
+              "Another block with the same parent."
+            ],
+            "type": {
+              "defined": {
+                "name": "BlockRef"
+              }
+            }
+          },
+          {
+            "name": "guardian_tip",
+            "docs": [
+              "The best block on top of `guardian_block`."
+            ],
+            "type": {
+              "defined": {
+                "name": "BlockRef"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "ForkChallenged",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "challenge_id",
+            "type": "u64"
+          },
+          {
+            "name": "job_id",
+            "type": "u64"
+          },
+          {
+            "name": "guardian",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Job",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "id",
+            "type": "u64"
+          },
+          {
+            "name": "application",
+            "type": "pubkey"
+          },
+          {
+            "name": "payer",
+            "docs": [
+              "Who paid the fees and receives them back (D62, D65)."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "tag",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "escrow",
+            "docs": [
+              "x (D40)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "commitment_fee",
+            "docs": [
+              "The fee at the price of the moment, and what was sent above the fees",
+              "(D24, D79)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "escrow_fee",
+            "type": "u64"
+          },
+          {
+            "name": "bid",
+            "type": "u64"
+          },
+          {
+            "name": "operator",
+            "type": "pubkey"
+          },
+          {
+            "name": "has_operator",
+            "type": "bool"
+          },
+          {
+            "name": "confirmations",
+            "type": "u16"
+          },
+          {
+            "name": "claim_kind",
+            "docs": [
+              "0 for a settlement, otherwise the kind of claim, counted from 1."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "opened_at",
+            "type": "i64"
+          },
+          {
+            "name": "last_bid_at",
+            "type": "i64"
+          },
+          {
+            "name": "fees_returned",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "anchor",
+            "type": {
+              "defined": {
+                "name": "BlockRef"
+              }
+            }
+          },
+          {
+            "name": "anchored_at",
+            "type": "i64"
+          },
+          {
+            "name": "proof_block",
+            "type": {
+              "defined": {
+                "name": "BlockRef"
+              }
+            }
+          },
+          {
+            "name": "tip",
+            "docs": [
+              "The block on top of the proof that was shown with it."
+            ],
+            "type": {
+              "defined": {
+                "name": "BlockRef"
+              }
+            }
+          },
+          {
+            "name": "deepest",
+            "docs": [
+              "The oldest block of the operator's branch asked for and shown (D81)."
+            ],
+            "type": {
+              "defined": {
+                "name": "BlockRef"
+              }
+            }
+          },
+          {
+            "name": "parents_shown",
+            "docs": [
+              "How many parents were shown; the next question is this + 1 (D91)."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "txid",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "proven_at",
+            "type": "i64"
+          },
+          {
+            "name": "lock_end",
+            "type": "i64"
+          },
+          {
+            "name": "slashed",
+            "type": "bool"
+          },
+          {
+            "name": "settled",
+            "type": "bool"
+          },
+          {
+            "name": "attester",
+            "docs": [
+              "D42: who locked x in the operator's place, if anyone."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "has_attester",
+            "type": "bool"
+          },
+          {
+            "name": "attested_at",
+            "type": "i64"
+          },
+          {
+            "name": "open_challenges",
+            "docs": [
+              "How many challenges of the job are open."
+            ],
+            "type": "u32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "JobAnchored",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "job_id",
+            "type": "u64"
+          },
+          {
+            "name": "anchor_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "height",
+            "type": "u32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "JobExpired",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "job_id",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "JobOpened",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "job_id",
+            "type": "u64"
+          },
+          {
+            "name": "application",
+            "type": "pubkey"
+          },
+          {
+            "name": "tag",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "escrow",
+            "type": "u64"
+          },
+          {
+            "name": "commitment_fee",
+            "type": "u64"
+          },
+          {
+            "name": "escrow_fee",
+            "type": "u64"
+          },
+          {
+            "name": "confirmations",
+            "type": "u16"
+          },
+          {
+            "name": "claim_kind",
+            "type": "u16"
+          },
+          {
+            "name": "payer",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "JobProven",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "job_id",
+            "type": "u64"
+          },
+          {
+            "name": "txid",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "lock_end",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "JobSettled",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "job_id",
+            "type": "u64"
+          },
+          {
+            "name": "operator",
+            "type": "pubkey"
+          },
+          {
+            "name": "paid",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "JobSlashed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "job_id",
+            "type": "u64"
+          },
+          {
+            "name": "operator",
+            "type": "pubkey"
+          },
+          {
+            "name": "guardian",
+            "type": "pubkey"
+          },
+          {
+            "name": "to_application",
+            "type": "u64"
+          },
+          {
+            "name": "to_guardian",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Note",
+      "docs": [
+        "D47: a guardian's sealed note, and the slot it was sealed in."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "slot",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Operator",
+      "docs": [
+        "Everything an operator has locked (D31), and the part locked for jobs."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "bond",
+            "type": "u64"
+          },
+          {
+            "name": "locked",
+            "type": "u64"
+          },
+          {
+            "name": "chain_head_txid",
+            "docs": [
+              "D30, D34: the coin its next tagged transaction must spend."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "chain_head_vout",
+            "type": "u32"
+          },
+          {
+            "name": "chain_head_set",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ParentAsked",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "challenge_id",
+            "type": "u64"
+          },
+          {
+            "name": "job_id",
+            "type": "u64"
+          },
+          {
+            "name": "guardian",
+            "type": "pubkey"
+          },
+          {
+            "name": "child_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "ParentShown",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "challenge_id",
+            "type": "u64"
+          },
+          {
+            "name": "parent_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Proof",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "proof_block",
+            "docs": [
+              "The block that holds the transaction."
+            ],
+            "type": {
+              "defined": {
+                "name": "BlockRef"
+              }
+            }
+          },
+          {
+            "name": "tip",
+            "docs": [
+              "A block on top of it, far enough for the confirmations."
+            ],
+            "type": {
+              "defined": {
+                "name": "BlockRef"
+              }
+            }
+          },
+          {
+            "name": "raw_tx",
+            "docs": [
+              "The transaction, without witness data, and its id."
+            ],
+            "type": "bytes"
+          },
+          {
+            "name": "txid",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "siblings",
+            "type": {
+              "vec": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            }
+          },
+          {
+            "name": "tx_index",
+            "type": "u64"
+          },
+          {
+            "name": "head_index",
+            "docs": [
+              "The input that spends the chain head; the output with the same number",
+              "is the next chain head (N23)."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "tag_index",
+            "docs": [
+              "The output that carries the tag."
+            ],
+            "type": "u32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Protocol",
+      "docs": [
+        "The single record of the protocol. It holds no key: nothing can change",
+        "after deployment (D59)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "job_count",
+            "type": "u64"
+          },
+          {
+            "name": "challenge_count",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "vault_bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TagRecord",
+      "docs": [
+        "An application uses a tag once (D80)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "job_id",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "UsedTx",
+      "docs": [
+        "A Bitcoin transaction settles one job on this network (D80), and a",
+        "transaction used as a chain head can never settle one."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    }
+  ]
+}

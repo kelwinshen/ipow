@@ -1,8 +1,8 @@
-// BetaHub (DESIGN_V2.md §8.18) on Tempo — same viem/Tempo-native deploy
-// path as scripts/deploy_viem.mjs (which deployed iPoWV1 + BetaVault +
+// BetaHub (design/ipow-implementation.md §8.18) on Tempo — same viem/Tempo-native deploy
+// path as scripts/deploy_viem.mjs (which deployed iPoW + BetaVault +
 // MockERC20 here already); see that file's own comments for why plain
 // Hardhat/ethers can't speak Tempo's fee-sponsored, 2D-nonce transaction
-// model. Reuses the already-deployed iPoWV1 relay and NONCE_KEY=1n lane
+// model. Reuses the already-deployed iPoW relay and NONCE_KEY=1n lane
 // (continuing that lane's nonce, not restarting it — a fresh lane's first
 // nonce=0 slot would collide with this sender's very first contract
 // creation, per the confirmed nonce-lane address-derivation bug).
@@ -60,7 +60,7 @@ async function deploy(name, abi, bytecode, args, dir) {
 }
 
 const ipowAddr = "0x53e1291bdaff473694bbbb8dd257f9844e5f9f3c";
-console.log("reusing already-deployed iPoWV1:", ipowAddr);
+console.log("reusing already-deployed iPoW:", ipowAddr);
 
 const hubArt = artifact("BetaHub");
 const params = {
@@ -77,5 +77,5 @@ const params = {
 };
 const betaHubAddr = await deploy("BetaHub", hubArt.abi, hubArt.bytecode, [account.address, ipowAddr, 7n, params, "iBETA", "iBETA"]);
 
-console.log("\niPoWV1: ", ipowAddr);
+console.log("\niPoW: ", ipowAddr);
 console.log("BetaHub:", betaHubAddr);

@@ -4,10 +4,10 @@ pragma solidity ^0.8.20;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-/// @dev Same read-only view into `iPoWV1`'s header relay that
-/// `iPoWV1Conversion` uses. Satisfied on this network by `iPoWV1Router`'s own
-/// inherited public getters (DESIGN_V2.md §8.16) — no delegatecall involved.
-interface IIPoWV1HeadersView {
+/// @dev Same read-only view into `iPoW`'s header relay that
+/// `iPoWConversion` uses. Satisfied on this network by `iPoWRouter`'s own
+/// inherited public getters (design/ipow-implementation.md §8.16) — no delegatecall involved.
+interface IIPoWHeadersView {
     function globalTipHeight() external view returns (uint256);
     function globalHeightToHashLE(uint256 height) external view returns (bytes32);
     function globalHeaders(bytes32 hashLE)
@@ -18,8 +18,8 @@ interface IIPoWV1HeadersView {
 
 /**
  * @title BetaVaultStorage
- * @notice Hyperliquid-only split of `BetaVault` (DESIGN_V2.md §8.17), same
- * reasoning and pattern as `iPoWV1Router`'s split (§8.16): HyperEVM
+ * @notice Hyperliquid-only split of `BetaVault` (design/ipow-implementation.md §8.17), same
+ * reasoning and pattern as `iPoWRouter`'s split (§8.16): HyperEVM
  * testnet's 3,000,000 block gas limit is below what plain `BetaVault` needs
  * to deploy (~4.0M gas, driven by ~16,921 bytes of deployed bytecode — code-
  * deposit cost alone, 200 gas/byte, is ~3.38M), so on this network only, its
@@ -43,7 +43,7 @@ interface IIPoWV1HeadersView {
  * `BetaVault` — immutables are baked into a contract's own bytecode at
  * construction and don't propagate through `delegatecall`; each facet would
  * otherwise read its own meaningless zero value instead of the router's.
- * Same fix as `iPoWV1Storage`'s `NATIVE_DECIMALS`/`SELF_NETWORK_ID`.
+ * Same fix as `iPoWStorage`'s `NATIVE_DECIMALS`/`SELF_NETWORK_ID`.
  */
 abstract contract BetaVaultStorage {
     using SafeERC20 for IERC20;
@@ -179,7 +179,7 @@ abstract contract BetaVaultStorage {
 
     // ------------------------------------------------------------ state
     // Not immutable — see contract-level comment.
-    IIPoWV1HeadersView public ipowHeaders;
+    IIPoWHeadersView public ipowHeaders;
     address public governance;
     Params public params;
     bool public paused;

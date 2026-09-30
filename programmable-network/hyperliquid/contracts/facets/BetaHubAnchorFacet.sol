@@ -2,11 +2,11 @@
 pragma solidity ^0.8.20;
 
 import {BetaHubStorage} from "../base/BetaHubStorage.sol";
-import {AnchorChainLib, IIPoWV1HeadersView} from "../libraries/AnchorChainLib.sol";
+import {AnchorChainLib, IIPoWHeadersView} from "../libraries/AnchorChainLib.sol";
 
 /**
  * @title BetaHubAnchorFacet
- * @notice Hyperliquid-only facet (DESIGN_V2.md §8.19): the statement-chain
+ * @notice Hyperliquid-only facet (design/ipow-implementation.md §8.19): the statement-chain
  * anchor pipeline — `processAnchor`/`skipAnchor`, `_verifyAndAdvance`, and
  * the kind handlers (`_processRemoteMint`, `_processVeto`,
  * `_processAttestOrClear`). Reused near-verbatim from `HubAnchorJudge.sol`
@@ -222,7 +222,7 @@ contract BetaHubAnchorFacet is BetaHubStorage {
         txidLE = AnchorChainLib.txidOf(txRaw);
         if (anchors[txidLE].status != AnchorStatus.None) revert AlreadyProcessed();
 
-        IIPoWV1HeadersView headers = ipowHeaders;
+        IIPoWHeadersView headers = ipowHeaders;
         bytes32 headerHashLE = headers.globalHeightToHashLE(blockHeight);
         (, bytes32 merkleRootLE, , uint32 ts, bool set, ) = headers.globalHeaders(headerHashLE);
         if (!set) revert InvalidHeader();

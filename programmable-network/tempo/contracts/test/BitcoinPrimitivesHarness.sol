@@ -7,7 +7,7 @@ import {BitcoinPrimitives} from "../libraries/BitcoinPrimitives.sol";
  * @title BitcoinPrimitivesHarness
  * @notice Test-only contract exposing BitcoinPrimitives' internal functions as external
  * calls, so the library's pure Bitcoin-consensus math can be unit tested in isolation
- * from iPoWV1's state machine. Not part of the deployed protocol.
+ * from iPoW's state machine. Not part of the deployed protocol.
  */
 contract BitcoinPrimitivesHarness {
     bytes32[] private _branchScratch;

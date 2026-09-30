@@ -3,7 +3,7 @@
 // — confirmed directly against the RPC: the exact same call succeeds
 // without those fields and fails with them. Hardhat Ignition always
 // includes them internally, so this deploys the same three contracts
-// (iPoWV1, BetaVault, MockERC20) via plain ethers with an explicit
+// (iPoW, BetaVault, MockERC20) via plain ethers with an explicit
 // gasLimit, skipping Ignition's estimation entirely for this network only.
 //
 //   node scripts/deploy_raw.mjs
@@ -37,7 +37,7 @@ const NATIVE_DECIMALS = 18n;
 const SELF_NETWORK_ID = 7n; // Tempo, per the iPoW protocol network ID registry
 const COMMIT_FEE_BPS = 50n;
 
-const ipowAddr = await deploy("iPoWV1", [NATIVE_DECIMALS, SELF_NETWORK_ID, me, COMMIT_FEE_BPS], 30_000_000n);
+const ipowAddr = await deploy("iPoW", [NATIVE_DECIMALS, SELF_NETWORK_ID, me, COMMIT_FEE_BPS], 30_000_000n);
 
 const params = {
   ethWeiPerUnit: 1_000_000_000_000_000n,
@@ -55,6 +55,6 @@ const params = {
 const betaVaultAddr = await deploy("BetaVault", [me, ipowAddr, params], 10_000_000n);
 const mockTokenAddr = await deploy("MockERC20", ["Mock BETA-leg USD", "mUSD"], 3_000_000n);
 
-console.log("\niPoWV1:   ", ipowAddr);
+console.log("\niPoW:   ", ipowAddr);
 console.log("BetaVault:", betaVaultAddr);
 console.log("MockERC20:", mockTokenAddr);

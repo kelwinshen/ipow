@@ -1,4 +1,4 @@
-//! BETA v2 factory (`docs/DESIGN_V2.md` §6) — end-to-end against litesvm.
+//! BETA v2 factory (`docs/design/ipow-implementation.md` §6) — end-to-end against litesvm.
 //! Anchors are real (legacy-serialized) Bitcoin transactions proven against
 //! seeded `ipow` headers, exactly as the program would see them on-chain.
 

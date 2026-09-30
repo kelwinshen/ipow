@@ -1,13 +1,13 @@
 import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
 
-// Hyperliquid-only deploy path (DESIGN_V2.md §8.17): same reasoning as
-// `Router.ts` for `iPoWV1` — plain `BetaVault` needs ~4.0M gas to deploy
+// Hyperliquid-only deploy path (design/ipow-implementation.md §8.17): same reasoning as
+// `Router.ts` for `iPoW` — plain `BetaVault` needs ~4.0M gas to deploy
 // (deployed bytecode 16,921 bytes; code-deposit cost alone is ~3.38M),
 // above HyperEVM testnet's 3,000,000 block gas limit, so this network
 // deploys `BetaVaultCoreFacet` + `BetaVaultAnchorFacet` + the immutable
 // `BetaVaultRouter` instead of a plain `BetaVault`. `ipowHeaders` should
-// point at `Router.ts`'s deployed `iPoWV1Router` address (it satisfies
-// `IIPoWV1HeadersView` via its own inherited public getters).
+// point at `Router.ts`'s deployed `iPoWRouter` address (it satisfies
+// `IIPoWHeadersView` via its own inherited public getters).
 export default buildModule("BetaVaultRouterModule", (m) => {
   const governance = m.getParameter("governance", m.getAccount(0));
   const ipowHeaders = m.getParameter("ipowHeaders");

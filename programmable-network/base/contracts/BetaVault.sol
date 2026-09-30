@@ -5,9 +5,9 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-/// @dev Same read-only view into `iPoWV1`'s header relay that
-/// `iPoWV1Conversion` uses.
-interface IIPoWV1HeadersView {
+/// @dev Same read-only view into `iPoW`'s header relay that
+/// `iPoWConversion` uses.
+interface IIPoWHeadersView {
     function globalTipHeight() external view returns (uint256);
     function globalHeightToHashLE(uint256 height) external view returns (bytes32);
     function globalHeaders(bytes32 hashLE)
@@ -16,7 +16,7 @@ interface IIPoWV1HeadersView {
         returns (bytes32 prevHashLE, bytes32 merkleRootLE, uint32 nBits, uint32 timestamp, bool set, uint64 arrivalTime);
 }
 
-/// @title BetaVault — the Ethereum half of BETA v2 (docs/DESIGN_V2.md §6)
+/// @title BetaVault — the Ethereum half of BETA v2 (docs/design/ipow-implementation.md §6)
 /// @notice Holds the ETH backing BETA minted on Solana by `beta-factory`.
 /// Cross-chain claims arrive as Bitcoin transactions on each registered
 /// party's statement chain. This contract judges the claims that are about
@@ -199,7 +199,7 @@ contract BetaVault is ReentrancyGuard {
     }
 
     // ------------------------------------------------------------ state
-    IIPoWV1HeadersView public immutable ipowHeaders;
+    IIPoWHeadersView public immutable ipowHeaders;
     address public governance;
     Params public params;
     bool public paused;
@@ -249,7 +249,7 @@ contract BetaVault is ReentrancyGuard {
         if (_governance == address(0) || _ipowHeaders == address(0)) revert InvalidParams();
         _validate(_params);
         governance = _governance;
-        ipowHeaders = IIPoWV1HeadersView(_ipowHeaders);
+        ipowHeaders = IIPoWHeadersView(_ipowHeaders);
         params = _params;
     }
 
@@ -761,7 +761,7 @@ contract BetaVault is ReentrancyGuard {
 
     /// @dev Pulls `amount` of `token` from `from` and returns what this
     /// contract's own balance actually increased by — same defensive
-    /// pattern as `iPoWV1Conversion._pullToken`, so a fee-on-transfer ERC20
+    /// pattern as `iPoWConversion._pullToken`, so a fee-on-transfer ERC20
     /// can't silently overstate what was really deposited; reverts on any
     /// shortfall rather than under-collateralizing the lock it backs.
     function _pullToken(address token, address from, uint256 amount) internal returns (uint256) {

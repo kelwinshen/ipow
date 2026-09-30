@@ -1,6 +1,6 @@
 import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
 
-// BetaHub (DESIGN_V2.md §8.18) on Hedera: an EVM chain acting as a mint
+// BetaHub (design/ipow-implementation.md §8.18) on Hedera: an EVM chain acting as a mint
 // hub, not just a spoke — same contract as the Ethereum pilot's BetaHub.
 //
 // All native-currency params below are tinybar-scaled (8 decimals), NOT
@@ -11,7 +11,7 @@ import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
 // with a native leg reverts.
 export default buildModule("BetaHubModule", (m) => {
   const deployer = m.getAccount(0);
-  const ipow = m.contractAt("iPoWV1", m.getParameter("ipowHeaders", "0x36D7F82F8B2E800C877592F8DFFF0E8CFAc96CF3"));
+  const ipow = m.contractAt("iPoW", m.getParameter("ipowHeaders", "0x36D7F82F8B2E800C877592F8DFFF0E8CFAc96CF3"));
   const selfNetworkId = m.getParameter("selfNetworkId", 1n); // Hedera
   const params = {
     tChallengeSecs: 7n * 86400n,
