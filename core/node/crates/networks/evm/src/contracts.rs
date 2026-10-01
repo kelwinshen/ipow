@@ -35,6 +35,32 @@ pub mod vault {
 }
 pub use vault::IPoWVault;
 
+/// The vault's two parts, and a receipt, each in its own module.
+pub mod vault_home {
+    alloy::sol!(
+        #[sol(rpc, all_derives)]
+        VaultHome,
+        "abi/VaultHome.json"
+    );
+}
+pub mod vault_receipts {
+    alloy::sol!(
+        #[sol(rpc, all_derives)]
+        VaultReceipts,
+        "abi/VaultReceipts.json"
+    );
+}
+pub mod vault_receipt {
+    alloy::sol!(
+        #[sol(rpc, all_derives)]
+        VaultReceipt,
+        "abi/VaultReceipt.json"
+    );
+}
+pub use vault_home::VaultHome;
+pub use vault_receipt::VaultReceipt;
+pub use vault_receipts::VaultReceipts;
+
 alloy::sol! {
     #[sol(rpc)]
     /// `approve` is read as returning nothing: some tokens (USDT) return

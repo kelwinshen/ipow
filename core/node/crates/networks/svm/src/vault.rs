@@ -6,10 +6,12 @@ use std::sync::Arc;
 use anchor_lang::prelude::Pubkey;
 use anchor_lang::solana_program::instruction::{AccountMeta, Instruction};
 use anchor_lang::{InstructionData, ToAccountMetas};
-use anchor_spl::associated_token::get_associated_token_address as ata;
+use anchor_spl::associated_token::get_associated_token_address_with_program_id as ata_of;
 use async_trait::async_trait;
 use ipow_protocol_core::types::{Amount, BlockRef};
-use ipow_protocol_core::vault::{decode, Chain, Claim, FastLock, Lock, Record, Request, TxProof, VaultApp, ETHEREUM, SOLANA};
+use ipow_protocol_core::vault::{
+    decode, record_hash, AssetInfo, Chain, Claim, FastLock, Lock, Position, Record, Request, TxProof, VaultApp, ETHEREUM, SOLANA,
+};
 use sha2::{Digest, Sha256};
 
 use crate::network::SvmNetwork;
@@ -37,11 +39,27 @@ fn pda(seeds: &[&[u8]]) -> Pubkey {
 fn config() -> Pubkey {
     pda(&[b"config"])
 }
-fn mint() -> Pubkey {
-    pda(&[b"veth"])
+/// The receipt here of Ethereum's asset `n`, and the vault's account of it.
+fn receipt(n: u32) -> Pubkey {
+    pda(&[b"receipt", &n.to_le_bytes()])
 }
-fn holding() -> Pubkey {
-    pda(&[b"holding"])
+fn holding(n: u32) -> Pubkey {
+    pda(&[b"holding", &n.to_le_bytes()])
+}
+fn asset_pda(n: u32) -> Pubkey {
+    pda(&[b"asset", &n.to_le_bytes()])
+}
+fn home_tokens(mint: &Pubkey) -> Pubkey {
+    pda(&[b"home_tokens", mint.as_ref()])
+}
+fn home_lock_pda(id: u64) -> Pubkey {
+    pda(&[b"home_lock", &id.to_le_bytes()])
+}
+fn paid_pda(id: u64) -> Pubkey {
+    pda(&[b"paid", &id.to_le_bytes()])
+}
+fn fast_pay_pda(id: u64, record: &[u8]) -> Pubkey {
+    pda(&[b"fast_pay", &id.to_le_bytes(), &sha256(&[record])])
 }
 fn chain_pda(o: &Pubkey) -> Pubkey {
     pda(&[b"chain", o.as_ref()])
@@ -52,8 +70,8 @@ fn claim_pda(id: u64) -> Pubkey {
 fn stake_pda(id: u64, who: &Pubkey) -> Pubkey {
     pda(&[b"stake", &id.to_le_bytes(), who.as_ref()])
 }
-fn credit_pda(who: &Pubkey) -> Pubkey {
-    pda(&[b"credit", who.as_ref()])
+fn credit_pda(who: &Pubkey, home: u8, asset: u32) -> Pubkey {
+    pda(&[b"credit", who.as_ref(), &[home], &asset.to_le_bytes()])
 }
 fn request_pda(id: u64) -> Pubkey {
     pda(&[b"request", &id.to_le_bytes()])
@@ -64,8 +82,8 @@ fn message_pda(operator: &Pubkey, index: u64) -> Pubkey {
 fn lock_pda(id: u64) -> Pubkey {
     pda(&[b"lock", &id.to_le_bytes()])
 }
-fn fast_pda(n: u64) -> Pubkey {
-    pda(&[b"fast", &n.to_le_bytes()])
+fn fast_pda(id: u64) -> Pubkey {
+    pda(&[b"fast", &id.to_le_bytes()])
 }
 fn real_pda(r: &BlockRef) -> Pubkey {
     pda(&[b"real", &r.hash, &r.height.to_le_bytes(), &r.epoch_time.to_le_bytes()])
@@ -86,6 +104,38 @@ fn checkpoint_tag(n: u64) -> [u8; 32] {
     sha256(&[b"iPoW checkpoint", vt::ID.as_ref(), &n.to_le_bytes()])
 }
 
+/// The accounts a batch's records are judged and acted on with here, in
+/// order (`submit_message`). Up to the first record that does not parse:
+/// the program reads the accounts of those before it, then judges the
+/// batch false, so a batch that does not parse can still be slashed.
+fn accounts_of(batch: &[u8]) -> Vec<Pubkey> {
+    let mut out = vec![];
+    let mut o = 0;
+    while o < batch.len() {
+        let len = match batch[o] {
+            1 | 2 => 78,
+            3 => 10,
+            4 => 15,
+            6 => 39,
+            _ => break,
+        };
+        let Some(records) = batch.get(o..o + len).and_then(decode) else { break };
+        o += len;
+        for r in records {
+            match r {
+                Record::Lock { home: SOLANA, id, .. } => out.push(home_lock_pda(id)),
+                Record::Request { net: SOLANA, id, .. } => out.push(request_pda(id)),
+                Record::Cancel { net: SOLANA, id } => out.push(lock_pda(id)),
+                Record::Asset { home: SOLANA, asset, .. } => out.push(asset_pda(asset)),
+                Record::Request { net: ETHEREUM, asset, .. } => out.push(asset_pda(asset)),
+                Record::Cancel { net: ETHEREUM, id } => out.push(home_lock_pda(id)),
+                _ => {}
+            }
+        }
+    }
+    out
+}
+
 impl SvmVault {
     pub fn new(net: Arc<SvmNetwork>, program: &str) -> anyhow::Result<Self> {
         anyhow::ensure!(program == vt::ID.to_string(), "the vault is {program}, this node is built for {}", vt::ID);
@@ -102,6 +152,16 @@ impl SvmVault {
 
     async fn config_record(&self) -> anyhow::Result<vt::accounts::Config> {
         self.net.read_account(&config()).await?.ok_or_else(|| anyhow::anyhow!("the vault is not initialized"))
+    }
+
+    async fn home_asset(&self, n: u32) -> anyhow::Result<vt::accounts::HomeAsset> {
+        self.net.read_account(&asset_pda(n)).await?.ok_or_else(|| anyhow::anyhow!("asset {n} is not registered here"))
+    }
+
+    /// For a token whose home is Solana: the vault's account of it, its mint
+    /// and its program; none for SOL.
+    fn token_accounts(a: &vt::accounts::HomeAsset) -> (Option<Pubkey>, Option<Pubkey>, Option<Pubkey>) {
+        if a.number == 0 { (None, None, None) } else { (Some(home_tokens(&a.mint)), Some(a.mint), Some(a.token_program)) }
     }
 
     /// The walk from `tx.real` down to `tx.block`, or none when they are the
@@ -180,6 +240,18 @@ impl SvmVault {
         };
         self.net.send_ix(ix).await
     }
+
+    /// Creates `owner`'s associated account of `mint` if it does not exist.
+    async fn ensure_ata(&self, owner: &Pubkey, mint: &Pubkey, program: &Pubkey) -> anyhow::Result<Pubkey> {
+        let create = anchor_spl::associated_token::spl_associated_token_account::instruction::create_associated_token_account_idempotent(
+            &self.net.me_key(),
+            owner,
+            mint,
+            program,
+        );
+        self.net.send_ix(create).await?;
+        Ok(ata_of(owner, mint, program))
+    }
 }
 
 #[async_trait]
@@ -217,14 +289,26 @@ impl VaultApp for SvmVault {
             exited: c.exited,
             slashed: c.slashed,
             refused: c.refused,
-            bond: c.bond as u128,
-            stated: c.stated as u128,
-            peer_bond: c.peer_bond,
-            peer_bond_carried: c.peer_bond_carried,
-            open_value: c.open_value,
+            positions: c
+                .positions
+                .iter()
+                .map(|p| Position {
+                    home: p.home,
+                    asset: p.asset,
+                    bond: p.bond,
+                    stated: p.stated,
+                    peer_bond: p.peer_bond,
+                    peer_bond_carried: p.peer_bond_carried,
+                    open_value: p.open_value,
+                })
+                .collect(),
             open_claims: c.open_claims,
             deposits: c.deposits as Amount,
         }))
+    }
+
+    async fn position(&self, operator: &str, home: u8, asset: u32) -> anyhow::Result<Position> {
+        Ok(self.chain(operator).await?.map(|c| c.position(home, asset)).unwrap_or(Position { home, asset, ..Default::default() }))
     }
 
     async fn register_chain(&self, peer: &[u8], tx: &TxProof, coin_index: u32, tag_index: u32) -> anyhow::Result<()> {
@@ -246,13 +330,40 @@ impl VaultApp for SvmVault {
         self.send_then_close(ix, walk).await
     }
 
-    async fn add_bond(&self, amount: u128) -> anyhow::Result<()> {
+    async fn add_bond(&self, home: u8, asset: u32, amount: u64) -> anyhow::Result<()> {
         let me = self.net.me_key();
-        let amount = u64::try_from(amount).map_err(|_| anyhow::anyhow!("a vETH amount fits 64 bits"))?;
+        if home == ETHEREUM {
+            return self
+                .net
+                .send_ix(Self::ix(
+                    vt::client::accounts::AddBondReceipt {
+                        chain: chain_pda(&me),
+                        mint: receipt(asset),
+                        from: ata_of(&me, &receipt(asset), &TOKEN),
+                        holding: holding(asset),
+                        operator: me,
+                        token_program: TOKEN,
+                    },
+                    vt::client::args::AddBondReceipt { asset, amount },
+                ))
+                .await;
+        }
+        let a = self.home_asset(asset).await?;
+        let (tokens, mint, program) = Self::token_accounts(&a);
         self.net
             .send_ix(Self::ix(
-                vt::client::accounts::AddBond { chain: chain_pda(&me), mint: mint(), from: ata(&me, &mint()), holding: holding(), operator: me, token_program: TOKEN },
-                vt::client::args::AddBond { amount },
+                vt::client::accounts::AddBondHome {
+                    chain: chain_pda(&me),
+                    config: config(),
+                    home_asset: asset_pda(asset),
+                    from: mint.map(|m| ata_of(&me, &m, &a.token_program)),
+                    tokens,
+                    mint,
+                    token_program: program,
+                    operator: me,
+                    system_program: SYSTEM,
+                },
+                vt::client::args::AddBondHome { asset, amount },
             ))
             .await
     }
@@ -266,6 +377,33 @@ impl VaultApp for SvmVault {
                 vt::client::args::AddDeposits { amount },
             ))
             .await
+    }
+
+    async fn settle_slash(&self, operator: &str, home: u8, asset: u32) -> anyhow::Result<()> {
+        let op = Self::operator(operator)?;
+        let c: vt::accounts::Chain = self.net.read_account(&chain_pda(&op)).await?.ok_or_else(|| anyhow::anyhow!("no chain of {operator}"))?;
+        let sol = home == SOLANA;
+        self.net
+            .send_ix(Self::ix(
+                vt::client::accounts::SettleSlash {
+                    chain: chain_pda(&op),
+                    config: config(),
+                    home_asset: sol.then(|| asset_pda(asset)),
+                    mint: (!sol).then(|| receipt(asset)),
+                    holding: (!sol).then(|| holding(asset)),
+                    slasher_credit: credit_pda(&c.slasher, home, asset),
+                    payer: self.net.me_key(),
+                    token_program: (!sol).then_some(TOKEN),
+                    system_program: SYSTEM,
+                },
+                vt::client::args::SettleSlash { home, asset },
+            ))
+            .await
+    }
+
+    async fn slash_pending(&self, operator: &str, home: u8, asset: u32) -> anyhow::Result<u64> {
+        let c: Option<vt::accounts::Chain> = self.net.read_account(&chain_pda(&Self::operator(operator)?)).await?;
+        Ok(c.and_then(|c| c.positions.iter().find(|p| p.home == home && p.asset == asset).map(|p| p.slash_backing + p.slash_share)).unwrap_or(0))
     }
 
     async fn is_real(&self, block: &BlockRef) -> anyhow::Result<bool> {
@@ -327,15 +465,7 @@ impl VaultApp for SvmVault {
         let me = self.net.me_key();
         let id = self.config_record().await?.claim_count + 1;
         let index = self.net.read_account::<vt::accounts::Chain>(&chain_pda(&op)).await?.map_or(0, |c| c.messages);
-        // The accounts the records about Solana are judged with, in order.
-        let mut extra = vec![];
-        for r in decode(batch).unwrap_or_default() {
-            match r {
-                Record::Request { id, .. } => extra.push(request_pda(id)),
-                Record::Cancel { id } => extra.push(lock_pda(id)),
-                _ => {}
-            }
-        }
+        let extra = accounts_of(batch);
         let buffered = tx.raw_tx.len() + batch.len() > INLINE;
         if buffered {
             self.upload(&tx.raw_tx, batch).await?;
@@ -357,19 +487,14 @@ impl VaultApp for SvmVault {
             vt::client::accounts::SubmitMessage {
                 config: config(),
                 chain: chain_pda(&op),
-                message: message_pda(&op, index),
                 real: real_pda(&tx.real),
                 walk: walk.unwrap_or(SYSTEM),
                 node: SvmNetwork::node_pda(&tx.block),
+                message: message_pda(&op, index),
                 claim: claim_pda(id),
                 stake: stake_pda(id, &op),
-                operator_credit: credit_pda(&op),
-                submitter_credit: credit_pda(&me),
-                mint: mint(),
-                holding: holding(),
                 submitter: me,
                 buffer: buffered.then(|| buffer_pda(&me)),
-                token_program: TOKEN,
                 system_program: SYSTEM,
             },
             vt::client::args::SubmitMessage { operator: op, btc, input_index, tag_index, batch: if buffered { vec![] } else { batch.to_vec() } },
@@ -388,21 +513,138 @@ impl VaultApp for SvmVault {
         Ok(m.filter(|m| m.operator == op && m.index == index).map(|m| m.batch))
     }
 
-    async fn final_locks_after(&self, _after: u64, _limit: usize) -> anyhow::Result<Vec<Lock>> {
-        Ok(vec![])
+    async fn assets(&self) -> anyhow::Result<Vec<AssetInfo>> {
+        let count = self.config_record().await?.asset_count;
+        let mut out = vec![];
+        for n in 0..count {
+            let a = self.home_asset(n).await?;
+            out.push(AssetInfo { number: n, token: a.mint.to_bytes(), decimals: a.record_decimals });
+        }
+        Ok(out)
     }
 
-    async fn lock(&self, _id: u64) -> anyhow::Result<Option<Lock>> {
-        Ok(None)
+    /// Only locks in a finalized block: a record of one Solana could still
+    /// roll back would be false, and slashed (section 11.5).
+    async fn final_locks_after(&self, after: u64, limit: usize) -> anyhow::Result<Vec<Lock>> {
+        let config: vt::accounts::Config = self.net.read_final(&config()).await?.ok_or_else(|| anyhow::anyhow!("the vault is not initialized"))?;
+        let mut out = vec![];
+        for id in (after + 1)..=config.lock_count {
+            if out.len() >= limit {
+                break;
+            }
+            if let Some(l) = self.lock(id).await? {
+                out.push(l);
+            }
+        }
+        Ok(out)
     }
 
-    /// Only requests in a finalized block: a record of one Solana could
-    /// still roll back would be false, and slashed (section 11.5).
+    async fn lock(&self, id: u64) -> anyhow::Result<Option<Lock>> {
+        let l: Option<vt::accounts::HomeLock> = self.net.read_final(&home_lock_pda(id)).await?;
+        Ok(l.map(|l| Lock {
+            id,
+            asset: l.asset,
+            amount: l.amount,
+            recipient: l.recipient,
+            fee: l.fee,
+            fast_fee: l.fast_fee,
+            locked_at: l.locked_at as u64,
+            fee_paid: l.fee_paid,
+            returned: l.returned,
+        }))
+    }
+
+    async fn take_fee(&self, record: &Record) -> anyhow::Result<()> {
+        let me = self.net.me_key();
+        match *record {
+            Record::Lock { home: SOLANA, id, asset, .. } => {
+                let Some(l) = self.net.read_account::<vt::accounts::HomeLock>(&home_lock_pda(id)).await? else { return Ok(()) };
+                if !l.fee_paid || l.fee_taken || l.fee_to != me || l.fee == 0 {
+                    return Ok(());
+                }
+                let a = self.home_asset(asset).await?;
+                let (to, tokens, mint, program) = if a.number == 0 {
+                    (None, None, None, None)
+                } else {
+                    (Some(self.ensure_ata(&me, &a.mint, &a.token_program).await?), Some(home_tokens(&a.mint)), Some(a.mint), Some(a.token_program))
+                };
+                self.net
+                    .send_ix(Self::ix(
+                        vt::client::accounts::TakeLockFee {
+                            config: config(),
+                            lock: home_lock_pda(id),
+                            asset: asset_pda(asset),
+                            to,
+                            tokens,
+                            mint,
+                            token_program: program,
+                            operator: me,
+                        },
+                        vt::client::args::TakeLockFee { lock_id: id },
+                    ))
+                    .await
+            }
+            Record::Request { net: SOLANA, id, asset, .. } => {
+                let Some(r) = self.net.read_account::<vt::accounts::Request>(&request_pda(id)).await? else { return Ok(()) };
+                if !r.fee_paid || r.fee_taken || r.fee_to != me || r.fee == 0 {
+                    return Ok(());
+                }
+                let to = self.ensure_ata(&me, &receipt(asset), &TOKEN).await?;
+                self.net
+                    .send_ix(Self::ix(
+                        vt::client::accounts::TakeRequestFee {
+                            config: config(),
+                            request: request_pda(id),
+                            mint: receipt(asset),
+                            holding: holding(asset),
+                            to,
+                            operator: me,
+                            token_program: TOKEN,
+                        },
+                        vt::client::args::TakeRequestFee { request_id: id },
+                    ))
+                    .await
+            }
+            _ => Ok(()),
+        }
+    }
+
+    async fn request_paid(&self, id: u64) -> anyhow::Result<bool> {
+        Ok(self.net.account_data(&paid_pda(id)).await?.is_some_and(|d| !d.is_empty()))
+    }
+
+    async fn has_receipt(&self, asset: u32) -> anyhow::Result<bool> {
+        Ok(self.net.account_data(&receipt(asset)).await?.is_some_and(|d| !d.is_empty()))
+    }
+
+    /// Only burns in a finalized block, as locks.
+    async fn receipt_balance(&self, asset: u32) -> anyhow::Result<u64> {
+        let a: Option<anchor_spl::token::TokenAccount> = self.net.read_account(&ata_of(&self.net.me_key(), &receipt(asset), &TOKEN)).await?;
+        Ok(a.map_or(0, |a| a.amount))
+    }
+
+    async fn make_receipt(&self, claim: u64, record: &Record) -> anyhow::Result<()> {
+        let Record::Asset { home: ETHEREUM, asset, .. } = record else { anyhow::bail!("only an asset of Ethereum has its receipt here") };
+        self.net
+            .send_ix(Self::ix(
+                vt::client::accounts::MakeReceipt {
+                    config: config(),
+                    claim: claim_pda(claim),
+                    mint: receipt(*asset),
+                    holding: holding(*asset),
+                    payer: self.net.me_key(),
+                    token_program: TOKEN,
+                    system_program: SYSTEM,
+                },
+                vt::client::args::MakeReceipt { claim_id: claim, asset: *asset, record: record.bytes() },
+            ))
+            .await
+    }
+
     async fn requests_after(&self, after: u64, limit: usize) -> anyhow::Result<Vec<Request>> {
         let config: vt::accounts::Config = self.net.read_final(&config()).await?.ok_or_else(|| anyhow::anyhow!("the vault is not initialized"))?;
-        let count = config.request_count;
         let mut out = vec![];
-        for id in (after + 1)..=count {
+        for id in (after + 1)..=config.request_count {
             if out.len() >= limit {
                 break;
             }
@@ -415,7 +657,16 @@ impl VaultApp for SvmVault {
 
     async fn request(&self, id: u64) -> anyhow::Result<Option<Request>> {
         let r: Option<vt::accounts::Request> = self.net.read_final(&request_pda(id)).await?;
-        Ok(r.map(|r| Request { id, amount: r.amount, to: r.to, fee: r.fee, fast_fee: r.fast_fee, requested_at: r.requested_at as u64, fee_paid: r.fee_paid }))
+        Ok(r.map(|r| Request {
+            id,
+            asset: r.asset,
+            amount: r.amount,
+            to: r.to,
+            fee: r.fee,
+            fast_fee: r.fast_fee,
+            requested_at: r.requested_at as u64,
+            fee_paid: r.fee_paid,
+        }))
     }
 
     /// As of a finalized block, for the same reason as requests.
@@ -427,44 +678,6 @@ impl VaultApp for SvmVault {
     async fn receipt_issued(&self, id: u64) -> anyhow::Result<bool> {
         let m: Option<vt::accounts::LockMark> = self.net.read_account(&lock_pda(id)).await?;
         Ok(m.is_some_and(|m| m.issued))
-    }
-
-    async fn request_paid(&self, _id: u64) -> anyhow::Result<bool> {
-        Ok(false)
-    }
-
-    async fn attest_lock(&self, l: &Lock) -> anyhow::Result<u64> {
-        let me = self.net.me_key();
-        let recipient = Pubkey::new_from_array(l.recipient);
-        let create = anchor_spl::associated_token::spl_associated_token_account::instruction::create_associated_token_account_idempotent(
-            &me, &recipient, &mint(), &TOKEN,
-        );
-        self.net.send_ix(create).await?;
-        let n = self.config_record().await?.attest_count + 1;
-        self.net
-            .send_ix(Self::ix(
-                vt::client::accounts::AttestLock {
-                    config: config(),
-                    chain: chain_pda(&me),
-                    mark: lock_pda(l.id),
-                    fast: fast_pda(n),
-                    mint: mint(),
-                    holding: holding(),
-                    from: ata(&me, &mint()),
-                    to: ata(&recipient, &mint()),
-                    attester: me,
-                    token_program: TOKEN,
-                    system_program: SYSTEM,
-                },
-                vt::client::args::AttestLock { lock_id: l.id, amount: l.amount, recipient, fee: l.fee, fast_fee: l.fast_fee, locked_at: l.locked_at as i64 },
-            ))
-            .await?;
-        Ok(n)
-    }
-
-    async fn lock_attest(&self, id: u64) -> anyhow::Result<Option<u64>> {
-        let m: Option<vt::accounts::LockMark> = self.net.read_account(&lock_pda(id)).await?;
-        Ok(m.and_then(|m| (m.attests != 0).then_some(m.attests as u64)))
     }
 
     async fn lock_attests(&self, id: u64) -> anyhow::Result<Option<(i64, Vec<FastLock>)>> {
@@ -483,117 +696,6 @@ impl VaultApp for SvmVault {
         Ok(Some((m.first_at, open)))
     }
 
-    async fn attest_count(&self) -> anyhow::Result<u64> {
-        Ok(self.config_record().await?.attest_count)
-    }
-
-    async fn fast_lock(&self, id: u64) -> anyhow::Result<Option<FastLock>> {
-        let f: Option<vt::accounts::FastLock> = self.net.read_account(&fast_pda(id)).await?;
-        Ok(f.map(|f| FastLock {
-            id: f.id,
-            attester: f.attester.to_string(),
-            record: Record::Lock { id: f.lock_id, amount: f.amount, recipient: f.recipient.to_bytes(), fee: f.fee, fast_fee: f.fast_fee, at: f.locked_at as u64 },
-            collateral: f.collateral,
-            attested_at: f.attested_at,
-            claim: f.claim,
-            prev: f.prev,
-            burned: f.burned,
-        }))
-    }
-
-    async fn link_fast(&self, claim: u64, attest: u64, linked: Option<u64>) -> anyhow::Result<()> {
-        self.net
-            .send_ix(Self::ix(
-                vt::client::accounts::LinkFast { fast: fast_pda(attest), claim: claim_pda(claim), linked: linked.map(claim_pda), attester: self.net.me_key() },
-                vt::client::args::LinkFast { claim_id: claim, attest },
-            ))
-            .await
-    }
-
-    async fn burn_fast(&self, attest: u64, linked: Option<u64>) -> anyhow::Result<()> {
-        let me = self.net.me_key();
-        self.net
-            .send_ix(Self::ix(
-                vt::client::accounts::BurnFast {
-                    config: config(),
-                    fast: fast_pda(attest),
-                    linked: linked.map(claim_pda),
-                    mint: mint(),
-                    holding: holding(),
-                    caller_credit: credit_pda(&me),
-                    caller: me,
-                    token_program: TOKEN,
-                    system_program: SYSTEM,
-                },
-                vt::client::args::BurnFast { attest },
-            ))
-            .await
-    }
-
-    async fn settle_fast(&self, claim: u64, attest: u64) -> anyhow::Result<()> {
-        let me = self.net.me_key();
-        let f: vt::accounts::FastLock = self.net.read_account(&fast_pda(attest)).await?.ok_or_else(|| anyhow::anyhow!("attest {attest} does not exist"))?;
-        let c = self.claim(claim).await?;
-        let record = c
-            .records
-            .iter()
-            .find(|r| matches!(r, Record::Lock { id, .. } if *id == f.lock_id))
-            .ok_or_else(|| anyhow::anyhow!("claim {claim} does not carry lock {}", f.lock_id))?;
-        // The true record's recipient may be owed the rest of the fast fee,
-        // or its receipt.
-        let Record::Lock { recipient, .. } = record else { unreachable!() };
-        let recipient = Pubkey::new_from_array(*recipient);
-        let create = anchor_spl::associated_token::spl_associated_token_account::instruction::create_associated_token_account_idempotent(
-            &me, &recipient, &mint(), &TOKEN,
-        );
-        self.net.send_ix(create).await?;
-        let to = Some(ata(&recipient, &mint()));
-        self.net
-            .send_ix(Self::ix(
-                vt::client::accounts::SettleFast {
-                    config: config(),
-                    claim: claim_pda(claim),
-                    fast: fast_pda(attest),
-                    mark: lock_pda(f.lock_id),
-                    prev: (f.prev != 0).then(|| fast_pda(f.prev)),
-                    attester: f.attester,
-                    mint: mint(),
-                    holding: holding(),
-                    to,
-                    attester_credit: credit_pda(&f.attester),
-                    caller_credit: credit_pda(&me),
-                    caller: me,
-                    token_program: TOKEN,
-                    system_program: SYSTEM,
-                },
-                vt::client::args::SettleFast { claim_id: claim, attest },
-            ))
-            .await
-    }
-
-    async fn veth_credit(&self) -> anyhow::Result<u64> {
-        let c: Option<vt::accounts::Credit> = self.net.read_account(&credit_pda(&self.net.me_key())).await?;
-        Ok(c.map_or(0, |c| c.veth))
-    }
-
-    async fn withdraw_credit(&self) -> anyhow::Result<()> {
-        let me = self.net.me_key();
-        self.net
-            .send_ix(Self::ix(
-                vt::client::accounts::WithdrawCredit {
-                    credit: credit_pda(&me),
-                    config: config(),
-                    mint: mint(),
-                    holding: holding(),
-                    to: Some(ata(&me, &mint())),
-                    owner: me,
-                    token_program: TOKEN,
-                },
-                vt::client::args::WithdrawCredit {},
-            ))
-            .await
-    }
-
     async fn claim_count(&self) -> anyhow::Result<u64> {
         Ok(self.config_record().await?.claim_count)
     }
@@ -605,8 +707,12 @@ impl VaultApp for SvmVault {
     async fn claim(&self, id: u64) -> anyhow::Result<Claim> {
         let c: vt::accounts::Claim = self.net.read_account(&claim_pda(id)).await?.ok_or_else(|| anyhow::anyhow!("claim {id} does not exist"))?;
         let mut records = decode(&c.records).unwrap_or_default();
-        if c.peer_bond != 0 {
-            records.push(Record::Bond { network: ETHEREUM, amount: c.peer_bond });
+        // A BOND carried in it, from Ethereum.
+        for a in &c.assets {
+            if a.peer_bond != 0 {
+                records.retain(|r| !matches!(r, Record::Bond { home, asset, .. } if *home == a.home && *asset == a.asset));
+                records.push(Record::Bond { net: ETHEREUM, home: a.home, asset: a.asset, amount: a.peer_bond });
+            }
         }
         Ok(Claim { id, operator: c.operator.to_string(), last_at: c.last_at, held: c.held, decided: c.decided, accepted: c.accepted, records })
     }
@@ -636,9 +742,277 @@ impl VaultApp for SvmVault {
         }
         self.net
             .send_ix(Self::ix(
-                vt::client::accounts::Collect { claim: claim_pda(id), stake: stake_pda(id, &me), credit: credit_pda(&me), who: me, system_program: SYSTEM },
+                vt::client::accounts::Collect { claim: claim_pda(id), stake: stake_pda(id, &me), credit: credit_pda(&me, SOLANA, 0), who: me, system_program: SYSTEM },
                 vt::client::args::Collect { claim_id: id },
             ))
             .await
+    }
+
+    async fn attest_lock(&self, record: &Record) -> anyhow::Result<u64> {
+        let Record::Lock { home: ETHEREUM, asset, id, recipient, .. } = record else { anyhow::bail!("only a lock on Ethereum is attested here") };
+        let me = self.net.me_key();
+        let recipient = Pubkey::new_from_array(*recipient);
+        let to = self.ensure_ata(&recipient, &receipt(*asset), &TOKEN).await?;
+        let n = self.config_record().await?.attest_count + 1;
+        self.net
+            .send_ix(Self::ix(
+                vt::client::accounts::AttestLock {
+                    config: config(),
+                    chain: chain_pda(&me),
+                    mark: lock_pda(*id),
+                    fast: fast_pda(n),
+                    mint: receipt(*asset),
+                    holding: holding(*asset),
+                    from: ata_of(&me, &receipt(*asset), &TOKEN),
+                    to,
+                    attester: me,
+                    token_program: TOKEN,
+                    system_program: SYSTEM,
+                },
+                vt::client::args::AttestLock { asset: *asset, record: record.bytes() },
+            ))
+            .await?;
+        Ok(n)
+    }
+
+    async fn attest_count(&self) -> anyhow::Result<u64> {
+        Ok(self.config_record().await?.attest_count)
+    }
+
+    async fn fast_lock(&self, id: u64) -> anyhow::Result<Option<FastLock>> {
+        let f: Option<vt::accounts::FastLock> = self.net.read_account(&fast_pda(id)).await?;
+        Ok(f.map(|f| {
+            let stated = Record::Lock {
+                home: ETHEREUM,
+                asset: f.asset,
+                id: f.lock_id,
+                amount: f.amount,
+                recipient: f.recipient.to_bytes(),
+                fee: f.fee,
+                fast_fee: f.fast_fee,
+                at: f.locked_at as u64,
+            };
+            FastLock {
+                id: f.id,
+                attester: f.attester.to_string(),
+                lock_id: f.lock_id,
+                stated: record_hash(&stated),
+                asset: f.asset,
+                collateral: f.collateral,
+                attested_at: f.attested_at,
+                claim: f.claim,
+                prev: f.prev,
+                burned: f.burned,
+            }
+        }))
+    }
+
+    async fn link_fast(&self, claim: u64, attest: u64, linked: Option<u64>) -> anyhow::Result<()> {
+        self.net
+            .send_ix(Self::ix(
+                vt::client::accounts::LinkFast { fast: fast_pda(attest), claim: claim_pda(claim), linked: linked.map(claim_pda), attester: self.net.me_key() },
+                vt::client::args::LinkFast { claim_id: claim, attest },
+            ))
+            .await
+    }
+
+    async fn burn_fast(&self, attest: u64, linked: Option<u64>) -> anyhow::Result<()> {
+        let me = self.net.me_key();
+        let f: vt::accounts::FastLock = self.net.read_account(&fast_pda(attest)).await?.ok_or_else(|| anyhow::anyhow!("attest {attest} does not exist"))?;
+        self.net
+            .send_ix(Self::ix(
+                vt::client::accounts::BurnFast {
+                    config: config(),
+                    fast: fast_pda(attest),
+                    linked: linked.map(claim_pda),
+                    mint: receipt(f.asset),
+                    holding: holding(f.asset),
+                    caller_credit: credit_pda(&me, ETHEREUM, f.asset),
+                    caller: me,
+                    token_program: TOKEN,
+                    system_program: SYSTEM,
+                },
+                vt::client::args::BurnFast { attest },
+            ))
+            .await
+    }
+
+    async fn settle_fast(&self, claim: u64, attest: u64) -> anyhow::Result<()> {
+        let me = self.net.me_key();
+        let f: vt::accounts::FastLock = self.net.read_account(&fast_pda(attest)).await?.ok_or_else(|| anyhow::anyhow!("attest {attest} does not exist"))?;
+        let c = self.claim(claim).await?;
+        let record = c
+            .records
+            .iter()
+            .find(|r| matches!(r, Record::Lock { id, .. } if *id == f.lock_id))
+            .ok_or_else(|| anyhow::anyhow!("claim {claim} does not carry lock {}", f.lock_id))?;
+        // The true record's recipient may be owed the rest of the fast fee,
+        // or its receipt, in the attest's asset.
+        let Record::Lock { recipient, .. } = record else { unreachable!() };
+        let to = self.ensure_ata(&Pubkey::new_from_array(*recipient), &receipt(f.asset), &TOKEN).await?;
+        self.net
+            .send_ix(Self::ix(
+                vt::client::accounts::SettleFast {
+                    config: config(),
+                    claim: claim_pda(claim),
+                    fast: fast_pda(attest),
+                    mark: lock_pda(f.lock_id),
+                    attester: f.attester,
+                    mint: receipt(f.asset),
+                    holding: holding(f.asset),
+                    prev: (f.prev != 0).then(|| fast_pda(f.prev)),
+                    to: Some(to),
+                    attester_credit: credit_pda(&f.attester, ETHEREUM, f.asset),
+                    caller_credit: credit_pda(&me, ETHEREUM, f.asset),
+                    caller: me,
+                    token_program: TOKEN,
+                    system_program: SYSTEM,
+                },
+                vt::client::args::SettleFast { claim_id: claim, attest },
+            ))
+            .await
+    }
+
+    async fn fast_pay(&self, record: &Record) -> anyhow::Result<()> {
+        let Record::Request { net: ETHEREUM, asset, id, to, .. } = record else { anyhow::bail!("only a burn on Ethereum is paid here") };
+        let me = self.net.me_key();
+        let bytes = record.bytes();
+        let a = self.home_asset(*asset).await?;
+        let to_key = Pubkey::new_from_array(*to);
+        let (to_account, from, mint, program) = if a.number == 0 {
+            (to_key, None, None, None)
+        } else {
+            (self.ensure_ata(&to_key, &a.mint, &a.token_program).await?, Some(ata_of(&me, &a.mint, &a.token_program)), Some(a.mint), Some(a.token_program))
+        };
+        self.net
+            .send_ix(Self::ix(
+                vt::client::accounts::FastPay {
+                    home_asset: asset_pda(*asset),
+                    fast_pay: fast_pay_pda(*id, &bytes),
+                    paid: paid_pda(*id),
+                    to: to_account,
+                    from,
+                    mint,
+                    token_program: program,
+                    attester: me,
+                    system_program: SYSTEM,
+                },
+                vt::client::args::FastPay { request_id: *id, asset: *asset, record_hash: sha256(&[&bytes]), record: bytes.clone() },
+            ))
+            .await
+    }
+
+    async fn fast_paid_by(&self, record: &Record) -> anyhow::Result<Option<String>> {
+        let Record::Request { id, .. } = record else { return Ok(None) };
+        let f: Option<vt::accounts::FastPay> = self.net.read_account(&fast_pay_pda(*id, &record.bytes())).await?;
+        Ok(f.map(|f| f.attester.to_string()))
+    }
+
+    async fn pay_request(&self, claim: u64, record: &Record) -> anyhow::Result<()> {
+        let Record::Request { net: ETHEREUM, asset, id, to, .. } = record else { anyhow::bail!("only a burn on Ethereum is paid here") };
+        let bytes = record.bytes();
+        let a = self.home_asset(*asset).await?;
+        let attester = self.fast_paid_by(record).await?.map(|s| Self::operator(&s)).transpose()?;
+        let to_key = Pubkey::new_from_array(*to);
+        let (to_account, attester_account) = if a.number == 0 {
+            (to_key, attester)
+        } else {
+            let t = self.ensure_ata(&to_key, &a.mint, &a.token_program).await?;
+            let at = match attester {
+                Some(k) => Some(self.ensure_ata(&k, &a.mint, &a.token_program).await?),
+                None => None,
+            };
+            (t, at)
+        };
+        let (tokens, mint, program) = Self::token_accounts(&a);
+        self.net
+            .send_ix(Self::ix(
+                vt::client::accounts::PayRequest {
+                    config: config(),
+                    claim: claim_pda(claim),
+                    home_asset: asset_pda(*asset),
+                    paid: paid_pda(*id),
+                    fast_pay: fast_pay_pda(*id, &bytes),
+                    to: to_account,
+                    attester: attester_account,
+                    tokens,
+                    mint,
+                    token_program: program,
+                    payer: self.net.me_key(),
+                    system_program: SYSTEM,
+                },
+                vt::client::args::PayRequest { claim_id: claim, request_id: *id, asset: *asset, record: bytes },
+            ))
+            .await
+    }
+
+    async fn credit(&self, home: u8, asset: u32) -> anyhow::Result<u128> {
+        let c: Option<vt::accounts::Credit> = self.net.read_account(&credit_pda(&self.net.me_key(), home, asset)).await?;
+        Ok(c.map_or(0, |c| c.amount as u128))
+    }
+
+    async fn withdraw_credit(&self, home: u8, asset: u32) -> anyhow::Result<()> {
+        let me = self.net.me_key();
+        if home == SOLANA {
+            let a = self.home_asset(asset).await?;
+            let (to, tokens, mint, program) = if a.number == 0 {
+                (None, None, None, None)
+            } else {
+                (Some(self.ensure_ata(&me, &a.mint, &a.token_program).await?), Some(home_tokens(&a.mint)), Some(a.mint), Some(a.token_program))
+            };
+            return self
+                .net
+                .send_ix(Self::ix(
+                    vt::client::accounts::WithdrawCreditHome {
+                        credit: credit_pda(&me, SOLANA, asset),
+                        config: config(),
+                        home_asset: asset_pda(asset),
+                        to,
+                        tokens,
+                        mint,
+                        token_program: program,
+                        owner: me,
+                    },
+                    vt::client::args::WithdrawCreditHome { asset },
+                ))
+                .await;
+        }
+        let to = self.ensure_ata(&me, &receipt(asset), &TOKEN).await?;
+        self.net
+            .send_ix(Self::ix(
+                vt::client::accounts::WithdrawCreditReceipt {
+                    credit: credit_pda(&me, ETHEREUM, asset),
+                    config: config(),
+                    mint: receipt(asset),
+                    holding: holding(asset),
+                    to,
+                    owner: me,
+                    token_program: TOKEN,
+                },
+                vt::client::args::WithdrawCreditReceipt { asset },
+            ))
+            .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ipow_protocol_core::vault::encode;
+
+    #[test]
+    fn reads_the_accounts_of_a_batch_up_to_where_it_stops_parsing() {
+        let lock = Record::Lock { home: SOLANA, asset: 0, id: 5, amount: 1, recipient: [1; 32], fee: 0, fast_fee: 0, at: 0 };
+        let cancel = Record::Cancel { net: ETHEREUM, id: 7 };
+        let good = encode(&[lock.clone(), cancel.clone()]);
+        assert_eq!(accounts_of(&good), vec![home_lock_pda(5), home_lock_pda(7)]);
+        // A kind no vault knows, and a record cut short: the program still
+        // reads the accounts before it, then judges the batch false.
+        let mut bad = encode(std::slice::from_ref(&lock));
+        bad.push(0xff);
+        assert_eq!(accounts_of(&bad), vec![home_lock_pda(5)]);
+        let mut short = encode(&[lock, cancel]);
+        short.pop();
+        assert_eq!(accounts_of(&short), vec![home_lock_pda(5)]);
     }
 }

@@ -1,8 +1,8 @@
 //! The vault roles on Ethereum and Solana at once, with one Bitcoin: an
-//! operator registers its pair chain, states its bond, carries a lock from
-//! Ethereum, and the user receives vETH on Solana (spec section 11).
-//! Real blocks come from checkpoint jobs, taken and proven by the
-//! operator's protocol role.
+//! operator registers its pair chain, states its bonds, carries locks and
+//! burns in both directions, and users receive vETH on Solana and vSOL on
+//! Ethereum (spec section 11). Real blocks come from checkpoint jobs, taken
+//! and proven by the operator's protocol role.
 
 use std::sync::Arc;
 
@@ -17,8 +17,8 @@ use ipow_node::operator::Operator;
 use ipow_node::supervisor::Worker;
 use ipow_node::vault::{Side, VaultGuardian, VaultOperator, VaultOperatorSettings};
 use ipow_node::wallet::{head_spend, SharedWallet};
-use ipow_protocol_core::settings::FastSettings;
-use ipow_protocol_core::vault::{encode, message_payload, Record, TxProof, VaultApp};
+use ipow_protocol_core::settings::{FastSettings, VaultAsset, VaultNetwork};
+use ipow_protocol_core::vault::{encode, message_payload, Record, TxProof, VaultApp, ETHEREUM, SOLANA};
 use ipow_testing::{World, mine};
 use solana_sdk::signer::Signer;
 
@@ -42,13 +42,39 @@ struct Setup {
     mallory_wallet: Arc<SharedWallet>,
     m_eth: Arc<dyn VaultApp>,
     m_sol: Arc<dyn VaultApp>,
+    g_eth: Arc<dyn VaultApp>,
     /// Whether Mallory's node runs in each round: stopped before she lies.
     mallory_runs: std::sync::atomic::AtomicBool,
     _journal: tempfile::TempDir,
 }
 
+/// ETH, asset 0 of Ethereum, carried with a bond of `bond` gwei there, and
+/// the fast paths for a fast fee of 1 gwei or more.
+fn eth_asset(bond: u64, fast: bool) -> VaultAsset {
+    VaultAsset {
+        home: VaultNetwork::Ethereum,
+        asset: 0,
+        bond_home: bond,
+        bond_receipt: 0,
+        min_fee: 0,
+        fast: fast.then_some(FastSettings { min_fee: 1, max: 10_000_000_000 }),
+    }
+}
+
+/// An accepted claim on `v` carrying `r`, if any.
+async fn accepted_carrying(v: &dyn VaultApp, r: &Record) -> Option<u64> {
+    for id in 1..=v.claim_count().await.unwrap() {
+        let c = v.claim(id).await.unwrap();
+        if c.accepted && c.records.contains(r) {
+            return Some(id);
+        }
+    }
+    None
+}
+
 impl Setup {
-    async fn new() -> Self {
+    /// The honest operator carries `assets`.
+    async fn new(assets: Vec<VaultAsset>) -> Self {
         let _ = tracing_subscriber::fmt().with_test_writer().with_env_filter("warn,ipow_node::vault=info,ipow_node::operator=info").try_init();
         let eth = EvmWorld::new().await;
         let sol = SvmWorld::new().await;
@@ -88,14 +114,10 @@ impl Setup {
             btc.clone(),
             shared.clone(),
             VaultOperatorSettings {
-                eth_bond: 2 * ETH,
-                veth_bond: 0,
+                assets,
                 deposits: 5,
-                min_fee_gwei: 0,
                 checkpoint_paid: [Some(ETH / 10), Some(SOL / 10)],
                 journal: journal.path().join("vault.journal"),
-                // Attests and pays at once only a fast fee of 1 gwei or more.
-                fast: Some(FastSettings { min_fee_gwei: 1, max_gwei: 10_000_000_000 }),
             },
         );
         // Mallory: another operator, with its own keys and journal.
@@ -108,19 +130,16 @@ impl Setup {
             btc.clone(),
             mallory_shared.clone(),
             VaultOperatorSettings {
-                eth_bond: ETH,
-                veth_bond: 0,
+                assets: vec![eth_asset(1_000_000_000, false)],
                 deposits: 5,
-                min_fee_gwei: 0,
                 checkpoint_paid: [None, None],
                 journal: journal.path().join("mallory.journal"),
-                fast: None,
             },
         );
         let (g_eth, g_eth_net) = eth.vault_node(address, 2).await;
         let g_key = sol.chain.funded(100);
         let (g_sol, g_sol_net) = sol.vault_node(&g_key);
-        let guardian = VaultGuardian::new(Side { vault: g_eth, net: g_eth_net }, Side { vault: g_sol, net: g_sol_net }, btc.clone(), [Some(ETH / 10), None]);
+        let guardian = VaultGuardian::new(Side { vault: g_eth.clone(), net: g_eth_net }, Side { vault: g_sol, net: g_sol_net }, btc.clone(), [Some(ETH / 10), None]);
 
         // The protocol operators take the checkpoint jobs.
         eth.operator().lock_bond(10 * ETH).await.unwrap();
@@ -142,6 +161,7 @@ impl Setup {
             mallory_wallet: mallory_shared,
             m_eth,
             m_sol,
+            g_eth,
             mallory_runs: std::sync::atomic::AtomicBool::new(false),
             _journal: journal,
         }
@@ -175,6 +195,27 @@ impl Setup {
         }
     }
 
+    /// Mines at once to 6 blocks into the next difficulty epoch, as real
+    /// Bitcoin starts one every two weeks: the light client takes no epoch
+    /// start older than 4 weeks (D39, D57), and a test longer than that
+    /// needs a new one. The epoch that ends must last between 2 and 4 weeks:
+    /// longer than 2 keeps the test difficulty the same, and its target,
+    /// near 2^255, cannot grow by 2 times without passing 256 bits.
+    async fn new_epoch(&self) {
+        let first = self.btc.header(&self.btc.block_hash(0).await.unwrap()).await.unwrap();
+        let first_time = u32::from_le_bytes(first[68..72].try_into().unwrap());
+        let lasted = self.now().await - first_time;
+        assert!((14 * DAY as u32..28 * DAY as u32).contains(&lasted), "the epoch lasted {lasted} seconds");
+        let tip = self.btc.tip_height().await.unwrap();
+        let n = (tip / 2016 + 1) * 2016 + 6 - tip;
+        self.tick(n as u64 + 1).await;
+        let start = self.now().await - n;
+        for k in 0..n {
+            self.btc.mine(start + k);
+        }
+        self.round().await;
+    }
+
     /// Rounds and blocks until `done`, with time passing: checkpoint jobs
     /// are won, proven, and their locks end.
     async fn until(&self, what: &str, mut done: impl AsyncFnMut(&Self) -> bool) {
@@ -199,7 +240,7 @@ impl Setup {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn carries_a_lock_from_ethereum_to_veth_on_solana() {
-    let s = Setup::new().await;
+    let s = Setup::new(vec![eth_asset(2_000_000_000, false)]).await;
     let eth_me = s.eth_vault.me();
     let sol_me = s.sol_vault.me();
 
@@ -208,9 +249,13 @@ async fn carries_a_lock_from_ethereum_to_veth_on_solana() {
     })
     .await;
     // The bond on Ethereum, stated and counted on Solana after 7 days.
-    s.until("the bond counted on Solana", async |s| s.sol_vault.chain(&sol_me).await.unwrap().unwrap().peer_bond == 2_000_000_000).await;
+    // ETH's ASSET record comes with it, and the operator makes vETH.
+    s.until("the bond counted on Solana, and vETH made", async |s| {
+        s.sol_vault.position(&sol_me, ETHEREUM, 0).await.unwrap().peer_bond == 2_000_000_000 && s.sol_vault.has_receipt(0).await.unwrap()
+    })
+    .await;
     let eth_chain = s.eth_vault.chain(&eth_me).await.unwrap().unwrap();
-    assert_eq!(eth_chain.stated, 2 * ETH);
+    assert_eq!(eth_chain.position(ETHEREUM, 0).stated, 2_000_000_000);
 
     // Bob locks 5 ETH: more than 80% of the operator's 2 ETH bond, so it
     // never carries it. Alice then locks 1 ETH for vETH on Solana: the lock
@@ -218,12 +263,10 @@ async fn carries_a_lock_from_ethereum_to_veth_on_solana() {
     let alice = s.sol.user.pubkey();
     s.eth.user_lock(s.eth_vault_address, [5; 32], 5 * ETH, 1_000_000_000, 0).await;
     s.eth.user_lock(s.eth_vault_address, alice.to_bytes(), ETH, 1_000_000_000, 0).await;
-    s.until("the lock's claim accepted", async |s| {
-        let n = s.sol_vault.claim_count().await.unwrap();
-        n >= 2 && s.sol_vault.claim(2).await.unwrap().accepted
-    })
-    .await;
-    s.sol.issue(2, 2, &alice).await;
+    let record = s.eth_vault.lock(2).await.unwrap().unwrap().record(ETHEREUM);
+    s.until("the lock's claim accepted", async |s| accepted_carrying(s.sol_vault.as_ref(), &record).await.is_some()).await;
+    let claim = accepted_carrying(s.sol_vault.as_ref(), &record).await.unwrap();
+    s.sol.issue(claim, &record.bytes()).await;
     assert_eq!(s.sol.veth(&alice).await, 1_000_000_000);
     // The operator earned the lock's fee on Ethereum, and nobody objected.
     assert!(s.eth_vault.lock(2).await.unwrap().unwrap().fee_paid);
@@ -236,20 +279,20 @@ async fn carries_a_lock_from_ethereum_to_veth_on_solana() {
 /// Ethereum, objects, and the claim is refused: nothing is issued.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_guardian_objects_to_a_made_up_lock_and_the_claim_is_refused() {
-    let s = Setup::new().await;
+    let s = Setup::new(vec![eth_asset(2_000_000_000, false)]).await;
     s.mallory_runs.store(true, std::sync::atomic::Ordering::SeqCst);
     let m_sol_me = s.m_sol.me();
     // Mallory's checkpoints come from the honest operator's.
     s.until("Mallory's bond counted on Solana", async |s| {
         // The honest operator makes the real blocks both need.
-        s.m_sol.chain(&m_sol_me).await.unwrap().is_some_and(|c| c.peer_bond == 1_000_000_000)
+        s.m_sol.chain(&m_sol_me).await.unwrap().is_some() && s.m_sol.position(&m_sol_me, ETHEREUM, 0).await.unwrap().peer_bond == 1_000_000_000
     })
     .await;
     s.mallory_runs.store(false, std::sync::atomic::Ordering::SeqCst);
 
     // The lie: lock #99 does not exist.
     let chain = s.m_sol.chain(&m_sol_me).await.unwrap().unwrap();
-    let batch = encode(&[Record::Lock { id: 99, amount: 500_000_000, recipient: [9; 32], fee: 0, fast_fee: 0, at: 0 }]);
+    let batch = encode(&[Record::Lock { home: ETHEREUM, asset: 0, id: 99, amount: 500_000_000, recipient: [9; 32], fee: 0, fast_fee: 0, at: 0 }]);
     let sent = s.mallory_wallet.send(&[head_spend(chain.coin.0, chain.coin.1)], &message_payload(&batch)).await.unwrap();
     s.blocks(1).await;
     // A real block above it on Solana: a checkpoint the honest operator
@@ -302,10 +345,18 @@ async fn a_guardian_objects_to_a_made_up_lock_and_the_claim_is_refused() {
     // slashed.
     let m_eth_me = s.m_eth.me();
     assert!(!s.m_eth.chain(&m_eth_me).await.unwrap().unwrap().slashed);
+    let g_me: alloy::primitives::Address = s.g_eth.me().parse().unwrap();
+    let before = s.eth.balance(g_me).await;
     s.until("Mallory's lie brought to Ethereum and slashed", async |s| s.m_eth.chain(&m_eth_me).await.unwrap().unwrap().slashed).await;
     let c = s.m_eth.chain(&m_eth_me).await.unwrap().unwrap();
-    assert_eq!(c.bond, 0);
+    assert_eq!(c.position(ETHEREUM, 0).bond, 0);
     assert_eq!(c.messages, s.m_sol.chain(&m_sol_me).await.unwrap().unwrap().messages);
+    // The guardian settled the slashed bond into ETH's backing and took its
+    // 20%: 0.2 ETH, less what it spent on the way.
+    s.round().await;
+    assert_eq!(s.m_eth.slash_pending(&m_eth_me, ETHEREUM, 0).await.unwrap(), 0);
+    let gained = s.eth.balance(g_me).await as i128 - before as i128;
+    assert!(gained > (ETH / 10) as i128, "the guardian gained {gained} wei");
 }
 
 /// The fast paths (section 11.7). The operator holds vETH from a lock of its
@@ -315,19 +366,23 @@ async fn a_guardian_objects_to_a_made_up_lock_and_the_claim_is_refused() {
 /// vETH with a fast fee: the operator pays her ETH on Ethereum at once.
 #[tokio::test(flavor = "multi_thread")]
 async fn issues_a_receipt_at_once_and_pays_a_burn_at_once() {
-    let s = Setup::new().await;
+    // With 0.3 vETH bonded on Solana, so that burns of vETH are carried.
+    let s = Setup::new(vec![VaultAsset { bond_receipt: 300_000_000, ..eth_asset(2_000_000_000, true) }]).await;
     let sol_me = s.sol_vault.me();
     let op = s.sol.operator_key.pubkey();
-    s.until("the bond counted on Solana", async |s| s.sol_vault.chain(&sol_me).await.unwrap().is_some_and(|c| c.peer_bond == 2_000_000_000)).await;
-    // The operator's own vETH, the slow way.
-    s.eth.user_lock(s.eth_vault_address, op.to_bytes(), ETH, 0, 0).await;
-    s.until("the operator's lock accepted", async |s| {
-        let n = s.sol_vault.claim_count().await.unwrap();
-        n >= 2 && s.sol_vault.claim(2).await.unwrap().accepted
+    s.until("the bond counted on Solana, and vETH made", async |s| {
+        s.sol_vault.position(&sol_me, ETHEREUM, 0).await.unwrap().peer_bond == 2_000_000_000 && s.sol_vault.has_receipt(0).await.unwrap()
     })
     .await;
-    s.sol.issue(2, 1, &op).await;
+    // The operator's own vETH, the slow way.
+    s.eth.user_lock(s.eth_vault_address, op.to_bytes(), ETH, 0, 0).await;
+    let record = s.eth_vault.lock(1).await.unwrap().unwrap().record(ETHEREUM);
+    s.until("the operator's lock accepted", async |s| accepted_carrying(s.sol_vault.as_ref(), &record).await.is_some()).await;
+    let claim = accepted_carrying(s.sol_vault.as_ref(), &record).await.unwrap();
+    s.sol.issue(claim, &record.bytes()).await;
     assert_eq!(s.sol.veth(&op).await, 1_000_000_000);
+    // Over two weeks have passed: Bitcoin starts a new epoch.
+    s.new_epoch().await;
 
     // Alice's lock, with a fast fee of 0.001 ETH: vETH within a few rounds,
     // long before any claim could be accepted.
@@ -346,14 +401,19 @@ async fn issues_a_receipt_at_once_and_pays_a_burn_at_once() {
     let f = s.sol_vault.fast_lock(1).await.unwrap().unwrap();
     assert_eq!(f.attester, sol_me);
     assert_eq!(f.collateral, 625_000_000);
-    assert_eq!(s.sol.veth(&op).await, 1_000_000_000 - 625_000_000);
+    // It bonded 0.3 vETH as soon as it held them, then locked 0.625.
+    assert_eq!(s.sol.veth(&op).await, 1_000_000_000 - 300_000_000 - 625_000_000);
 
     // The claim carrying the lock is linked, accepted, and the attest
     // settled: the operator's vETH back, with the fast fee.
     s.until("the attest settled", async |s| s.sol_vault.fast_lock(1).await.unwrap().is_none()).await;
     // Its share of the fast fee: nearly all of it, for an attest within
     // hours of the lock (D124); Alice gets the rest.
-    let share = s.sol_vault.veth_credit().await.unwrap() - 625_000_000;
+    // The operator withdraws the credit in its next round: its 0.625 vETH
+    // back with the share.
+    s.round().await;
+    assert_eq!(s.sol_vault.credit(ETHEREUM, 0).await.unwrap(), 0);
+    let share = s.sol.veth(&op).await - 700_000_000;
     assert!(share > fast_fee * 99 / 100 && share < fast_fee, "share {share}");
     assert_eq!(s.sol.veth(&alice).await, 500_000_000 + fast_fee - share);
 
@@ -362,14 +422,119 @@ async fn issues_a_receipt_at_once_and_pays_a_burn_at_once() {
     let to = [0x42u8; 20];
     let id = s.sol.user_burn(200_000_000, to, 0, 1_000).await;
     let before = s.eth.balance(alloy::primitives::Address::from(to)).await;
+    let r = s.sol_vault.request(id).await.unwrap().unwrap().record(SOLANA);
     for _ in 0..5 {
-        let r = s.sol_vault.request(id).await.unwrap().unwrap();
         if s.eth_vault.fast_paid_by(&r).await.unwrap().is_some() {
             break;
         }
         s.blocks(1).await;
     }
-    let r = s.sol_vault.request(id).await.unwrap().unwrap();
     assert_eq!(s.eth_vault.fast_paid_by(&r).await.unwrap(), Some(s.eth_vault.me()));
     assert_eq!(s.eth.balance(alloy::primitives::Address::from(to)).await, before + ETH / 5);
+
+    // The claim carrying the burn is accepted at the end of a round; the
+    // operator would take the repayment in its next. It restarts first,
+    // forgetting the burn it paid, and still takes it.
+    s.until("the burn's claim accepted", async |s| accepted_carrying(s.eth_vault.as_ref(), &r).await.is_some()).await;
+    assert!(!s.eth_vault.request_paid(id).await.unwrap());
+    s.vault_op.restart().await;
+    s.round().await;
+    s.round().await;
+    assert!(s.eth_vault.request_paid(id).await.unwrap(), "the operator took its repayment");
+}
+
+/// The other direction (section 11.9): SOL locked on Solana for vSOL on
+/// Ethereum, and vSOL burned for SOL back on Solana. The operator bonds SOL
+/// on Solana for the locks, and vSOL on Ethereum for the burns, which it
+/// gets from a lock of its own. One message carries 25 locks of Solana:
+/// Solana reads an account for each. A lock with a fast fee is attested on
+/// Ethereum, with vSOL as collateral.
+#[tokio::test(flavor = "multi_thread")]
+async fn carries_sol_to_vsol_on_ethereum_and_back() {
+    let sol = VaultAsset {
+        home: VaultNetwork::Solana,
+        asset: 0,
+        bond_home: 5 * SOL as u64,
+        bond_receipt: SOL as u64,
+        min_fee: 0,
+        fast: Some(FastSettings { min_fee: 1, max: SOL as u64 }),
+    };
+    let s = Setup::new(vec![sol]).await;
+    let eth_me = s.eth_vault.me();
+    s.until("the SOL bond counted on Ethereum, and vSOL made", async |s| {
+        s.eth_vault.chain(&eth_me).await.unwrap().is_some() && s.eth_vault.position(&eth_me, SOLANA, 0).await.unwrap().peer_bond == 5 * SOL as u64 && s.eth_vault.has_receipt(0).await.unwrap()
+    })
+    .await;
+
+    // Alice locks 1 SOL for vSOL to her Ethereum address; she also locks 2
+    // SOL for the operator, who needs vSOL for its bond there.
+    let alice: [u8; 20] = s.eth.user_address().await.0.0;
+    let op: [u8; 20] = s.eth_vault.me_bytes().try_into().unwrap();
+    let a = s.sol.user_lock_sol(SOL as u64, alice, 1_000, 0).await;
+    let o = s.sol.user_lock_sol(2 * SOL as u64, op, 0, 0).await;
+    // And 23 small ones: all 25 fit one message.
+    let mut small = vec![];
+    for _ in 0..23 {
+        small.push(s.sol.user_lock_sol(1_000_000, alice, 1, 0).await);
+    }
+    let (ra, ro) = (
+        s.sol_vault.lock(a).await.unwrap().unwrap().record(SOLANA),
+        s.sol_vault.lock(o).await.unwrap().unwrap().record(SOLANA),
+    );
+    s.until("the SOL locks accepted on Ethereum", async |s| {
+        accepted_carrying(s.eth_vault.as_ref(), &ra).await.is_some() && accepted_carrying(s.eth_vault.as_ref(), &ro).await.is_some()
+    })
+    .await;
+    for r in [&ra, &ro] {
+        let claim = accepted_carrying(s.eth_vault.as_ref(), r).await.unwrap();
+        s.eth.issue_receipt(s.eth_vault_address, claim, &r.bytes()).await;
+    }
+    let alice_address = alloy::primitives::Address::from(alice);
+    assert_eq!(s.eth.receipt_balance(s.eth_vault_address, 0, alice_address).await, SOL);
+    // Solana processed the message carrying all 25: each fee was earned.
+    let sol_me = s.sol_vault.me();
+    assert_eq!(s.sol_vault.chain(&sol_me).await.unwrap().unwrap().messages, s.eth_vault.chain(&eth_me).await.unwrap().unwrap().messages);
+    for id in small {
+        assert!(s.sol_vault.lock(id).await.unwrap().unwrap().fee_paid, "lock {id}");
+    }
+    // The operator earned Alice's fee on Solana, and took it.
+    assert!(s.sol_vault.lock(a).await.unwrap().unwrap().fee_paid);
+    assert_eq!(s.sol.lock_fee_taken_by(a).await, Some(s.sol.operator_key.pubkey()));
+
+    // Over two weeks have passed: Bitcoin starts a new epoch.
+    s.new_epoch().await;
+
+    // The operator bonds 1 vSOL on Ethereum, and Solana counts it.
+    s.until("the vSOL bond counted on Solana", async |s| {
+        s.sol_vault.position(&sol_me, SOLANA, 0).await.unwrap().peer_bond == SOL as u64
+    })
+    .await;
+    assert_eq!(s.eth_vault.chain(&eth_me).await.unwrap().unwrap().position(SOLANA, 0).bond, SOL as u64);
+
+    // Alice locks 0.2 SOL with a fast fee: the operator issues her vSOL on
+    // Ethereum at once, locking 0.25 vSOL of its own.
+    let held = s.eth.receipt_balance(s.eth_vault_address, 0, alice_address).await;
+    let f = s.sol.user_lock_sol(SOL as u64 / 5, alice, 0, 1_000).await;
+    for _ in 0..5 {
+        if s.eth.receipt_balance(s.eth_vault_address, 0, alice_address).await > held {
+            break;
+        }
+        s.blocks(1).await;
+    }
+    assert_eq!(s.eth.receipt_balance(s.eth_vault_address, 0, alice_address).await, held + SOL / 5);
+    let attest = s.eth_vault.fast_lock(1).await.unwrap().unwrap();
+    assert_eq!((attest.attester, attest.lock_id, attest.collateral), (eth_me.clone(), f, SOL as u64 / 4));
+
+    // Alice burns 0.5 vSOL for SOL to her Solana key.
+    let to = s.sol.user.pubkey();
+    let id = s.eth.user_burn_receipt(s.eth_vault_address, 0, to.to_bytes(), SOL as u64 / 2, 0, 0).await;
+    let r = s.eth_vault.request(id).await.unwrap().unwrap().record(ETHEREUM);
+    s.until("the burn accepted on Solana", async |s| accepted_carrying(s.sol_vault.as_ref(), &r).await.is_some()).await;
+    let claim = accepted_carrying(s.sol_vault.as_ref(), &r).await.unwrap();
+    let before = s.sol.lamports(&to).await;
+    s.sol_vault.pay_request(claim, &r).await.unwrap();
+    assert_eq!(s.sol.lamports(&to).await, before + SOL as u64 / 2);
+    assert!(s.sol_vault.request_paid(id).await.unwrap());
+    // The attest is settled once its claim is accepted.
+    s.until("the attest settled on Ethereum", async |s| s.eth_vault.fast_lock(1).await.unwrap().is_none()).await;
 }

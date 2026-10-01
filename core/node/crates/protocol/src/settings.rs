@@ -62,19 +62,14 @@ pub struct VaultSettings {
     /// The vault contract on Ethereum, and the vault program on Solana.
     pub ethereum_vault: String,
     pub solana_vault: String,
-    /// The operator: ETH to keep bonded in the Ethereum vault, in wei.
-    #[serde(default = "zero")]
-    pub bond: String,
-    /// The operator: vETH to keep bonded on Solana, in gwei. With none, it
-    /// carries no burns or give-ups.
-    #[serde(default = "zero")]
-    pub veth_bond: String,
+    /// The operator: the assets it carries records of, with its bonds and
+    /// fees in each (section 11.9). An asset not listed is never carried,
+    /// so a token anyone registered costs it nothing.
+    #[serde(default)]
+    pub assets: Vec<VaultAsset>,
     /// The operator: claim deposits to keep in each vault.
     #[serde(default = "default_deposits")]
     pub deposits: u32,
-    /// The operator: the least fee, in gwei, of a record worth carrying.
-    #[serde(default)]
-    pub min_fee_gwei: u64,
     /// The operator and the guardian: what to pay, on each network, to open
     /// a checkpoint job when no real block is above a message (for the
     /// guardian, a lie it would bring). None: never opens one.
@@ -83,25 +78,52 @@ pub struct VaultSettings {
     /// The operator: the file that keeps every batch it wrote.
     #[serde(default = "default_journal")]
     pub journal: String,
-    /// The operator: the fast paths (section 11.7). None: it attests no
-    /// lock and pays no burn at once.
+}
+
+/// The network that is an asset's home.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum VaultNetwork {
+    Ethereum,
+    Solana,
+}
+
+/// One asset the operator carries. Amounts in record units: the receipt's
+/// smallest unit (gwei for ETH, lamports for SOL).
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VaultAsset {
+    pub home: VaultNetwork,
+    /// Its number in its home vault, the network's coin being 0.
+    pub asset: u32,
+    /// The bond to keep on its home network, in the asset: it covers locks
+    /// carried to the other network. 0 carries none.
+    #[serde(default)]
+    pub bond_home: u64,
+    /// The bond to keep on the other network, in its receipt: it covers
+    /// burns and give-ups carried home. 0 carries none.
+    #[serde(default)]
+    pub bond_receipt: u64,
+    /// The least fee of a lock or burn worth carrying. A record whose fee
+    /// another operator already earned, and whose claims were all refused,
+    /// is carried anyway, so that its user is not stranded.
+    #[serde(default)]
+    pub min_fee: u64,
+    /// The fast paths (section 11.7). None: it attests no lock and pays no
+    /// burn of this asset at once.
     pub fast: Option<FastSettings>,
 }
 
-/// What the operator attests and pays at once.
+/// What the operator attests and pays at once, in record units.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FastSettings {
-    /// The least fast fee, in gwei, worth attesting a lock or paying a burn.
-    pub min_fee_gwei: u64,
-    /// The largest lock or burn, in gwei, it attests or pays: it locks 1.25
-    /// times a lock's amount in vETH, or pays a burn's amount in ETH, until
+    /// The least fast fee worth attesting a lock or paying a burn.
+    pub min_fee: u64,
+    /// The largest lock or burn it attests or pays: it locks 1.25 times a
+    /// lock's amount in receipts, or pays a burn's amount in the asset, until
     /// the claim carrying it is accepted.
-    pub max_gwei: u64,
-}
-
-fn zero() -> String {
-    "0".into()
+    pub max: u64,
 }
 
 fn default_deposits() -> u32 {
@@ -225,6 +247,10 @@ pub enum SettingsError {
     TooManyDecimals(String),
     #[error("vault.deposits must be at least 1: with none, no claim of this operator ever opens")]
     NoVaultDeposits,
+    #[error("vault.assets lists asset {0} of one network twice")]
+    RepeatedVaultAsset(u32),
+    #[error("vault.assets bonds more than 8 assets on one network: a chain keeps bonds in at most 8 there")]
+    TooManyBonds,
     #[error("vault.{field} names {name}, which is not an {kind} network of `networks`")]
     VaultNetwork { field: &'static str, name: String, kind: &'static str },
 }
@@ -275,7 +301,21 @@ impl Settings {
                     return Err(SettingsError::VaultNetwork { field, name: name.clone(), kind });
                 }
             }
-            for amount in [Some(&v.bond), Some(&v.veth_bond), v.checkpoint_paid_ethereum.as_ref(), v.checkpoint_paid_solana.as_ref()].into_iter().flatten() {
+            let mut seen = HashSet::new();
+            for a in &v.assets {
+                if !seen.insert((a.home, a.asset)) {
+                    return Err(SettingsError::RepeatedVaultAsset(a.asset));
+                }
+            }
+            // D129: a chain keeps bonds in at most 8 assets on a network: its
+            // home bonds there and its receipt bonds of the other's assets.
+            for net in [VaultNetwork::Ethereum, VaultNetwork::Solana] {
+                let bonded = v.assets.iter().filter(|a| if a.home == net { a.bond_home > 0 } else { a.bond_receipt > 0 }).count();
+                if bonded > crate::vault::MAX_ASSETS {
+                    return Err(SettingsError::TooManyBonds);
+                }
+            }
+            for amount in [v.checkpoint_paid_ethereum.as_ref(), v.checkpoint_paid_solana.as_ref()].into_iter().flatten() {
                 amount.parse::<u128>().map_err(|_| SettingsError::BadAmount(amount.clone()))?;
             }
         }
@@ -374,13 +414,19 @@ mod tests {
     protocol: "ChYhovM8vm2tuMRaRFn4m6etG979bjixVa71fXBDwjPL"
     guardian: { max_deposit: "100000000" }
 "#;
-        let vault = "\nvault:\n  ethereum: ethereum-sepolia\n  solana: solana-devnet\n  ethereum_vault: \"0x03\"\n  solana_vault: \"2e1ZUB5eqA6bQfH3f9pbfvibfie7WnvEJeKif53VAm7p\"\n  bond: \"2000000000000000000\"";
+        let vault = "\nvault:\n  ethereum: ethereum-sepolia\n  solana: solana-devnet\n  ethereum_vault: \"0x03\"\n  solana_vault: \"2e1ZUB5eqA6bQfH3f9pbfvibfie7WnvEJeKif53VAm7p\"\n  checkpoint_paid_ethereum: \"2000000000000000000\"\n  assets:\n    - { home: ethereum, asset: 0, bond_home: 2000000000, bond_receipt: 1000000000, min_fee: 10, fast: { min_fee: 5, max: 100000000 } }\n    - { home: solana, asset: 0, bond_home: 5000000000 }";
         let text = format!("{}{vault}", with("[guardian]", true, &format!("{NETWORK}{sol}")));
         let s = Settings::parse(&text).unwrap();
         let v = s.vault.unwrap();
         assert_eq!(v.deposits, 5);
         assert_eq!(v.journal, "vault.journal");
-        assert!(v.checkpoint_paid_ethereum.is_none());
+        assert_eq!(v.assets.len(), 2);
+        assert_eq!(v.assets[1].home, VaultNetwork::Solana);
+        assert_eq!(v.assets[1].bond_receipt, 0);
+        assert!(v.assets[1].fast.is_none());
+        assert_eq!(v.assets[0].fast.as_ref().unwrap().max, 100_000_000);
+        let twice = text.replace("home: solana, asset: 0", "home: ethereum, asset: 0");
+        assert_eq!(Settings::parse(&twice).unwrap_err(), SettingsError::RepeatedVaultAsset(0));
         let swapped = text.replace("ethereum: ethereum-sepolia", "ethereum: solana-devnet");
         assert!(matches!(Settings::parse(&swapped).unwrap_err(), SettingsError::VaultNetwork { field: "ethereum", .. }));
         assert_eq!(Settings::parse(&format!("{text}\n  deposits: 0")).unwrap_err(), SettingsError::NoVaultDeposits);

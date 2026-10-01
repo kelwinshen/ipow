@@ -98,6 +98,11 @@ impl LocalSolana {
         svm.set_sysvar(&clock);
     }
 
+    /// The lamports of `who`.
+    pub fn lamports(&self, who: &Pubkey) -> u64 {
+        self.0.lock().unwrap().get_account(who).map(|a| a.lamports).unwrap_or(0)
+    }
+
     pub fn time(&self) -> i64 {
         self.0.lock().unwrap().get_sysvar::<Clock>().unix_timestamp
     }
@@ -213,13 +218,11 @@ impl SvmWorld {
                     vt::ID,
                     vt::client::accounts::Initialize {
                         config,
-                        mint: vt_pda(&[b"veth"]),
-                        holding: vt_pda(&[b"holding"]),
+                        sol: vt_pda(&[b"asset", &0u32.to_le_bytes()]),
                         application: SvmNetwork::pr_pda(&[b"application", config.as_ref()]),
                         payer: self.user.pubkey(),
                         program_data: SYSTEM,
                         protocol_program: pr::ID,
-                        token_program: anchor_spl::token::ID,
                         system_program: SYSTEM,
                     },
                     vt::client::args::Initialize { ethereum_vault, deposit, min_certifying_escrow },
@@ -235,9 +238,19 @@ impl SvmWorld {
         (Arc::new(crate::vault::SvmVault::new(net.clone(), &crate::programs::ipow_vault::ID.to_string()).unwrap()), net)
     }
 
+    async fn config(&self) -> crate::programs::ipow_vault::accounts::Config {
+        let data = self.chain.account(&vt_pda(&[b"config"])).await.unwrap().unwrap();
+        anchor_lang::AccountDeserialize::try_deserialize(&mut data.as_slice()).unwrap()
+    }
+
     /// vETH held by `owner` in its associated account.
     pub async fn veth(&self, owner: &Pubkey) -> u64 {
-        let account = anchor_spl::associated_token::get_associated_token_address(owner, &vt_pda(&[b"veth"]));
+        self.receipt_balance(0, owner).await
+    }
+
+    /// What `owner` holds of the receipt of Ethereum's asset `asset`.
+    pub async fn receipt_balance(&self, asset: u32, owner: &Pubkey) -> u64 {
+        let account = anchor_spl::associated_token::get_associated_token_address(owner, &vt_pda(&[b"receipt", &asset.to_le_bytes()]));
         match self.chain.account(&account).await.unwrap() {
             Some(data) if !data.is_empty() => {
                 <anchor_spl::token::TokenAccount as anchor_lang::AccountDeserialize>::try_deserialize(&mut data.as_slice()).unwrap().amount
@@ -246,17 +259,18 @@ impl SvmWorld {
         }
     }
 
+    /// The lamports of `who`.
+    pub async fn lamports(&self, who: &Pubkey) -> u64 {
+        self.chain.lamports(who)
+    }
+
     /// The user burns `amount` gwei of vETH for ETH to `to` on Ethereum, with
     /// `fee` for the operator and `fast_fee` for an attester. Returns the
     /// request's number.
     pub async fn user_burn(&self, amount: u64, to: [u8; 20], fee: u64, fast_fee: u64) -> u64 {
         use crate::programs::ipow_vault as vt;
-        let config: vt::accounts::Config = {
-            let data = self.chain.account(&vt_pda(&[b"config"])).await.unwrap().unwrap();
-            anchor_lang::AccountDeserialize::try_deserialize(&mut data.as_slice()).unwrap()
-        };
-        let id = config.request_count + 1;
-        let mint = vt_pda(&[b"veth"]);
+        let id = self.config().await.request_count + 1;
+        let mint = vt_pda(&[b"receipt", &0u32.to_le_bytes()]);
         self.chain
             .run(
                 &[ix(
@@ -266,12 +280,12 @@ impl SvmWorld {
                         request: vt_pda(&[b"request", &id.to_le_bytes()]),
                         mint,
                         from: anchor_spl::associated_token::get_associated_token_address(&self.user.pubkey(), &mint),
-                        holding: vt_pda(&[b"holding"]),
+                        holding: vt_pda(&[b"holding", &0u32.to_le_bytes()]),
                         user: self.user.pubkey(),
                         token_program: anchor_spl::token::ID,
                         system_program: SYSTEM,
                     },
-                    vt::client::args::MakeRequest { amount, to, fee, fast_fee },
+                    vt::client::args::MakeRequest { asset: 0, amount, to: ipow_protocol_core::vault::eth_address32(&to), fee, fast_fee },
                 )],
                 &self.user,
             )
@@ -279,15 +293,78 @@ impl SvmWorld {
         id
     }
 
-    /// Anyone (the user here) issues the vETH of lock `lock_id`, carried by
-    /// accepted claim `claim_id`, to `recipient`'s associated account.
-    pub async fn issue(&self, claim_id: u64, lock_id: u64, recipient: &Pubkey) {
+    /// The user locks `amount` lamports of SOL for vSOL to `to` on Ethereum,
+    /// with `fee` and `fast_fee`. Returns the lock's number.
+    pub async fn user_lock_sol(&self, amount: u64, to: [u8; 20], fee: u64, fast_fee: u64) -> u64 {
         use crate::programs::ipow_vault as vt;
-        let mint = vt_pda(&[b"veth"]);
-        let to = anchor_spl::associated_token::get_associated_token_address(recipient, &mint);
+        let id = self.config().await.lock_count + 1;
+        self.chain
+            .run(
+                &[ix(
+                    vt::ID,
+                    vt::client::accounts::Lock {
+                        config: vt_pda(&[b"config"]),
+                        home_asset: vt_pda(&[b"asset", &0u32.to_le_bytes()]),
+                        lock: vt_pda(&[b"home_lock", &id.to_le_bytes()]),
+                        from: None,
+                        tokens: None,
+                        mint: None,
+                        token_program: None,
+                        user: self.user.pubkey(),
+                        system_program: SYSTEM,
+                    },
+                    vt::client::args::Lock { asset: 0, recipient: ipow_protocol_core::vault::eth_address32(&to), amount, fee, fast_fee },
+                )],
+                &self.user,
+            )
+            .unwrap();
+        id
+    }
+
+    /// Who took the fee of lock `id` here, if it was taken.
+    pub async fn lock_fee_taken_by(&self, id: u64) -> Option<Pubkey> {
+        let data = self.chain.account(&vt_pda(&[b"home_lock", &id.to_le_bytes()])).await.unwrap()?;
+        let l: crate::programs::ipow_vault::accounts::HomeLock = anchor_lang::AccountDeserialize::try_deserialize(&mut data.as_slice()).unwrap();
+        l.fee_taken.then_some(l.fee_to)
+    }
+
+    /// Anyone makes the receipt of Ethereum's asset from accepted claim
+    /// `claim_id` carrying its ASSET record.
+    pub async fn make_receipt(&self, claim_id: u64, asset: u32, record: &[u8]) {
+        use crate::programs::ipow_vault as vt;
+        self.chain
+            .run(
+                &[ix(
+                    vt::ID,
+                    vt::client::accounts::MakeReceipt {
+                        config: vt_pda(&[b"config"]),
+                        claim: vt_pda(&[b"claim", &claim_id.to_le_bytes()]),
+                        mint: vt_pda(&[b"receipt", &asset.to_le_bytes()]),
+                        holding: vt_pda(&[b"holding", &asset.to_le_bytes()]),
+                        payer: self.user.pubkey(),
+                        token_program: anchor_spl::token::ID,
+                        system_program: SYSTEM,
+                    },
+                    vt::client::args::MakeReceipt { claim_id, asset, record: record.to_vec() },
+                )],
+                &self.user,
+            )
+            .unwrap();
+    }
+
+    /// Anyone (the user here) issues the receipt of lock `record` on Ethereum,
+    /// carried by accepted claim `claim_id`, to its recipient's associated
+    /// account.
+    pub async fn issue(&self, claim_id: u64, record: &[u8]) {
+        use crate::programs::ipow_vault as vt;
+        let asset = u32::from_be_bytes(record[2..6].try_into().unwrap());
+        let lock_id = u64::from_be_bytes(record[6..14].try_into().unwrap());
+        let recipient = Pubkey::new_from_array(record[22..54].try_into().unwrap());
+        let mint = vt_pda(&[b"receipt", &asset.to_le_bytes()]);
+        let to = anchor_spl::associated_token::get_associated_token_address(&recipient, &mint);
         let create = anchor_spl::associated_token::spl_associated_token_account::instruction::create_associated_token_account_idempotent(
             &self.user.pubkey(),
-            recipient,
+            &recipient,
             &mint,
             &anchor_spl::token::ID,
         );
@@ -301,13 +378,13 @@ impl SvmWorld {
                         mark: vt_pda(&[b"lock", &lock_id.to_le_bytes()]),
                         config: vt_pda(&[b"config"]),
                         mint,
-                        holding: vt_pda(&[b"holding"]),
+                        holding: vt_pda(&[b"holding", &asset.to_le_bytes()]),
                         to,
                         payer: self.user.pubkey(),
                         token_program: anchor_spl::token::ID,
                         system_program: SYSTEM,
                     },
-                    vt::client::args::Issue { claim_id, lock_id },
+                    vt::client::args::Issue { claim_id, lock_id, asset, record: record.to_vec() },
                 )],
                 &self.user,
             )

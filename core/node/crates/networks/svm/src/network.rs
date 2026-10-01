@@ -30,6 +30,9 @@ use crate::programs::ipow_protocol as pr;
 use crate::rules;
 
 const SYSTEM: Pubkey = anchor_lang::solana_program::system_program::ID;
+/// Addresses added to a lookup table per transaction: a legacy transaction
+/// of 1,232 bytes holds about 30 with the table's creation; 20 leaves room.
+const TABLE_PART: usize = 20;
 /// Headers per `extend`: the light client's MAX_EXTEND, what fits in one
 /// Solana transaction.
 const MAX_EXTEND: usize = 7;
@@ -228,8 +231,16 @@ impl SvmNetwork {
         // Recorded before it exists: whatever fails below, the table is
         // deactivated and closed later, and its rent comes back.
         self.tables.lock().await.get_or_insert_with(Vec::new).push(table);
-        let extend = alt::extend_lookup_table(table, me, Some(me), addresses.clone());
-        self.chain.send(&[create, extend], &self.key, None).await?;
+        anyhow::ensure!(!addresses.is_empty(), "a transaction too large names no account to put in a table");
+        // The table is filled in parts, the first with its creation.
+        for (n, part) in addresses.chunks(TABLE_PART).enumerate() {
+            let extend = alt::extend_lookup_table(table, me, Some(me), part.to_vec());
+            if n == 0 {
+                self.chain.send(&[create.clone(), extend], &self.key, None).await?;
+            } else {
+                self.chain.send(&[extend], &self.key, None).await?;
+            }
+        }
         self.chain.wait_past(self.chain.clock().await?.slot).await?;
         let account = AddressLookupTableAccount { key: table, addresses };
         let outcome = self.chain.send(std::slice::from_ref(&ix), &self.key, Some(&account)).await;

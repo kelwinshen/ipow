@@ -63,13 +63,19 @@ operator's to judge before listing it.
 ## The vault
 
 With a `vault` section naming an EVM network and a Solana network, the
-node works for the protocol's vault between them (spec section 11): ETH
-locked on Ethereum for vETH on Solana, and back.
+node works for the protocol's vault between them (spec section 11), in
+both directions (section 11.9): ETH and ERC-20 tokens locked on Ethereum
+for their receipts on Solana (vETH for ETH), SOL and SPL tokens locked on
+Solana for their receipts on Ethereum (vSOL for SOL), and back. The
+operator carries only the assets listed in `assets`, each named by its
+home network and number there (the network's coin is 0); amounts in an
+asset are in record units, its receipt's smallest unit (gwei for ETH,
+lamports for SOL).
 
 | Role | What it does each round |
 |---|---|
-| operator | Registers its pair chain once, by one Bitcoin transaction that names it on both networks. Keeps `bond` ETH bonded on Ethereum (and `veth_bond` vETH on Solana, to carry burns and give-ups) and `deposits` claim deposits in each vault. Gathers what is worth carrying: locks on Ethereum once their block is final, burn requests and give-ups on Solana, each with a fee of at least `min_fee_gwei`, within 80% of its bond counted on the acting network and the size limits (D119). Writes them as one batch on Bitcoin, spending its pair chain's coin, and submits the message to both vaults once a real block is above it (D108), storing any missing block below that real block. With `checkpoint_paid_*` set, opens a checkpoint job when no real block is above a message and none is under way. Answers every objection to its claims, decides and collects. With `fast` set (section 11.7): issues the receipt of a final lock at once, locking 1.25 times its amount of its own vETH, and pays a final burn's ETH at once from its own, for locks and burns whose fast fee is at least `min_fee_gwei` and amount at most `max_gwei`, the best-paid first. It earns the part of the fast fee for the time left to 8 days after the lock or burn (D124), so it never attests one whose claim was already accepted. It carries each lock it attested in a claim of its own whatever its fee, links the attest to that claim (only its own, D125), and settles it once the claim is accepted; it takes the vault's repayment of each burn it paid, also after a restart |
-| guardian | Reads every claim on each network and checks each of its records against the other network: a lock or a burn request exists with exactly that record, a give-up happened, a stated bond is the bond there. Objects to a false claim, decides claims whose 7 days are over, and collects its winnings. Brings to each network the messages of an operator's chain that only the other network has processed, with the batch the other vault published, checked against its hash on Bitcoin: a lie shown to one network only is proven and slashed on the other, 20% to the guardian. It brings them only when one of the next 20 lagging messages is false there; honest lagging messages are left to their operator. With `checkpoint_paid_*` set, it opens a checkpoint job when no real block is above the lie. Reads every attest of a lock on Solana: burns one with no claim linked within 7 days, or whose linked claim was refused, and settles one whose lock an accepted claim states otherwise, taking the quarter above the amount. Several attests of one lock may be made for 7 days from its first (D126); they are settled oldest first, so the earliest true one counts, and with none true the recipient's receipt is issued once no attest can come |
+| operator | Registers its pair chain once, by one Bitcoin transaction that names it on both networks. For each listed asset, keeps `bond_home` bonded in the asset on its home network (it covers locks) and `bond_receipt` bonded in its receipt on the other network (it covers burns and give-ups), once it holds those receipts; and keeps `deposits` claim deposits in each vault. Takes the fees its messages earned (on Solana with a call of its own) and withdraws its credits: deposits won, fees, repayments, the collateral of settled attests. Gathers what is worth carrying, in both directions: a BOND record for each bond until the other network counts it, an ASSET record for each listed asset until its receipt exists, locks of listed assets once their block is final, burns of their receipts, and give-ups, each with a fee of at least the asset's `min_fee`. Each fits 80% of its bond in that asset counted on the acting network (D129), and the batch keeps to section 11.9's limits: 2,048 bytes, 32 LOCK, REQUEST, CANCEL and ASSET records on both networks together, 10 LOCK records acted on by Solana, 8 assets per claim (on Solana counted with the chain's own). Writes them as one batch on Bitcoin, spending its pair chain's coin, and submits the message to both vaults once a real block is above it (D108), storing any missing block below that real block. With `checkpoint_paid_*` set, opens a checkpoint job when no real block is above a message and none is under way. Makes a receipt once a claim carrying its ASSET record is accepted. Answers every objection to its claims, decides and collects. With an asset's `fast` set (section 11.7), on either network: issues the receipt of a final lock at once, locking 1.25 times its amount of its own receipts, and pays a final burn at once from its own, for locks and burns whose fast fee is at least `min_fee` and amount at most `max`, the best-paid first. It earns the part of the fast fee for the time left to 8 days after the lock or burn (D124), so it never attests one whose claim was already accepted. It carries each lock it attested in a claim of its own whatever its fee, links the attest to that claim (only its own, D125), and settles it once the claim is accepted; it takes the vault's repayment of each burn it paid, also after a restart |
+| guardian | Reads every claim on each network and checks each of its records against the other network: a lock or a burn request exists with exactly that record, a give-up happened, an asset is registered with that token and decimals, a stated bond is the bond there. Objects to a false claim, decides claims whose 7 days are over, and collects its winnings. Brings to each network the messages of an operator's chain that only the other network has processed, with the batch the other vault published, checked against its hash on Bitcoin: a lie shown to one network only is proven and slashed on the other, 20% to the guardian. It brings them only when one of the next 20 lagging messages is false there; honest lagging messages are left to their operator. With `checkpoint_paid_*` set, it opens a checkpoint job when no real block is above the lie. Settles a slashed chain's bonds asset by asset (D129), and withdraws its 20%. Reads every attest of a lock on both networks: burns one with no claim linked within 7 days, or whose linked claim was refused, and settles one whose lock an accepted claim states otherwise, taking the quarter above the amount. Several attests of one lock may be made for 7 days from its first (D126); they are settled oldest first, so the earliest true one counts, and with none true the recipient's receipt is issued once no attest can come |
 
 Only a batch's hash is on Bitcoin. The operator writes each batch to its
 `journal` file, keyed by that hash, before the message exists, so that
@@ -83,19 +89,22 @@ How the operator keeps going:
 | Case | What it does |
 |---|---|
 | An objection to one of its claims | Answered in every round right after the two chains are read, each claim on its own: one that fails does not keep the others from being answered |
-| A top-up that fails (no vETH yet, too little ETH or SOL) | Logged; the round goes on |
+| A receipt bond before it holds the receipts | Waits: it gets them from a lock of its own, the slow way |
+| A top-up that fails (too little ETH, SOL or token) | Logged; the round goes on |
 | No real block within 100 blocks above a message | Records real blocks down from the nearest one above, in steps of 100 |
 | A message unmined for 3 blocks | Replaced, paying half as much again |
 | A message dropped by Bitcoin's nodes | The next batch is written instead; the dropped one's records are gathered again |
-| A lock or burn larger than 80% of its bond, or one nobody ever finishes | Left open and looked at again each round; newer ones are still read and carried |
+| A lock or burn larger than 80% of its bond, or one nobody ever finishes | Left open and looked at again; more than 100 open are looked at 100 a round in turns, so newer ones are still read and carried |
+| An attest whose claim might not open within 7 days | Not made: it attests only while its open claims, its attests waiting for a claim, and the batches on their way still fit 80% of its bond in the asset. After a restart, while a message it kept no count of is on its way, it attests nothing; after a failed attest, nothing more that round |
+| A restart after a burn it paid at once was accepted | Finds its payment again and takes the repayment |
 | A lock or burn whose fee another operator earned, but that no claim is handling | Carried again, for no fee, so its user is not stranded. A duplicate true record is never slashed |
-| A record about Solana's own facts (a burn, a give-up) | Carried only once its block is finalized: a record of a block Solana could still roll back would be false |
+| A record of a lock, burn or give-up | Carried only once its block is final on the network that holds it: a record of a block that could still be rolled back would be false |
+| An asset not listed in `assets`, such as a token anyone registered | Never carried: it costs the operator nothing |
 | A message replaced to pay more | Pays for the waiting transactions it evicts too, as the protocol operator does |
 | A claim whose records Ethereum's event logs cannot give yet | Tried again each round, holding nothing up |
 | Its chain cannot open a claim on a network (refused, slashed, no deposit money) | Carries nothing toward that network |
 
-Not built yet: pruning old batches from the journal; the fast paths
-(D115).
+Not built yet: pruning old batches from the journal.
 
 ## What the explorer is trusted with
 

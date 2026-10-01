@@ -168,16 +168,13 @@ async fn main() -> anyhow::Result<()> {
                 btc.clone(),
                 wallet,
                 VaultOperatorSettings {
-                    eth_bond: v.bond.parse().expect("checked when the settings were read"),
-                    veth_bond: v.veth_bond.parse().expect("checked when the settings were read"),
+                    assets: v.assets.clone(),
                     deposits: v.deposits,
-                    min_fee_gwei: v.min_fee_gwei,
                     checkpoint_paid: [
                         v.checkpoint_paid_ethereum.as_ref().map(|a| a.parse().expect("checked when the settings were read")),
                         v.checkpoint_paid_solana.as_ref().map(|a| a.parse().expect("checked when the settings were read")),
                     ],
                     journal: PathBuf::from(&v.journal),
-                    fast: v.fast.clone(),
                 },
             );
             info!(journal = %v.journal, "vault operator");

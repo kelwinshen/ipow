@@ -8,16 +8,155 @@
   },
   "instructions": [
     {
-      "name": "add_bond",
+      "name": "add_bond_home",
       "discriminator": [
-        67,
-        104,
-        1,
-        227,
+        142,
+        127,
+        18,
+        206,
+        204,
+        56,
+        48,
+        226
+      ],
+      "accounts": [
+        {
+          "name": "chain",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  105,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "operator"
+              }
+            ]
+          }
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "home_asset",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "asset"
+              }
+            ]
+          }
+        },
+        {
+          "name": "from",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "tokens",
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  109,
+                  101,
+                  95,
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "home_asset.mint",
+                "account": "HomeAsset"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint",
+          "optional": true
+        },
+        {
+          "name": "token_program",
+          "optional": true
+        },
+        {
+          "name": "operator",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "asset",
+          "type": "u32"
+        },
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "add_bond_receipt",
+      "discriminator": [
+        174,
         44,
-        237,
-        39,
-        95
+        50,
+        242,
+        131,
+        135,
+        246,
+        102
       ],
       "accounts": [
         {
@@ -49,11 +188,18 @@
               {
                 "kind": "const",
                 "value": [
-                  118,
+                  114,
                   101,
-                  116,
-                  104
+                  99,
+                  101,
+                  105,
+                  112,
+                  116
                 ]
+              },
+              {
+                "kind": "arg",
+                "path": "asset"
               }
             ]
           }
@@ -78,6 +224,10 @@
                   110,
                   103
                 ]
+              },
+              {
+                "kind": "arg",
+                "path": "asset"
               }
             ]
           }
@@ -92,6 +242,10 @@
         }
       ],
       "args": [
+        {
+          "name": "asset",
+          "type": "u32"
+        },
         {
           "name": "amount",
           "type": "u64"
@@ -338,11 +492,18 @@
               {
                 "kind": "const",
                 "value": [
-                  118,
+                  114,
                   101,
-                  116,
-                  104
+                  99,
+                  101,
+                  105,
+                  112,
+                  116
                 ]
+              },
+              {
+                "kind": "arg",
+                "path": "asset"
               }
             ]
           }
@@ -363,6 +524,10 @@
                   110,
                   103
                 ]
+              },
+              {
+                "kind": "arg",
+                "path": "asset"
               }
             ]
           }
@@ -391,28 +556,12 @@
       ],
       "args": [
         {
-          "name": "lock_id",
-          "type": "u64"
+          "name": "asset",
+          "type": "u32"
         },
         {
-          "name": "amount",
-          "type": "u64"
-        },
-        {
-          "name": "recipient",
-          "type": "pubkey"
-        },
-        {
-          "name": "fee",
-          "type": "u64"
-        },
-        {
-          "name": "fast_fee",
-          "type": "u64"
-        },
-        {
-          "name": "locked_at",
-          "type": "i64"
+          "name": "record",
+          "type": "bytes"
         }
       ]
     },
@@ -483,11 +632,19 @@
               {
                 "kind": "const",
                 "value": [
-                  118,
+                  114,
                   101,
-                  116,
-                  104
+                  99,
+                  101,
+                  105,
+                  112,
+                  116
                 ]
+              },
+              {
+                "kind": "account",
+                "path": "fast.asset",
+                "account": "FastLock"
               }
             ]
           }
@@ -508,6 +665,11 @@
                   110,
                   103
                 ]
+              },
+              {
+                "kind": "account",
+                "path": "fast.asset",
+                "account": "FastLock"
               }
             ]
           }
@@ -797,6 +959,147 @@
       ]
     },
     {
+      "name": "fast_pay",
+      "discriminator": [
+        209,
+        50,
+        93,
+        100,
+        142,
+        4,
+        69,
+        211
+      ],
+      "accounts": [
+        {
+          "name": "home_asset",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "asset"
+              }
+            ]
+          }
+        },
+        {
+          "name": "fast_pay",
+          "docs": [
+            "The record of this payment: once per burn and stated record. Its",
+            "hash is checked against the record by the seeds."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  97,
+                  115,
+                  116,
+                  95,
+                  112,
+                  97,
+                  121
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "request_id"
+              },
+              {
+                "kind": "arg",
+                "path": "record_hash"
+              }
+            ]
+          }
+        },
+        {
+          "name": "paid",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  97,
+                  105,
+                  100
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "request_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "to",
+          "docs": [
+            "the handler."
+          ],
+          "writable": true
+        },
+        {
+          "name": "from",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "mint",
+          "optional": true
+        },
+        {
+          "name": "token_program",
+          "optional": true
+        },
+        {
+          "name": "attester",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "request_id",
+          "type": "u64"
+        },
+        {
+          "name": "asset",
+          "type": "u32"
+        },
+        {
+          "name": "record_hash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "record",
+          "type": "bytes"
+        }
+      ]
+    },
+    {
       "name": "give_up",
       "discriminator": [
         75,
@@ -869,6 +1172,10 @@
         {
           "name": "lock_id",
           "type": "u64"
+        },
+        {
+          "name": "record",
+          "type": "bytes"
         }
       ]
     },
@@ -905,37 +1212,27 @@
           }
         },
         {
-          "name": "mint",
+          "name": "sol",
           "writable": true,
           "pda": {
             "seeds": [
               {
                 "kind": "const",
                 "value": [
-                  118,
+                  97,
+                  115,
+                  115,
                   101,
-                  116,
-                  104
+                  116
                 ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "holding",
-          "writable": true,
-          "pda": {
-            "seeds": [
+              },
               {
                 "kind": "const",
                 "value": [
-                  104,
-                  111,
-                  108,
-                  100,
-                  105,
-                  110,
-                  103
+                  0,
+                  0,
+                  0,
+                  0
                 ]
               }
             ]
@@ -962,10 +1259,6 @@
         {
           "name": "protocol_program",
           "address": "ChYhovM8vm2tuMRaRFn4m6etG979bjixVa71fXBDwjPL"
-        },
-        {
-          "name": "token_program",
-          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
         },
         {
           "name": "system_program",
@@ -1059,33 +1352,24 @@
               {
                 "kind": "const",
                 "value": [
-                  118,
+                  114,
                   101,
-                  116,
-                  104
+                  99,
+                  101,
+                  105,
+                  112,
+                  116
                 ]
+              },
+              {
+                "kind": "arg",
+                "path": "asset"
               }
             ]
           }
         },
         {
-          "name": "holding",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  104,
-                  111,
-                  108,
-                  100,
-                  105,
-                  110,
-                  103
-                ]
-              }
-            ]
-          }
+          "name": "holding"
         },
         {
           "name": "to",
@@ -1113,6 +1397,14 @@
         {
           "name": "lock_id",
           "type": "u64"
+        },
+        {
+          "name": "asset",
+          "type": "u32"
+        },
+        {
+          "name": "record",
+          "type": "bytes"
         }
       ]
     },
@@ -1195,6 +1487,278 @@
       ]
     },
     {
+      "name": "lock",
+      "discriminator": [
+        21,
+        19,
+        208,
+        43,
+        237,
+        62,
+        255,
+        87
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "home_asset",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "asset"
+              }
+            ]
+          }
+        },
+        {
+          "name": "lock",
+          "writable": true
+        },
+        {
+          "name": "from",
+          "docs": [
+            "For a token: the user's account, the vault's, the mint and its",
+            "program."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "tokens",
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  109,
+                  101,
+                  95,
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "home_asset.mint",
+                "account": "HomeAsset"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint",
+          "optional": true
+        },
+        {
+          "name": "token_program",
+          "optional": true
+        },
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "asset",
+          "type": "u32"
+        },
+        {
+          "name": "recipient",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "fee",
+          "type": "u64"
+        },
+        {
+          "name": "fast_fee",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "make_receipt",
+      "discriminator": [
+        6,
+        111,
+        95,
+        5,
+        222,
+        8,
+        2,
+        236
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "claim",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  108,
+                  97,
+                  105,
+                  109
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "claim_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  99,
+                  101,
+                  105,
+                  112,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "asset"
+              }
+            ]
+          }
+        },
+        {
+          "name": "holding",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  108,
+                  100,
+                  105,
+                  110,
+                  103
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "asset"
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "claim_id",
+          "type": "u64"
+        },
+        {
+          "name": "asset",
+          "type": "u32"
+        },
+        {
+          "name": "record",
+          "type": "bytes"
+        }
+      ]
+    },
+    {
       "name": "make_request",
       "discriminator": [
         41,
@@ -1238,11 +1802,18 @@
               {
                 "kind": "const",
                 "value": [
-                  118,
+                  114,
                   101,
-                  116,
-                  104
+                  99,
+                  101,
+                  105,
+                  112,
+                  116
                 ]
+              },
+              {
+                "kind": "arg",
+                "path": "asset"
               }
             ]
           }
@@ -1267,6 +1838,10 @@
                   110,
                   103
                 ]
+              },
+              {
+                "kind": "arg",
+                "path": "asset"
               }
             ]
           }
@@ -1287,6 +1862,10 @@
       ],
       "args": [
         {
+          "name": "asset",
+          "type": "u32"
+        },
+        {
           "name": "amount",
           "type": "u64"
         },
@@ -1295,7 +1874,7 @@
           "type": {
             "array": [
               "u8",
-              20
+              32
             ]
           }
         },
@@ -1585,6 +2164,190 @@
       ]
     },
     {
+      "name": "pay_request",
+      "discriminator": [
+        182,
+        174,
+        240,
+        192,
+        60,
+        83,
+        75,
+        174
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "claim",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  108,
+                  97,
+                  105,
+                  109
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "claim_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "home_asset",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "asset"
+              }
+            ]
+          }
+        },
+        {
+          "name": "paid",
+          "docs": [
+            "Once per burn number."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  97,
+                  105,
+                  100
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "request_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "fast_pay",
+          "docs": [
+            "the handler, and empty when nobody paid."
+          ]
+        },
+        {
+          "name": "to",
+          "docs": [
+            "handler."
+          ],
+          "writable": true
+        },
+        {
+          "name": "attester",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "tokens",
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  109,
+                  101,
+                  95,
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "home_asset.mint",
+                "account": "HomeAsset"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint",
+          "optional": true
+        },
+        {
+          "name": "token_program",
+          "optional": true
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "claim_id",
+          "type": "u64"
+        },
+        {
+          "name": "request_id",
+          "type": "u64"
+        },
+        {
+          "name": "asset",
+          "type": "u32"
+        },
+        {
+          "name": "record",
+          "type": "bytes"
+        }
+      ]
+    },
+    {
       "name": "record_real",
       "discriminator": [
         195,
@@ -1823,6 +2586,111 @@
       ]
     },
     {
+      "name": "register_asset",
+      "discriminator": [
+        21,
+        80,
+        155,
+        149,
+        117,
+        207,
+        235,
+        16
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "asset",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "config.asset_count",
+                "account": "Config"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "tokens",
+          "docs": [
+            "The vault's account of the token; one per token, so it is registered",
+            "once."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  109,
+                  101,
+                  95,
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "register_chain",
       "discriminator": [
         230,
@@ -1948,6 +2816,171 @@
       ]
     },
     {
+      "name": "return_lock",
+      "discriminator": [
+        226,
+        8,
+        28,
+        102,
+        197,
+        69,
+        111,
+        232
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "claim",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  108,
+                  97,
+                  105,
+                  109
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "claim_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "lock",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  109,
+                  101,
+                  95,
+                  108,
+                  111,
+                  99,
+                  107
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "lock_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "asset",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "lock.asset",
+                "account": "HomeLock"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "writable": true
+        },
+        {
+          "name": "to",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "tokens",
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  109,
+                  101,
+                  95,
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "asset.mint",
+                "account": "HomeAsset"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint",
+          "optional": true
+        },
+        {
+          "name": "token_program",
+          "optional": true
+        }
+      ],
+      "args": [
+        {
+          "name": "claim_id",
+          "type": "u64"
+        },
+        {
+          "name": "lock_id",
+          "type": "u64"
+        },
+        {
+          "name": "record",
+          "type": "bytes"
+        }
+      ]
+    },
+    {
       "name": "settle_fast",
       "discriminator": [
         208,
@@ -2054,11 +3087,19 @@
               {
                 "kind": "const",
                 "value": [
-                  118,
+                  114,
                   101,
-                  116,
-                  104
+                  99,
+                  101,
+                  105,
+                  112,
+                  116
                 ]
+              },
+              {
+                "kind": "account",
+                "path": "fast.asset",
+                "account": "FastLock"
               }
             ]
           }
@@ -2079,6 +3120,11 @@
                   110,
                   103
                 ]
+              },
+              {
+                "kind": "account",
+                "path": "fast.asset",
+                "account": "FastLock"
               }
             ]
           }
@@ -2129,6 +3175,130 @@
         {
           "name": "attest",
           "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "settle_slash",
+      "discriminator": [
+        188,
+        160,
+        235,
+        232,
+        31,
+        37,
+        20,
+        50
+      ],
+      "accounts": [
+        {
+          "name": "chain",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  105,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "chain.operator",
+                "account": "Chain"
+              }
+            ]
+          }
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "home_asset",
+          "docs": [
+            "For an asset whose home is Solana."
+          ],
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "home_asset.number",
+                "account": "HomeAsset"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint",
+          "docs": [
+            "For a receipt: its mint and the vault's account of it."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "holding",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "slasher_credit",
+          "writable": true
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "token_program",
+          "optional": true,
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "home",
+          "type": "u8"
+        },
+        {
+          "name": "asset",
+          "type": "u32"
         }
       ]
     },
@@ -2239,51 +3409,6 @@
           "writable": true
         },
         {
-          "name": "operator_credit",
-          "writable": true
-        },
-        {
-          "name": "submitter_credit",
-          "writable": true
-        },
-        {
-          "name": "mint",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  118,
-                  101,
-                  116,
-                  104
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "holding",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  104,
-                  111,
-                  108,
-                  100,
-                  105,
-                  110,
-                  103
-                ]
-              }
-            ]
-          }
-        },
-        {
           "name": "submitter",
           "writable": true,
           "signer": true
@@ -2313,10 +3438,6 @@
               }
             ]
           }
-        },
-        {
-          "name": "token_program",
-          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
         },
         {
           "name": "system_program",
@@ -2351,16 +3472,411 @@
       ]
     },
     {
-      "name": "withdraw_bond",
+      "name": "take_lock_fee",
       "discriminator": [
-        222,
-        199,
-        141,
-        31,
-        188,
-        93,
-        155,
-        40
+        45,
+        80,
+        94,
+        132,
+        51,
+        116,
+        52,
+        198
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "lock",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  109,
+                  101,
+                  95,
+                  108,
+                  111,
+                  99,
+                  107
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "lock_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "asset",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "lock.asset",
+                "account": "HomeLock"
+              }
+            ]
+          }
+        },
+        {
+          "name": "to",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "tokens",
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  109,
+                  101,
+                  95,
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "asset.mint",
+                "account": "HomeAsset"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint",
+          "optional": true
+        },
+        {
+          "name": "token_program",
+          "optional": true
+        },
+        {
+          "name": "operator",
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "lock_id",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "take_request_fee",
+      "discriminator": [
+        230,
+        174,
+        169,
+        125,
+        20,
+        201,
+        119,
+        63
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "request",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  113,
+                  117,
+                  101,
+                  115,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "request_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  99,
+                  101,
+                  105,
+                  112,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "request.asset",
+                "account": "Request"
+              }
+            ]
+          }
+        },
+        {
+          "name": "holding",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  108,
+                  100,
+                  105,
+                  110,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "request.asset",
+                "account": "Request"
+              }
+            ]
+          }
+        },
+        {
+          "name": "to",
+          "writable": true
+        },
+        {
+          "name": "operator",
+          "signer": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "request_id",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "withdraw_bond_home",
+      "discriminator": [
+        239,
+        143,
+        144,
+        149,
+        203,
+        143,
+        131,
+        251
+      ],
+      "accounts": [
+        {
+          "name": "chain",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  105,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "operator"
+              }
+            ]
+          }
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "home_asset",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "asset"
+              }
+            ]
+          }
+        },
+        {
+          "name": "to",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "tokens",
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  109,
+                  101,
+                  95,
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "home_asset.mint",
+                "account": "HomeAsset"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint",
+          "optional": true
+        },
+        {
+          "name": "token_program",
+          "optional": true
+        },
+        {
+          "name": "operator",
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "asset",
+          "type": "u32"
+        },
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "withdraw_bond_receipt",
+      "discriminator": [
+        80,
+        202,
+        116,
+        202,
+        189,
+        195,
+        233,
+        20
       ],
       "accounts": [
         {
@@ -2410,11 +3926,18 @@
               {
                 "kind": "const",
                 "value": [
-                  118,
+                  114,
                   101,
-                  116,
-                  104
+                  99,
+                  101,
+                  105,
+                  112,
+                  116
                 ]
+              },
+              {
+                "kind": "arg",
+                "path": "asset"
               }
             ]
           }
@@ -2435,6 +3958,10 @@
                   110,
                   103
                 ]
+              },
+              {
+                "kind": "arg",
+                "path": "asset"
               }
             ]
           }
@@ -2454,26 +3981,34 @@
       ],
       "args": [
         {
+          "name": "asset",
+          "type": "u32"
+        },
+        {
           "name": "amount",
           "type": "u64"
         }
       ]
     },
     {
-      "name": "withdraw_credit",
+      "name": "withdraw_credit_home",
       "discriminator": [
-        8,
-        173,
-        134,
-        129,
-        40,
-        255,
-        134,
-        30
+        22,
+        168,
+        57,
+        145,
+        155,
+        71,
+        154,
+        225
       ],
       "accounts": [
         {
           "name": "credit",
+          "writable": true
+        },
+        {
+          "name": "config",
           "writable": true,
           "pda": {
             "seeds": [
@@ -2481,23 +4016,112 @@
                 "kind": "const",
                 "value": [
                   99,
-                  114,
-                  101,
-                  100,
+                  111,
+                  110,
+                  102,
                   105,
-                  116
+                  103
                 ]
-              },
-              {
-                "kind": "account",
-                "path": "owner"
               }
             ]
           }
         },
         {
-          "name": "config",
+          "name": "home_asset",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  115,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "asset"
+              }
+            ]
+          }
+        },
+        {
+          "name": "to",
           "writable": true,
+          "optional": true
+        },
+        {
+          "name": "tokens",
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  109,
+                  101,
+                  95,
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "home_asset.mint",
+                "account": "HomeAsset"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint",
+          "optional": true
+        },
+        {
+          "name": "token_program",
+          "optional": true
+        },
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "asset",
+          "type": "u32"
+        }
+      ]
+    },
+    {
+      "name": "withdraw_credit_receipt",
+      "discriminator": [
+        167,
+        174,
+        165,
+        50,
+        215,
+        170,
+        76,
+        146
+      ],
+      "accounts": [
+        {
+          "name": "credit",
+          "writable": true
+        },
+        {
+          "name": "config",
           "pda": {
             "seeds": [
               {
@@ -2521,11 +4145,18 @@
               {
                 "kind": "const",
                 "value": [
-                  118,
+                  114,
                   101,
-                  116,
-                  104
+                  99,
+                  101,
+                  105,
+                  112,
+                  116
                 ]
+              },
+              {
+                "kind": "arg",
+                "path": "asset"
               }
             ]
           }
@@ -2546,18 +4177,20 @@
                   110,
                   103
                 ]
+              },
+              {
+                "kind": "arg",
+                "path": "asset"
               }
             ]
           }
         },
         {
           "name": "to",
-          "writable": true,
-          "optional": true
+          "writable": true
         },
         {
           "name": "owner",
-          "writable": true,
           "signer": true
         },
         {
@@ -2565,7 +4198,12 @@
           "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
         }
       ],
-      "args": []
+      "args": [
+        {
+          "name": "asset",
+          "type": "u32"
+        }
+      ]
     },
     {
       "name": "withdraw_deposits",
@@ -2767,6 +4405,45 @@
       ]
     },
     {
+      "name": "FastPay",
+      "discriminator": [
+        190,
+        194,
+        190,
+        14,
+        170,
+        25,
+        15,
+        112
+      ]
+    },
+    {
+      "name": "HomeAsset",
+      "discriminator": [
+        240,
+        179,
+        8,
+        91,
+        225,
+        112,
+        217,
+        142
+      ]
+    },
+    {
+      "name": "HomeLock",
+      "discriminator": [
+        71,
+        17,
+        198,
+        144,
+        37,
+        26,
+        69,
+        44
+      ]
+    },
+    {
       "name": "LockMark",
       "discriminator": [
         245,
@@ -2790,6 +4467,19 @@
         6,
         125,
         181
+      ]
+    },
+    {
+      "name": "Paid",
+      "discriminator": [
+        224,
+        28,
+        146,
+        213,
+        204,
+        187,
+        11,
+        3
       ]
     },
     {
@@ -2952,6 +4642,26 @@
     {
       "code": 6029,
       "name": "NotInOrder"
+    },
+    {
+      "code": 6030,
+      "name": "UnknownAsset"
+    },
+    {
+      "code": 6031,
+      "name": "BadMint"
+    },
+    {
+      "code": 6032,
+      "name": "TooManyAssets"
+    },
+    {
+      "code": 6033,
+      "name": "AlreadyPaid"
+    },
+    {
+      "code": 6034,
+      "name": "Underfunded"
     }
   ],
   "types": [
@@ -3101,9 +4811,16 @@
           {
             "name": "slashed",
             "docs": [
-              "A false record was proven here: the bond is gone (D109)."
+              "A false record was proven here: every bond is gone (D109)."
             ],
             "type": "bool"
+          },
+          {
+            "name": "slasher",
+            "docs": [
+              "Who submitted the message proven false: it takes the 20%."
+            ],
+            "type": "pubkey"
           },
           {
             "name": "refused",
@@ -3117,20 +4834,6 @@
             "type": "u64"
           },
           {
-            "name": "bond",
-            "docs": [
-              "vETH held for the chain, in gwei (D110)."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "stated",
-            "docs": [
-              "The part of the bond its BOND record stated for Solana."
-            ],
-            "type": "u64"
-          },
-          {
             "name": "deposits",
             "docs": [
               "Lamports for the flat deposits of its claims."
@@ -3138,26 +4841,18 @@
             "type": "u64"
           },
           {
-            "name": "peer_bond",
-            "docs": [
-              "The ETH bond on Ethereum, counted once its BOND claim is official."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "peer_bond_carried",
-            "type": "bool"
-          },
-          {
-            "name": "open_value",
-            "docs": [
-              "The value of its open claims here, in gwei."
-            ],
-            "type": "u64"
-          },
-          {
             "name": "open_claims",
             "type": "u32"
+          },
+          {
+            "name": "positions",
+            "type": {
+              "vec": {
+                "defined": {
+                  "name": "Position"
+                }
+              }
+            }
           },
           {
             "name": "bump",
@@ -3187,6 +4882,13 @@
             "type": "i64"
           },
           {
+            "name": "opened_at",
+            "docs": [
+              "When it opened: an attest waits only for a claim opened in time."
+            ],
+            "type": "i64"
+          },
+          {
             "name": "held",
             "type": "bool"
           },
@@ -3197,14 +4899,6 @@
           {
             "name": "accepted",
             "type": "bool"
-          },
-          {
-            "name": "value",
-            "type": "u64"
-          },
-          {
-            "name": "peer_bond",
-            "type": "u64"
           },
           {
             "name": "answers",
@@ -3222,17 +4916,19 @@
             "type": "u64"
           },
           {
-            "name": "opened_at",
-            "docs": [
-              "When it opened: an attest waits only for a claim opened in time",
-              "(section 11.7)."
-            ],
-            "type": "i64"
+            "name": "assets",
+            "type": {
+              "vec": {
+                "defined": {
+                  "name": "ClaimAsset"
+                }
+              }
+            }
           },
           {
             "name": "records",
             "docs": [
-              "The LOCK records it carries, one after the other."
+              "The records from Ethereum it acts on, one after the other."
             ],
             "type": "bytes"
           },
@@ -3244,11 +4940,39 @@
       }
     },
     {
+      "name": "ClaimAsset",
+      "docs": [
+        "What a claim moves in one asset, and a BOND it carries."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "home",
+            "type": "u8"
+          },
+          {
+            "name": "asset",
+            "type": "u32"
+          },
+          {
+            "name": "value",
+            "type": "u64"
+          },
+          {
+            "name": "peer_bond",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
       "name": "Config",
       "docs": [
         "The vault's one settings record. Its address is the key the vault",
-        "registered with the protocol, the authority of vETH, and the holder of",
-        "deposits and lamport credits."
+        "registered with the protocol, the authority of every receipt and of the",
+        "vault's token accounts, and the holder of SOL: deposits, locked SOL and",
+        "SOL bonds."
       ],
       "type": {
         "kind": "struct",
@@ -3268,7 +4992,7 @@
           {
             "name": "deposit",
             "docs": [
-              "V1: the flat deposit to object or answer, and the operator's deposit",
+              "D121: the flat deposit to object or answer, and the operator's deposit",
               "for a claim, in lamports."
             ],
             "type": "u64"
@@ -3295,8 +5019,19 @@
           },
           {
             "name": "attest_count",
+            "type": "u64"
+          },
+          {
+            "name": "asset_count",
             "docs": [
-              "Attests of locks so far: attest `n` is at [\"fast\", n] (section 11.7)."
+              "Assets whose home is Solana, SOL being 0 (D128)."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "lock_count",
+            "docs": [
+              "Locks of them."
             ],
             "type": "u64"
           },
@@ -3310,7 +5045,9 @@
     {
       "name": "Credit",
       "docs": [
-        "Lamports and vETH an address can withdraw."
+        "What an address can withdraw in one asset: lamports for SOL, token",
+        "units for a token whose home is Solana, a receipt's units for an asset",
+        "of Ethereum."
       ],
       "type": {
         "kind": "struct",
@@ -3320,11 +5057,15 @@
             "type": "pubkey"
           },
           {
-            "name": "lamports",
-            "type": "u64"
+            "name": "home",
+            "type": "u8"
           },
           {
-            "name": "veth",
+            "name": "asset",
+            "type": "u32"
+          },
+          {
+            "name": "amount",
             "type": "u64"
           },
           {
@@ -3338,7 +5079,7 @@
       "name": "FastLock",
       "docs": [
         "A lock on Ethereum whose receipt an attester issued at once, with the",
-        "LOCK record it stated and the vETH it locked (section 11.7, D123)."
+        "LOCK record it stated and the receipts it locked (section 11.7, D123)."
       ],
       "type": {
         "kind": "struct",
@@ -3346,14 +5087,18 @@
           {
             "name": "id",
             "docs": [
-              "Its number, counted in `Config::attest_count`: guardians find every",
-              "attest by it, also one naming a lock that does not exist."
+              "Its number: guardians find every attest by it, also one naming a lock",
+              "that does not exist."
             ],
             "type": "u64"
           },
           {
             "name": "lock_id",
             "type": "u64"
+          },
+          {
+            "name": "asset",
+            "type": "u32"
           },
           {
             "name": "attester",
@@ -3382,7 +5127,7 @@
           {
             "name": "collateral",
             "docs": [
-              "vETH locked by the attester, 1.25 times the amount."
+              "Receipts locked by the attester, 1.25 times the amount."
             ],
             "type": "u64"
           },
@@ -3393,24 +5138,183 @@
           {
             "name": "claim",
             "docs": [
-              "A claim carrying the same record, opened in time; zero if none."
+              "A claim of the attester's own chain carrying the same record, opened",
+              "in time; zero if none (D125)."
             ],
             "type": "u64"
           },
           {
             "name": "prev",
             "docs": [
-              "The attest of the same lock made before it, zero if none: settled",
-              "first (D126)."
+              "The attest of the same lock made before it, settled first (D126)."
             ],
             "type": "u64"
           },
           {
             "name": "burned",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "FastPay",
+      "docs": [
+        "A burn on Ethereum of a receipt of an asset here, paid at once by an",
+        "attester under the record it stated (section 11.7)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "attester",
+            "type": "pubkey"
+          },
+          {
+            "name": "paid_at",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "HomeAsset",
+      "docs": [
+        "An asset whose home is Solana (section 11.9): SOL, number 0, or a token",
+        "anyone registered."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "number",
+            "type": "u32"
+          },
+          {
+            "name": "mint",
             "docs": [
-              "The attester's vETH was burned: when the true record arrives, the",
-              "receipt goes to the attester."
+              "The default key for SOL."
             ],
+            "type": "pubkey"
+          },
+          {
+            "name": "token_program",
+            "type": "pubkey"
+          },
+          {
+            "name": "decimals",
+            "type": "u8"
+          },
+          {
+            "name": "record_decimals",
+            "docs": [
+              "The receipt's decimals, at most 9: records count in its unit."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "unit",
+            "docs": [
+              "10 ** (decimals - record_decimals): native units per record unit."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "reserve",
+            "docs": [
+              "What backs its receipts on Ethereum, in record units: the locks not",
+              "returned, less what was paid out, plus the backing share of slashes."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "HomeLock",
+      "docs": [
+        "A lock here of an asset whose home is Solana, for its receipt on",
+        "Ethereum (section 11.9)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "id",
+            "type": "u64"
+          },
+          {
+            "name": "asset",
+            "type": "u32"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "recipient",
+            "docs": [
+              "On Ethereum: an address in the last 20 bytes."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "fee",
+            "type": "u64"
+          },
+          {
+            "name": "fast_fee",
+            "docs": [
+              "For the attester of the fast path, or the recipient (D122)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "locked_at",
+            "type": "i64"
+          },
+          {
+            "name": "fee_to",
+            "docs": [
+              "The operator of the first true message carrying it, which takes the",
+              "fee; default until one does."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "fee_paid",
+            "type": "bool"
+          },
+          {
+            "name": "fee_taken",
+            "docs": [
+              "The fee was taken; the record keeps stating it."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "returned",
             "type": "bool"
           },
           {
@@ -3609,8 +5513,8 @@
     {
       "name": "LockMark",
       "docs": [
-        "What became of a lock on Ethereum here: its receipt issued, or given up",
-        "by its recipient. It exists once either happened, so each happens once."
+        "What became of a lock on Ethereum here. It exists once something",
+        "happened, so each happens once."
       ],
       "type": {
         "kind": "struct",
@@ -3634,9 +5538,8 @@
           {
             "name": "attests",
             "docs": [
-              "Attests of the lock so far (D126), and those settled. With any, its",
-              "receipt comes by settling them, or after `first_at` and 7 days when",
-              "none stated the true record."
+              "Attests of the lock (D126), those settled, when its first was made,",
+              "and its latest: each names the one before."
             ],
             "type": "u32"
           },
@@ -3646,17 +5549,10 @@
           },
           {
             "name": "first_at",
-            "docs": [
-              "When its first attest was made: it takes attests for 7 days from it."
-            ],
             "type": "i64"
           },
           {
             "name": "last_attest",
-            "docs": [
-              "Its latest attest: each names the one before, and they are settled",
-              "in the order made."
-            ],
             "type": "u64"
           },
           {
@@ -3670,7 +5566,7 @@
       "name": "Message",
       "docs": [
         "The batch of one processed message, published so that anyone can bring",
-        "the message to the other network (section 11.3). Anyone may close it",
+        "the message to the other network (D120). Anyone may close it",
         "`MESSAGE_KEPT` after it was processed, its rent back to whoever paid it."
       ],
       "type": {
@@ -3699,6 +5595,86 @@
           {
             "name": "bump",
             "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Paid",
+      "docs": [
+        "A burn on Ethereum of a receipt of an asset here, paid."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Position",
+      "docs": [
+        "A chain's place in one asset (D129), in record units."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "home",
+            "type": "u8"
+          },
+          {
+            "name": "asset",
+            "type": "u32"
+          },
+          {
+            "name": "bond",
+            "docs": [
+              "Held here: the asset itself when its home is Solana, its receipt",
+              "otherwise."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "stated",
+            "docs": [
+              "The part its BOND record stated."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "peer_bond",
+            "docs": [
+              "Its bond in the asset on Ethereum, counted once its BOND claim is",
+              "official."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "peer_bond_carried",
+            "type": "bool"
+          },
+          {
+            "name": "open_value",
+            "docs": [
+              "Open claims here in the asset."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "slash_backing",
+            "docs": [
+              "After a slash: the backing's 80%, and the submitter's 20%, not",
+              "settled yet."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "slash_share",
+            "type": "u64"
           }
         ]
       }
@@ -3749,7 +5725,7 @@
     {
       "name": "Request",
       "docs": [
-        "A burn of vETH for ETH on Ethereum (section 11.5)."
+        "A burn here of a receipt, for the asset on Ethereum (section 11.9)."
       ],
       "type": {
         "kind": "struct",
@@ -3759,22 +5735,26 @@
             "type": "u64"
           },
           {
+            "name": "asset",
+            "type": "u32"
+          },
+          {
             "name": "owner",
             "type": "pubkey"
           },
           {
             "name": "amount",
-            "docs": [
-              "In gwei."
-            ],
             "type": "u64"
           },
           {
             "name": "to",
+            "docs": [
+              "On Ethereum: an address in the last 20 bytes."
+            ],
             "type": {
               "array": [
                 "u8",
-                20
+                32
               ]
             }
           },
@@ -3785,8 +5765,8 @@
           {
             "name": "fast_fee",
             "docs": [
-              "For the attester who pays it at once on Ethereum, or the user",
-              "(D122). Burned with the amount."
+              "For the attester who pays it at once on Ethereum, or `to` (D122).",
+              "Burned with the amount."
             ],
             "type": "u64"
           },
@@ -3798,7 +5778,22 @@
             "type": "i64"
           },
           {
+            "name": "fee_to",
+            "docs": [
+              "The operator of the first true message carrying it, which takes the",
+              "fee; default until one does."
+            ],
+            "type": "pubkey"
+          },
+          {
             "name": "fee_paid",
+            "type": "bool"
+          },
+          {
+            "name": "fee_taken",
+            "docs": [
+              "The fee was taken; the record keeps stating it."
+            ],
             "type": "bool"
           },
           {

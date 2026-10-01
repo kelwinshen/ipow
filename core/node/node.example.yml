@@ -43,20 +43,27 @@ networks:
     guardian: { max_deposit: "10000000" }
 
 # The protocol's vault between an EVM network and Solana (spec section 11),
-# for the operator and guardian roles. Amounts: bond in wei, veth_bond in
-# gwei, checkpoint payments in each network's smallest unit.
+# for the operator and guardian roles. Checkpoint payments are in each
+# network's smallest unit; an asset's amounts are in record units, the
+# receipt's smallest unit (gwei for ETH, lamports for SOL).
 # vault:
 #   ethereum: ethereum-sepolia
 #   solana: solana-devnet
 #   ethereum_vault: "0x0000000000000000000000000000000000000000"
 #   solana_vault: "2e1ZUB5eqA6bQfH3f9pbfvibfie7WnvEJeKif53VAm7p"
-#   bond: "2000000000000000000"
-#   veth_bond: "0"
 #   deposits: 5
-#   min_fee_gwei: 0
 #   checkpoint_paid_ethereum: "100000000000000000"
 #   checkpoint_paid_solana: "100000000"
-#   journal: vault.journal     # keep it: the batches this operator wrote
-#   fast:                      # the fast paths; leave out to attest nothing
-#     min_fee_gwei: 100000     # the least fast fee worth attesting or paying
-#     max_gwei: 1000000000     # the largest lock or burn attested or paid
+#   journal: vault.journal       # keep it: the batches this operator wrote
+#   assets:                      # what the operator carries; nothing else
+#     - home: ethereum           # ETH, asset 0 of Ethereum
+#       asset: 0
+#       bond_home: 2000000000    # 2 ETH on Ethereum: covers ETH locks
+#       bond_receipt: 0          # vETH on Solana: covers vETH burns
+#       min_fee: 0               # the least fee worth carrying
+#       fast:                    # the fast paths; leave out to attest nothing
+#         min_fee: 100000        # the least fast fee worth attesting or paying
+#         max: 1000000000        # the largest lock or burn attested or paid
+#     - home: solana             # SOL, asset 0 of Solana
+#       asset: 0
+#       bond_home: 5000000000    # 5 SOL on Solana: covers SOL locks

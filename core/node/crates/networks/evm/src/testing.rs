@@ -203,12 +203,70 @@ impl EvmWorld {
     }
 
     /// The user locks `amount` wei for vETH to `recipient` on Solana, with
-    /// `fee` wei for the operator and `fast_fee` wei for an attester.
+    /// `fee` wei for the operator and `fast_fee` wei for an attester. All
+    /// whole gwei.
     pub async fn user_lock(&self, vault: Address, recipient: [u8; 32], amount: u128, fee: u128, fast_fee: u128) {
-        crate::contracts::IPoWVault::new(vault, &self.user)
-            .lock(FixedBytes(recipient), U256::from(fee), U256::from(fast_fee))
+        let home = crate::contracts::IPoWVault::new(vault, &self.user).home().call().await.unwrap();
+        let g = 1_000_000_000u128;
+        crate::contracts::VaultHome::new(home, &self.user)
+            .lock(0, FixedBytes(recipient), (amount / g) as u64, (fee / g) as u64, (fast_fee / g) as u64)
             .value(U256::from(amount + fee + fast_fee))
             .gas(1_000_000)
+            .send()
+            .await
+            .unwrap()
+            .get_receipt()
+            .await
+            .unwrap();
+    }
+
+    /// The user's account address.
+    pub async fn user_address(&self) -> Address {
+        self.net.keys[4].parse::<PrivateKeySigner>().unwrap().address()
+    }
+
+    /// The user burns `amount` of the receipt of Solana's asset `asset`, for
+    /// the asset to `to` there, with `fee` and `fast_fee`.
+    pub async fn user_burn_receipt(&self, vault: Address, asset: u32, to: [u8; 32], amount: u64, fee: u64, fast_fee: u64) -> u64 {
+        let receipts = crate::contracts::IPoWVault::new(vault, &self.user).receipts().call().await.unwrap();
+        let r = crate::contracts::VaultReceipts::new(receipts, &self.user);
+        let id = r.burnCount().call().await.unwrap() + 1;
+        r.burn(asset, FixedBytes(to), amount, fee, fast_fee).gas(1_000_000).send().await.unwrap().get_receipt().await.unwrap();
+        id
+    }
+
+    /// What `who` holds of the receipt of Solana's asset `asset`.
+    pub async fn receipt_balance(&self, vault: Address, asset: u32, who: Address) -> u128 {
+        let receipts = crate::contracts::IPoWVault::new(vault, &self.user).receipts().call().await.unwrap();
+        let mint = crate::contracts::VaultReceipts::new(receipts, &self.user).receiptOf(asset).call().await.unwrap();
+        if mint == Address::ZERO {
+            return 0;
+        }
+        crate::contracts::IERC20::new(mint, &self.user).balanceOf(who).call().await.unwrap().to::<u128>()
+    }
+
+    /// Anyone issues the receipt of a lock on Solana carried by accepted claim
+    /// `claim`.
+    pub async fn issue_receipt(&self, vault: Address, claim: u64, record: &[u8]) {
+        let receipts = crate::contracts::IPoWVault::new(vault, &self.user).receipts().call().await.unwrap();
+        crate::contracts::VaultReceipts::new(receipts, &self.user)
+            .issue(U256::from(claim), Bytes::copy_from_slice(record))
+            .gas(1_000_000)
+            .send()
+            .await
+            .unwrap()
+            .get_receipt()
+            .await
+            .unwrap();
+    }
+
+    /// Anyone makes the receipt of Solana's asset from accepted claim
+    /// `claim` carrying its ASSET record.
+    pub async fn make_receipt(&self, vault: Address, claim: u64, record: &[u8]) {
+        let receipts = crate::contracts::IPoWVault::new(vault, &self.user).receipts().call().await.unwrap();
+        crate::contracts::VaultReceipts::new(receipts, &self.user)
+            .makeReceipt(U256::from(claim), Bytes::copy_from_slice(record))
+            .gas(3_000_000)
             .send()
             .await
             .unwrap()
