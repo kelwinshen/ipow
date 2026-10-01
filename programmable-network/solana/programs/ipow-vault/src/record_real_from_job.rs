@@ -24,7 +24,7 @@ pub fn handler(ctx: Context<RecordRealFromJob>, _job_id: u64) -> Result<()> {
 #[derive(Accounts)]
 #[instruction(job_id: u64)]
 pub struct RecordRealFromJob<'info> {
-    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
+    #[account(seeds = [CONFIG_SEED, &[config.peer]], bump = config.bump)]
     pub config: Account<'info, Config>,
     #[account(seeds = [b"job", &job_id.to_le_bytes()], bump = job.bump, seeds::program = ipow_protocol::ID)]
     pub job: Account<'info, Job>,
@@ -32,7 +32,7 @@ pub struct RecordRealFromJob<'info> {
         init,
         payer = payer,
         space = 8 + Real::INIT_SPACE,
-        seeds = [REAL_SEED, job.proof_block.hash.as_ref(), &job.proof_block.height.to_le_bytes(), &job.proof_block.epoch_time.to_le_bytes()],
+        seeds = [REAL_SEED, config.key().as_ref(), job.proof_block.hash.as_ref(), &job.proof_block.height.to_le_bytes(), &job.proof_block.epoch_time.to_le_bytes()],
         bump
     )]
     pub real: Account<'info, Real>,

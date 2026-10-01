@@ -26,9 +26,10 @@ pub fn handler(ctx: Context<BurnFast>, _attest: u64) -> Result<()> {
     ctx.accounts.fast.burned = true;
     let a = &ctx.accounts;
     let caller = a.caller.key();
-    credit_to(&a.caller_credit, &caller, ETHEREUM, asset, rest, &a.caller.to_account_info(), &a.system_program.to_account_info())?;
+    credit_to(&a.caller_credit, &a.config.key(), &caller, a.config.peer, asset, rest, &a.caller.to_account_info(), &a.system_program.to_account_info())?;
     let receipt = Receipt {
         config: &a.config.to_account_info(),
+        config_peer: a.config.peer,
         config_bump: a.config.bump,
         mint: &a.mint.to_account_info(),
         holding: &a.holding.to_account_info(),
@@ -40,15 +41,17 @@ pub fn handler(ctx: Context<BurnFast>, _attest: u64) -> Result<()> {
 #[derive(Accounts)]
 #[instruction(attest: u64)]
 pub struct BurnFast<'info> {
-    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
+    #[account(seeds = [CONFIG_SEED, &[config.peer]], bump = config.bump)]
     pub config: Box<Account<'info, Config>>,
-    #[account(mut, seeds = [FAST_SEED, &attest.to_le_bytes()], bump = fast.bump)]
+    #[account(mut, seeds = [FAST_SEED, config.key().as_ref(), &attest.to_le_bytes()], bump = fast.bump)]
     pub fast: Box<Account<'info, FastLock>>,
     /// The claim linked to the attest, when there is one: it must be refused.
+    /// A claim of this pair: claim numbers repeat across pairs (D132).
+    #[account(seeds = [CLAIM_SEED, config.key().as_ref(), &fast.claim.to_le_bytes()], bump = linked.bump)]
     pub linked: Option<Box<Account<'info, Claim>>>,
-    #[account(mut, seeds = [RECEIPT_SEED, &fast.asset.to_le_bytes()], bump)]
+    #[account(mut, seeds = [RECEIPT_SEED, config.key().as_ref(), &fast.asset.to_le_bytes()], bump)]
     pub mint: Box<Account<'info, Mint>>,
-    #[account(mut, seeds = [HOLDING_SEED, &fast.asset.to_le_bytes()], bump)]
+    #[account(mut, seeds = [HOLDING_SEED, config.key().as_ref(), &fast.asset.to_le_bytes()], bump)]
     pub holding: Box<Account<'info, TokenAccount>>,
     /// CHECK: the caller's credit in the receipt; checked when used.
     #[account(mut)]

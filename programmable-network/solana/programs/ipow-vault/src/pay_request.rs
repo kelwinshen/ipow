@@ -18,7 +18,7 @@ pub fn handler<'info>(
     _asset: u32,
     record: Vec<u8>,
 ) -> Result<()> {
-    require!(record.len() == REQUEST_LEN && record[0] == REQUEST && record[1] == ETHEREUM, VaultError::WrongRecord);
+    require!(record.len() == REQUEST_LEN && record[0] == REQUEST && record[1] == ctx.accounts.config.peer, VaultError::WrongRecord);
     require!(u64_at(&record, 6) == request_id, VaultError::WrongRecord);
     let claim = &ctx.accounts.claim;
     require!(claim.accepted && claim.carries(&record), VaultError::NotAccepted);
@@ -34,7 +34,7 @@ pub fn handler<'info>(
     // A payment at once under this record, if any: its account is always
     // named, so nobody can pay the burn's address twice by leaving it out.
     let f = &ctx.accounts.fast_pay;
-    let (address, _) = Pubkey::find_program_address(&[FAST_PAY_SEED, &u64_at(&record, 6).to_le_bytes(), &sha256(&[&record])], &crate::ID);
+    let (address, _) = Pubkey::find_program_address(&[FAST_PAY_SEED, ctx.accounts.config.key().as_ref(), &u64_at(&record, 6).to_le_bytes(), &sha256(&[&record])], &crate::ID);
     require_keys_eq!(f.key(), address, VaultError::WrongAccount);
     let paid_at_once = !f.data_is_empty() && f.owner == &crate::ID;
     let (to_attester, attester) = match paid_at_once {
@@ -61,6 +61,7 @@ pub fn handler<'info>(
             &s.home_asset,
             amount,
             &s.config.to_account_info(),
+            s.config.peer,
             s.config.bump,
             to,
             s.tokens.as_ref().map(|t| t.to_account_info()).as_ref(),
@@ -79,14 +80,14 @@ pub fn handler<'info>(
 #[derive(Accounts)]
 #[instruction(claim_id: u64, request_id: u64, asset: u32)]
 pub struct PayRequest<'info> {
-    #[account(mut, seeds = [CONFIG_SEED], bump = config.bump)]
+    #[account(mut, seeds = [CONFIG_SEED, &[config.peer]], bump = config.bump)]
     pub config: Box<Account<'info, Config>>,
-    #[account(seeds = [CLAIM_SEED, &claim_id.to_le_bytes()], bump = claim.bump)]
+    #[account(seeds = [CLAIM_SEED, config.key().as_ref(), &claim_id.to_le_bytes()], bump = claim.bump)]
     pub claim: Box<Account<'info, Claim>>,
-    #[account(mut, seeds = [ASSET_SEED, &asset.to_le_bytes()], bump = home_asset.bump)]
+    #[account(mut, seeds = [ASSET_SEED, config.key().as_ref(), &asset.to_le_bytes()], bump = home_asset.bump)]
     pub home_asset: Box<Account<'info, HomeAsset>>,
     /// Once per burn number.
-    #[account(init, payer = payer, space = 8 + Paid::INIT_SPACE, seeds = [PAID_SEED, &request_id.to_le_bytes()], bump)]
+    #[account(init, payer = payer, space = 8 + Paid::INIT_SPACE, seeds = [PAID_SEED, config.key().as_ref(), &request_id.to_le_bytes()], bump)]
     pub paid: Box<Account<'info, Paid>>,
     /// CHECK: the record of a payment at once under this record; checked in
     /// the handler, and empty when nobody paid.
@@ -98,7 +99,7 @@ pub struct PayRequest<'info> {
     /// CHECK: the attester, or its token account; checked in the handler.
     #[account(mut)]
     pub attester: Option<UncheckedAccount<'info>>,
-    #[account(mut, seeds = [HOME_TOKENS_SEED, home_asset.mint.as_ref()], bump)]
+    #[account(mut, seeds = [HOME_TOKENS_SEED, config.key().as_ref(), home_asset.mint.as_ref()], bump)]
     pub tokens: Option<Box<InterfaceAccount<'info, TokenAccount>>>,
     pub mint: Option<Box<InterfaceAccount<'info, Mint>>>,
     pub token_program: Option<Interface<'info, TokenInterface>>,

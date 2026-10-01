@@ -9,8 +9,10 @@ use crate::constants::{MAX_ASSETS, MAX_BATCH, MAX_RAW_TX};
 #[account]
 #[derive(InitSpace)]
 pub struct Config {
-    /// The vault on Ethereum, as a registration names it (D106).
-    pub ethereum_vault: [u8; 20],
+    /// The pair's other network (D132, D133), and its vault there, as a
+    /// registration names it (D106).
+    pub peer: u8,
+    pub peer_vault: [u8; 20],
     /// D121: the flat deposit to object or answer, and the operator's deposit
     /// for a claim, in lamports.
     pub deposit: u64,

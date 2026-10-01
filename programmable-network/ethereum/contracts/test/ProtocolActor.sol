@@ -25,7 +25,7 @@ contract ProtocolActor {
     }
 
     function lockBond() external payable {
-        protocol.lockBond{value: msg.value}();
+        protocol.lockBond{value: msg.value}(msg.value);
     }
 
     function withdrawBond(uint256 amount) external {

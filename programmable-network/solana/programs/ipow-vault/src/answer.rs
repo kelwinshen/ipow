@@ -26,17 +26,17 @@ pub fn handler(ctx: Context<Answer>, _claim_id: u64) -> Result<()> {
 #[derive(Accounts)]
 #[instruction(claim_id: u64)]
 pub struct Answer<'info> {
-    #[account(mut, seeds = [CLAIM_SEED, &claim_id.to_le_bytes()], bump = claim.bump)]
+    #[account(mut, seeds = [CLAIM_SEED, config.key().as_ref(), &claim_id.to_le_bytes()], bump = claim.bump)]
     pub claim: Account<'info, Claim>,
     #[account(
         init_if_needed,
         payer = who,
         space = 8 + Stake::INIT_SPACE,
-        seeds = [STAKE_SEED, &claim_id.to_le_bytes(), who.key().as_ref()],
+        seeds = [STAKE_SEED, config.key().as_ref(), &claim_id.to_le_bytes(), who.key().as_ref()],
         bump
     )]
     pub stake: Account<'info, Stake>,
-    #[account(mut, seeds = [CONFIG_SEED], bump = config.bump)]
+    #[account(mut, seeds = [CONFIG_SEED, &[config.peer]], bump = config.bump)]
     pub config: Account<'info, Config>,
     #[account(mut)]
     pub who: Signer<'info>,

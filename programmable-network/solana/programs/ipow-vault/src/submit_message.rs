@@ -80,6 +80,7 @@ pub fn handler<'info>(
     require!(v.has_coin, VaultError::NoCoin);
     require!(v.has_tag && v.tag == message_payload(&batch), VaultError::WrongTag);
 
+    let (config_key, peer) = (ctx.accounts.config.key(), ctx.accounts.config.peer);
     let c = &mut ctx.accounts.chain;
     c.coin_txid = sha256d(&btc.raw_tx);
     c.coin_vout = input_index;
@@ -89,14 +90,14 @@ pub fn handler<'info>(
     // The batch is published in an account of its own (D120): nobody can
     // hide it from, or fake it for, whoever brings the message to the other
     // network.
-    let (address, bump) = Pubkey::find_program_address(&[MESSAGE_SEED, operator.as_ref(), &index.to_le_bytes()], &crate::ID);
+    let (address, bump) = Pubkey::find_program_address(&[MESSAGE_SEED, config_key.as_ref(), operator.as_ref(), &index.to_le_bytes()], &crate::ID);
     require_keys_eq!(ctx.accounts.message.key(), address, VaultError::WrongAccount);
     create_pda(
         &ctx.accounts.message,
         &ctx.accounts.submitter.to_account_info(),
         &ctx.accounts.system_program.to_account_info(),
         Message::space(batch.len()),
-        &[MESSAGE_SEED, operator.as_ref(), &index.to_le_bytes(), &[bump]],
+        &[MESSAGE_SEED, config_key.as_ref(), operator.as_ref(), &index.to_le_bytes(), &[bump]],
     )?;
     save(&ctx.accounts.message, &Message { operator, payer: ctx.accounts.submitter.key(), index, processed_at: crate::util::now()?, batch: batch.clone(), bump })?;
 
@@ -104,7 +105,7 @@ pub fn handler<'info>(
     let plan = if btc.raw_tx.len() > MAX_RAW_TX || batch.len() > MAX_BATCH {
         None
     } else {
-        judge(&batch, c, ctx.remaining_accounts)?
+        judge(&batch, c, &config_key, peer, ctx.remaining_accounts)?
     };
     match plan {
         Some(p) => apply(ctx, operator, p),
@@ -134,7 +135,8 @@ fn read_at<T: AccountDeserialize>(account: &AccountInfo, seeds: &[&[u8]]) -> Res
 /// Judges the records about Solana and measures the others. `None` when the
 /// message is false: a record that is not so here, or a batch that does not
 /// parse, since its hash is what the operator wrote.
-fn judge(batch: &[u8], c: &Chain, remaining: &[AccountInfo]) -> Result<Option<Plan>> {
+fn judge(batch: &[u8], c: &Chain, config: &Pubkey, peer: u8, remaining: &[AccountInfo]) -> Result<Option<Plan>> {
+    let ck = config.as_ref();
     let mut plan = Plan::default();
     let mut o = 0;
     let mut next = 0;
@@ -155,7 +157,7 @@ fn judge(batch: &[u8], c: &Chain, remaining: &[AccountInfo]) -> Result<Option<Pl
             continue;
         }
         let net = r[1];
-        if net != ETHEREUM && net != SOLANA {
+        if net != peer && net != SOLANA {
             return Ok(None);
         }
         if kind != BOND {
@@ -169,7 +171,7 @@ fn judge(batch: &[u8], c: &Chain, remaining: &[AccountInfo]) -> Result<Option<Pl
                 LOCK => {
                     let id = u64_at(r, 6);
                     let i = next;
-                    let l: Option<HomeLock> = read_at(take(remaining, &mut next)?, &[HOME_LOCK_SEED, &id.to_le_bytes()])?;
+                    let l: Option<HomeLock> = read_at(take(remaining, &mut next)?, &[HOME_LOCK_SEED, ck, &id.to_le_bytes()])?;
                     plan.lock_fees.push(i);
                     // Returned or not: Ethereum issues nothing for a lock it
                     // marked never usable (section 11.5).
@@ -178,18 +180,18 @@ fn judge(batch: &[u8], c: &Chain, remaining: &[AccountInfo]) -> Result<Option<Pl
                 REQUEST => {
                     let id = u64_at(r, 6);
                     let i = next;
-                    let q: Option<Request> = read_at(take(remaining, &mut next)?, &[REQUEST_SEED, &id.to_le_bytes()])?;
+                    let q: Option<Request> = read_at(take(remaining, &mut next)?, &[REQUEST_SEED, ck, &id.to_le_bytes()])?;
                     plan.request_fees.push(i);
                     q.is_some_and(|q| request_record(SOLANA, q.asset, q.id, q.amount, &q.to, q.fee, q.fast_fee, q.requested_at) == r)
                 }
                 CANCEL => {
                     let id = u64_at(r, 2);
-                    let m: Option<LockMark> = read_at(take(remaining, &mut next)?, &[LOCK_SEED, &id.to_le_bytes()])?;
+                    let m: Option<LockMark> = read_at(take(remaining, &mut next)?, &[LOCK_SEED, ck, &id.to_le_bytes()])?;
                     m.is_some_and(|m| m.given_up)
                 }
                 ASSET => {
                     let n = u32_at(r, 2);
-                    let a: Option<HomeAsset> = read_at(take(remaining, &mut next)?, &[ASSET_SEED, &n.to_le_bytes()])?;
+                    let a: Option<HomeAsset> = read_at(take(remaining, &mut next)?, &[ASSET_SEED, ck, &n.to_le_bytes()])?;
                     a.is_some_and(|a| a.mint.to_bytes() == b32_at(r, 6) && a.record_decimals == r[38])
                 }
                 _ => {
@@ -197,7 +199,7 @@ fn judge(batch: &[u8], c: &Chain, remaining: &[AccountInfo]) -> Result<Option<Pl
                     // The same BOND again is true and changes nothing.
                     let (home, asset, amount) = (r[2], u32_at(r, 3), u64_at(r, 7));
                     let p = c.position(home, asset).map(|i| c.positions[i]).unwrap_or_default();
-                    let bad = (home != ETHEREUM && home != SOLANA)
+                    let bad = (home != peer && home != SOLANA)
                         || amount == 0
                         || plan.stated.iter().any(|s| s.0 == home && s.1 == asset)
                         || if p.stated != 0 { amount != p.stated } else { amount > p.bond };
@@ -216,13 +218,13 @@ fn judge(batch: &[u8], c: &Chain, remaining: &[AccountInfo]) -> Result<Option<Pl
                 plan.locks += 1;
                 let value = u64_at(r, 14).checked_add(u64_at(r, 62));
                 let Some(value) = value else { return Ok(None) };
-                plan.add(ETHEREUM, u32_at(r, 2), value, 0);
+                plan.add(peer, u32_at(r, 2), value, 0);
                 plan.acting = true;
             }
             REQUEST => {
                 // Paid here, in an asset registered here, to an address.
                 let n = u32_at(r, 2);
-                let a: Option<HomeAsset> = read_at(take(remaining, &mut next)?, &[ASSET_SEED, &n.to_le_bytes()])?;
+                let a: Option<HomeAsset> = read_at(take(remaining, &mut next)?, &[ASSET_SEED, ck, &n.to_le_bytes()])?;
                 if a.is_none() || b32_at(r, 22) == [0u8; 32] {
                     return Ok(None);
                 }
@@ -234,7 +236,7 @@ fn judge(batch: &[u8], c: &Chain, remaining: &[AccountInfo]) -> Result<Option<Pl
                 // Ethereum gives up only a lock it learned from a true LOCK
                 // record, so a lock that does not exist here is a lie.
                 let id = u64_at(r, 2);
-                let l: Option<HomeLock> = read_at(take(remaining, &mut next)?, &[HOME_LOCK_SEED, &id.to_le_bytes()])?;
+                let l: Option<HomeLock> = read_at(take(remaining, &mut next)?, &[HOME_LOCK_SEED, ck, &id.to_le_bytes()])?;
                 let Some(l) = l else { return Ok(None) };
                 let Some(value) = l.amount.checked_add(l.fast_fee) else { return Ok(None) };
                 plan.add(SOLANA, l.asset, value, 0);
@@ -247,7 +249,7 @@ fn judge(batch: &[u8], c: &Chain, remaining: &[AccountInfo]) -> Result<Option<Pl
                 // A fact of Ethereum, judged there (D109). Here the first one
                 // carried in a claim counts, and a later one is not acted on.
                 let (home, asset, amount) = (r[2], u32_at(r, 3), u64_at(r, 7));
-                if home != ETHEREUM && home != SOLANA {
+                if home != peer && home != SOLANA {
                     return Ok(None);
                 }
                 let carried = c.position(home, asset).is_some_and(|i| c.positions[i].peer_bond_carried);
@@ -328,9 +330,9 @@ fn apply<'info>(ctx: Context<'info, SubmitMessage<'info>>, operator: Pubkey, p: 
                 slots.push(c.slot(ca.home, ca.asset)?);
             }
             let id = a.config.claim_count + 1;
-            let (address, bump) = Pubkey::find_program_address(&[CLAIM_SEED, &id.to_le_bytes()], &crate::ID);
+            let (address, bump) = Pubkey::find_program_address(&[CLAIM_SEED, a.config.key().as_ref(), &id.to_le_bytes()], &crate::ID);
             require_keys_eq!(a.claim.key(), address, VaultError::WrongAccount);
-            create_pda(&a.claim, &payer, &system, Claim::space(p.assets.len(), p.records.len()), &[CLAIM_SEED, &id.to_le_bytes(), &[bump]])?;
+            create_pda(&a.claim, &payer, &system, Claim::space(p.assets.len(), p.records.len()), &[CLAIM_SEED, a.config.key().as_ref(), &id.to_le_bytes(), &[bump]])?;
             let t = crate::util::now()?;
             save(
                 &a.claim,
@@ -350,9 +352,9 @@ fn apply<'info>(ctx: Context<'info, SubmitMessage<'info>>, operator: Pubkey, p: 
                     bump,
                 },
             )?;
-            let (stake, stake_bump) = Pubkey::find_program_address(&[STAKE_SEED, &id.to_le_bytes(), operator.as_ref()], &crate::ID);
+            let (stake, stake_bump) = Pubkey::find_program_address(&[STAKE_SEED, a.config.key().as_ref(), &id.to_le_bytes(), operator.as_ref()], &crate::ID);
             require_keys_eq!(a.stake.key(), stake, VaultError::WrongAccount);
-            create_pda(&a.stake, &payer, &system, 8 + Stake::INIT_SPACE, &[STAKE_SEED, &id.to_le_bytes(), operator.as_ref(), &[stake_bump]])?;
+            create_pda(&a.stake, &payer, &system, 8 + Stake::INIT_SPACE, &[STAKE_SEED, a.config.key().as_ref(), &id.to_le_bytes(), operator.as_ref(), &[stake_bump]])?;
             save(&a.stake, &Stake { answers: 1, objections: 0, bump: stake_bump })?;
             a.config.claim_count = id;
             c.deposits -= deposit;
@@ -402,11 +404,11 @@ fn slash<'info>(ctx: Context<'info, SubmitMessage<'info>>, operator: Pubkey) -> 
 #[derive(Accounts)]
 #[instruction(operator: Pubkey, btc: Btc)]
 pub struct SubmitMessage<'info> {
-    #[account(mut, seeds = [CONFIG_SEED], bump = config.bump)]
+    #[account(mut, seeds = [CONFIG_SEED, &[config.peer]], bump = config.bump)]
     pub config: Box<Account<'info, Config>>,
-    #[account(mut, seeds = [CHAIN_SEED, operator.as_ref()], bump = chain.bump)]
+    #[account(mut, seeds = [CHAIN_SEED, config.key().as_ref(), operator.as_ref()], bump = chain.bump)]
     pub chain: Box<Account<'info, Chain>>,
-    #[account(seeds = [REAL_SEED, btc.real.hash.as_ref(), &btc.real.height.to_le_bytes(), &btc.real.epoch_time.to_le_bytes()], bump = real.bump)]
+    #[account(seeds = [REAL_SEED, config.key().as_ref(), btc.real.hash.as_ref(), &btc.real.height.to_le_bytes(), &btc.real.epoch_time.to_le_bytes()], bump = real.bump)]
     pub real: Box<Account<'info, Real>>,
     /// CHECK: a finished walk from the real block down; read and checked.
     pub walk: UncheckedAccount<'info>,

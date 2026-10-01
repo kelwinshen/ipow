@@ -416,7 +416,7 @@ impl ProtocolNetwork for EvmNetwork {
     }
 
     async fn lock_bond(&self, amount: Amount) -> anyhow::Result<()> {
-        send!(self, self.protocol().lockBond().value(U256::from(amount)));
+        send!(self, self.protocol().lockBond(U256::from(amount)).value(U256::from(amount)));
         Ok(())
     }
 

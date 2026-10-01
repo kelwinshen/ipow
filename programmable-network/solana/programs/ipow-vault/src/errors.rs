@@ -29,6 +29,8 @@ pub enum VaultError {
     NotAuthority,
     NotOperator,
     WrongRecord,
+    #[msg("A pair names this network and another of D133's: 1 to 8")]
+    BadNetwork,
     AlreadyDone,
     NotRefused,
     NotInOrder,

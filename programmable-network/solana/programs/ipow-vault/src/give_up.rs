@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 
 use crate::constants::*;
 use crate::errors::VaultError;
-use crate::state::{Claim, LockMark};
+use crate::state::{Claim, Config, LockMark};
 use crate::util::EthLock;
 
 /// The recipient of a lock on Ethereum gives it up: no receipt will ever be
@@ -13,7 +13,7 @@ use crate::util::EthLock;
 /// receipt was issued, or that was attested, has its mark already and
 /// cannot be given up.
 pub fn handler(ctx: Context<GiveUp>, _claim_id: u64, lock_id: u64, record: Vec<u8>) -> Result<()> {
-    let l = EthLock::read(&record)?;
+    let l = EthLock::read(&record, ctx.accounts.config.peer)?;
     require!(l.id == lock_id, VaultError::WrongRecord);
     let claim = &ctx.accounts.claim;
     require!(claim.accepted && claim.carries(&record), VaultError::NotAccepted);
@@ -33,9 +33,11 @@ pub fn handler(ctx: Context<GiveUp>, _claim_id: u64, lock_id: u64, record: Vec<u
 #[derive(Accounts)]
 #[instruction(claim_id: u64, lock_id: u64)]
 pub struct GiveUp<'info> {
-    #[account(seeds = [CLAIM_SEED, &claim_id.to_le_bytes()], bump = claim.bump)]
+    #[account(seeds = [CONFIG_SEED, &[config.peer]], bump = config.bump)]
+    pub config: Box<Account<'info, Config>>,
+    #[account(seeds = [CLAIM_SEED, config.key().as_ref(), &claim_id.to_le_bytes()], bump = claim.bump)]
     pub claim: Box<Account<'info, Claim>>,
-    #[account(init, payer = recipient, space = 8 + LockMark::INIT_SPACE, seeds = [LOCK_SEED, &lock_id.to_le_bytes()], bump)]
+    #[account(init, payer = recipient, space = 8 + LockMark::INIT_SPACE, seeds = [LOCK_SEED, config.key().as_ref(), &lock_id.to_le_bytes()], bump)]
     pub mark: Box<Account<'info, LockMark>>,
     #[account(mut)]
     pub recipient: Signer<'info>,

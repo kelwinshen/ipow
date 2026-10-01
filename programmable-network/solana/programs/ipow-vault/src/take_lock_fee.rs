@@ -22,6 +22,7 @@ pub fn handler<'info>(ctx: Context<'info, TakeLockFee<'info>>, _lock_id: u64) ->
         &a.asset,
         fee,
         &a.config.to_account_info(),
+        a.config.peer,
         a.config.bump,
         &to,
         a.tokens.as_ref().map(|t| t.to_account_info()).as_ref(),
@@ -33,15 +34,15 @@ pub fn handler<'info>(ctx: Context<'info, TakeLockFee<'info>>, _lock_id: u64) ->
 #[derive(Accounts)]
 #[instruction(lock_id: u64)]
 pub struct TakeLockFee<'info> {
-    #[account(mut, seeds = [CONFIG_SEED], bump = config.bump)]
+    #[account(mut, seeds = [CONFIG_SEED, &[config.peer]], bump = config.bump)]
     pub config: Box<Account<'info, Config>>,
-    #[account(mut, seeds = [HOME_LOCK_SEED, &lock_id.to_le_bytes()], bump = lock.bump)]
+    #[account(mut, seeds = [HOME_LOCK_SEED, config.key().as_ref(), &lock_id.to_le_bytes()], bump = lock.bump)]
     pub lock: Box<Account<'info, HomeLock>>,
-    #[account(seeds = [ASSET_SEED, &lock.asset.to_le_bytes()], bump = asset.bump)]
+    #[account(seeds = [ASSET_SEED, config.key().as_ref(), &lock.asset.to_le_bytes()], bump = asset.bump)]
     pub asset: Box<Account<'info, HomeAsset>>,
     #[account(mut, token::authority = operator)]
     pub to: Option<Box<InterfaceAccount<'info, TokenAccount>>>,
-    #[account(mut, seeds = [HOME_TOKENS_SEED, asset.mint.as_ref()], bump)]
+    #[account(mut, seeds = [HOME_TOKENS_SEED, config.key().as_ref(), asset.mint.as_ref()], bump)]
     pub tokens: Option<Box<InterfaceAccount<'info, TokenAccount>>>,
     pub mint: Option<Box<InterfaceAccount<'info, Mint>>>,
     pub token_program: Option<Interface<'info, TokenInterface>>,

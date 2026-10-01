@@ -192,6 +192,14 @@ fn pr(seeds: &[&[u8]]) -> Pubkey {
 fn vt(seeds: &[&[u8]]) -> Pubkey {
     Pubkey::find_program_address(seeds, &ipow_vault::ID).0
 }
+/// An account of the pair with Ethereum: its seeds after the first are
+/// prefixed with the pair's configuration (D132).
+fn cv(seeds: &[&[u8]]) -> Pubkey {
+    let c = config();
+    let mut all: Vec<&[u8]> = vec![seeds[0], c.as_ref()];
+    all.extend_from_slice(&seeds[1..]);
+    vt(&all)
+}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Ref {
@@ -216,7 +224,7 @@ fn node_pda(r: &Ref) -> Pubkey {
     lc(&[b"node", &r.hash, &r.height.to_le_bytes(), &r.epoch_time.to_le_bytes()])
 }
 fn real_pda(r: &Ref) -> Pubkey {
-    vt(&[b"real", &r.hash, &r.height.to_le_bytes(), &r.epoch_time.to_le_bytes()])
+    cv(&[b"real", &r.hash, &r.height.to_le_bytes(), &r.epoch_time.to_le_bytes()])
 }
 fn job_pda(id: u64) -> Pubkey {
     pr(&[b"job", &id.to_le_bytes()])
@@ -224,52 +232,53 @@ fn job_pda(id: u64) -> Pubkey {
 fn operator_pda(o: &Pubkey) -> Pubkey {
     pr(&[b"operator", o.as_ref()])
 }
+/// The pair with Ethereum's configuration.
 fn config() -> Pubkey {
-    vt(&[b"config"])
+    vt(&[b"config", &[ETHEREUM]])
 }
 /// The receipt here of Ethereum's asset `n`, and the vault's account of it.
 fn receipt(n: u32) -> Pubkey {
-    vt(&[b"receipt", &n.to_le_bytes()])
+    cv(&[b"receipt", &n.to_le_bytes()])
 }
 fn holding(n: u32) -> Pubkey {
-    vt(&[b"holding", &n.to_le_bytes()])
+    cv(&[b"holding", &n.to_le_bytes()])
 }
 /// vETH.
 fn mint() -> Pubkey {
     receipt(0)
 }
 fn asset_pda(n: u32) -> Pubkey {
-    vt(&[b"asset", &n.to_le_bytes()])
+    cv(&[b"asset", &n.to_le_bytes()])
 }
 fn home_lock_pda(id: u64) -> Pubkey {
-    vt(&[b"home_lock", &id.to_le_bytes()])
+    cv(&[b"home_lock", &id.to_le_bytes()])
 }
 fn paid_pda(id: u64) -> Pubkey {
-    vt(&[b"paid", &id.to_le_bytes()])
+    cv(&[b"paid", &id.to_le_bytes()])
 }
 fn fast_pay_pda(id: u64, record: &[u8]) -> Pubkey {
-    vt(&[b"fast_pay", &id.to_le_bytes(), &sha256(&[record])])
+    cv(&[b"fast_pay", &id.to_le_bytes(), &sha256(&[record])])
 }
 fn chain_pda(o: &Pubkey) -> Pubkey {
-    vt(&[b"chain", o.as_ref()])
+    cv(&[b"chain", o.as_ref()])
 }
 fn claim_pda(id: u64) -> Pubkey {
-    vt(&[b"claim", &id.to_le_bytes()])
+    cv(&[b"claim", &id.to_le_bytes()])
 }
 fn stake_pda(id: u64, who: &Pubkey) -> Pubkey {
-    vt(&[b"stake", &id.to_le_bytes(), who.as_ref()])
+    cv(&[b"stake", &id.to_le_bytes(), who.as_ref()])
 }
 fn credit_pda(who: &Pubkey, home: u8, asset: u32) -> Pubkey {
-    vt(&[b"credit", who.as_ref(), &[home], &asset.to_le_bytes()])
+    cv(&[b"credit", who.as_ref(), &[home], &asset.to_le_bytes()])
 }
 fn request_pda(id: u64) -> Pubkey {
-    vt(&[b"request", &id.to_le_bytes()])
+    cv(&[b"request", &id.to_le_bytes()])
 }
 fn lock_pda(id: u64) -> Pubkey {
-    vt(&[b"lock", &id.to_le_bytes()])
+    cv(&[b"lock", &id.to_le_bytes()])
 }
 fn fast_pda(id: u64) -> Pubkey {
-    vt(&[b"fast", &id.to_le_bytes()])
+    cv(&[b"fast", &id.to_le_bytes()])
 }
 fn ata(owner: &Pubkey) -> Pubkey {
     anchor_spl::associated_token::get_associated_token_address(owner, &mint())
@@ -277,8 +286,16 @@ fn ata(owner: &Pubkey) -> Pubkey {
 fn checkpoint_tag(n: u64) -> [u8; 32] {
     sha256(&[b"iPoW checkpoint", ipow_vault::ID.as_ref(), &n.to_le_bytes()])
 }
+/// A registration of the pair with Ethereum (D133): Ethereum's side first,
+/// its vault and operator in 32 bytes, then this pair's configuration and
+/// the operator here.
 fn pair_commitment(peer: &[u8; 20], operator: &Pubkey) -> [u8; 32] {
-    sha256(&[b"iPoW pair", &ETHEREUM_VAULT, peer, ipow_vault::ID.as_ref(), operator.as_ref()])
+    let pad = |a: &[u8; 20]| {
+        let mut out = [0u8; 32];
+        out[12..].copy_from_slice(a);
+        out
+    };
+    sha256(&[b"iPoW pair", &[ETHEREUM], &pad(&ETHEREUM_VAULT), &pad(peer), &[SOLANA], config().as_ref(), operator.as_ref()])
 }
 fn payload(batch: &[u8]) -> [u8; 32] {
     sha256(&[b"iPoW vault", batch])
@@ -401,7 +418,7 @@ impl World {
                     protocol_program: ipow_protocol::ID,
                     system_program: SYSTEM,
                 },
-                ipow_vault::client::args::Initialize { ethereum_vault: ETHEREUM_VAULT, deposit: DEPOSIT, min_certifying_escrow: MIN_CERTIFYING_ESCROW },
+                ipow_vault::client::args::Initialize { peer: ETHEREUM, peer_vault: ETHEREUM_VAULT, deposit: DEPOSIT, min_certifying_escrow: MIN_CERTIFYING_ESCROW },
             ),
             &[&payer],
         )
@@ -847,7 +864,7 @@ impl World {
     fn collect(&mut self, claim_id: u64, who: &Keypair) -> Result<(), String> {
         let ix = self.ix(
             ipow_vault::ID,
-            ipow_vault::client::accounts::Collect {
+            ipow_vault::client::accounts::Collect { config: config(),
                 claim: claim_pda(claim_id),
                 stake: stake_pda(claim_id, &who.pubkey()),
                 credit: credit_pda(&who.pubkey(), SOLANA, 0),
@@ -902,7 +919,7 @@ impl World {
         let lock_id = u64::from_be_bytes(record[6..14].try_into().unwrap());
         let ix = self.ix(
             ipow_vault::ID,
-            ipow_vault::client::accounts::GiveUp { claim: claim_pda(claim_id), mark: lock_pda(lock_id), recipient: who.pubkey(), system_program: SYSTEM },
+            ipow_vault::client::accounts::GiveUp { config: config(), claim: claim_pda(claim_id), mark: lock_pda(lock_id), recipient: who.pubkey(), system_program: SYSTEM },
             ipow_vault::client::args::GiveUp { claim_id, lock_id, record: record.to_vec() },
         );
         self.send(ix, &[who])
@@ -1020,7 +1037,7 @@ impl World {
         let to = Pubkey::new_from_array(record[22..54].try_into().unwrap());
         let ix = self.ix(
             ipow_vault::ID,
-            ipow_vault::client::accounts::FastPay {
+            ipow_vault::client::accounts::FastPay { config: config(),
                 home_asset: asset_pda(0),
                 fast_pay: fast_pay_pda(id, record),
                 paid: paid_pda(id),
@@ -1065,7 +1082,7 @@ impl World {
     fn add_bond_receipt(&mut self, who: &Keypair, amount: u64) -> Result<(), String> {
         let ix = self.ix(
             ipow_vault::ID,
-            ipow_vault::client::accounts::AddBondReceipt {
+            ipow_vault::client::accounts::AddBondReceipt { config: config(),
                 chain: chain_pda(&who.pubkey()),
                 mint: receipt(0),
                 from: ata(&who.pubkey()),
@@ -1212,7 +1229,7 @@ impl World {
     fn link_fast(&mut self, who: &Keypair, claim_id: u64, attest: u64, linked: Option<u64>) -> Result<(), String> {
         let ix = self.ix(
             ipow_vault::ID,
-            ipow_vault::client::accounts::LinkFast { fast: fast_pda(attest), claim: claim_pda(claim_id), linked: linked.map(claim_pda), attester: who.pubkey() },
+            ipow_vault::client::accounts::LinkFast { config: config(), fast: fast_pda(attest), claim: claim_pda(claim_id), linked: linked.map(claim_pda), attester: who.pubkey() },
             ipow_vault::client::args::LinkFast { claim_id, attest },
         );
         self.send(ix, &[who])
@@ -1293,7 +1310,7 @@ impl World {
 }
 
 fn message_pda(operator: &Pubkey, index: u64) -> Pubkey {
-    vt(&[b"message", operator.as_ref(), &index.to_le_bytes()])
+    cv(&[b"message", operator.as_ref(), &index.to_le_bytes()])
 }
 
 fn buffer_pda(owner: &Pubkey) -> Pubkey {
@@ -1760,7 +1777,7 @@ fn registers_a_token_once_and_locks_it() {
     let user = w.user.insecure_clone();
     let payer = w.stranger.insecure_clone();
     let mint = litesvm_token::CreateMint::new(&mut w.ctx.svm, &payer).decimals(6).send().unwrap();
-    let tokens = vt(&[b"home_tokens", mint.as_ref()]);
+    let tokens = cv(&[b"home_tokens", mint.as_ref()]);
     let register = |w: &mut World| {
         let ix = w.ix(
             ipow_vault::ID,
@@ -1932,7 +1949,7 @@ fn publishes_each_batch_and_keeps_it_30_days() {
     let close = |w: &mut World, payer: Pubkey| {
         let ix = w.ix(
             ipow_vault::ID,
-            ipow_vault::client::accounts::CloseMessage { message: message_pda(&op.pubkey(), 0), payer },
+            ipow_vault::client::accounts::CloseMessage { config: config(), message: message_pda(&op.pubkey(), 0), payer },
             ipow_vault::client::args::CloseMessage {},
         );
         w.send(ix, &[&op])
@@ -2100,6 +2117,10 @@ fn an_attest_whose_linked_claim_is_refused_can_be_burned() {
     w.later(WEEK);
     w.decide(id).unwrap();
     expect_err(w.burn_fast(&g, n, None), "WrongAccount");
+    // Only this pair's claim with the attest's number: claim numbers repeat
+    // across pairs (D132), so another claim, of this pair or another, is
+    // refused by its address.
+    expect_err(w.burn_fast(&g, n, Some(id - 1)), "ConstraintSeeds");
     w.burn_fast(&g, n, Some(id)).unwrap();
     assert!(w.fast(n).unwrap().burned);
 }
@@ -2231,4 +2252,50 @@ fn settles_a_wrong_attest_in_its_own_asset_and_leaves_another_assets_lock_to_its
     let alice1 = litesvm_token::CreateAssociatedTokenAccount::new(&mut w.ctx.svm, &payer, &receipt(1)).owner(&alice).send().unwrap();
     w.issue(id, &lock, alice1).unwrap();
     assert_eq!(w.tokens(&alice1), 7 * GWEI_PER_ETH);
+}
+
+/// D132, D133: one program serves every peer. The pair with Base (3) has
+/// its own configuration and its own SOL; a pair is set up once, never with
+/// Solana itself; a record naming Base in the pair with Ethereum is false
+/// there.
+#[test]
+fn keeps_each_pair_apart() {
+    let mut w = World::new();
+    let user = w.user.insecure_clone();
+    let base = vt(&[b"config", &[3]]);
+    let init = |w: &World, peer: u8| {
+        let c = vt(&[b"config", &[peer]]);
+        w.ix(
+            ipow_vault::ID,
+            ipow_vault::client::accounts::Initialize {
+                config: c,
+                sol: vt(&[b"asset", c.as_ref(), &0u32.to_le_bytes()]),
+                application: pr(&[b"application", c.as_ref()]),
+                payer: user.pubkey(),
+                program_data: SYSTEM,
+                protocol_program: ipow_protocol::ID,
+                system_program: SYSTEM,
+            },
+            ipow_vault::client::args::Initialize { peer, peer_vault: [0x33; 20], deposit: DEPOSIT, min_certifying_escrow: MIN_CERTIFYING_ESCROW },
+        )
+    };
+    let ix = init(&w, 3);
+    w.send(ix, &[&user]).unwrap();
+    assert_ne!(base, config());
+    let b: ipow_vault::accounts::Config = w.ctx.get_account(&base).unwrap();
+    assert_eq!((b.peer, b.peer_vault, b.asset_count), (3, [0x33; 20], 1));
+    assert_eq!(w.vault_config().peer, ETHEREUM);
+    // Once per peer; never with Solana itself.
+    let ix = init(&w, 3);
+    assert!(w.send(ix, &[&user]).is_err());
+    let ix = init(&w, SOLANA);
+    assert!(w.send(ix, &[&user]).is_err());
+
+    // In the pair with Ethereum, a lock of Base's is a lie.
+    let u = w.user.pubkey();
+    let (pair, real) = setup(&mut w, vec![lock_rec(3, 0, 1, 1, &u.to_bytes(), 0, 0, LOCKED_AT)]);
+    let op = w.operator.pubkey();
+    assert!(!w.chain(&op).slashed);
+    w.sub(&pair, 1, real, &[]).unwrap();
+    assert!(w.chain(&op).slashed);
 }

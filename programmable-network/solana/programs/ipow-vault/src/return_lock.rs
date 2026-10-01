@@ -10,7 +10,7 @@ use crate::util::{pay_home, u64_at};
 /// fee, and its fee if no message earned it: lamports to its owner, or
 /// tokens to its owner's account `to`. Anyone may call.
 pub fn handler<'info>(ctx: Context<'info, ReturnLock<'info>>, _claim_id: u64, _lock_id: u64, record: Vec<u8>) -> Result<()> {
-    require!(record.len() == CANCEL_LEN && record[0] == CANCEL && record[1] == ETHEREUM, VaultError::WrongRecord);
+    require!(record.len() == CANCEL_LEN && record[0] == CANCEL && record[1] == ctx.accounts.config.peer, VaultError::WrongRecord);
     let claim = &ctx.accounts.claim;
     require!(claim.accepted && claim.carries(&record), VaultError::NotAccepted);
     let l = &mut ctx.accounts.lock;
@@ -44,6 +44,7 @@ pub fn handler<'info>(ctx: Context<'info, ReturnLock<'info>>, _claim_id: u64, _l
         &a.asset,
         total,
         &a.config.to_account_info(),
+        a.config.peer,
         a.config.bump,
         &to,
         a.tokens.as_ref().map(|t| t.to_account_info()).as_ref(),
@@ -55,20 +56,20 @@ pub fn handler<'info>(ctx: Context<'info, ReturnLock<'info>>, _claim_id: u64, _l
 #[derive(Accounts)]
 #[instruction(claim_id: u64, lock_id: u64)]
 pub struct ReturnLock<'info> {
-    #[account(mut, seeds = [CONFIG_SEED], bump = config.bump)]
+    #[account(mut, seeds = [CONFIG_SEED, &[config.peer]], bump = config.bump)]
     pub config: Box<Account<'info, Config>>,
-    #[account(seeds = [CLAIM_SEED, &claim_id.to_le_bytes()], bump = claim.bump)]
+    #[account(seeds = [CLAIM_SEED, config.key().as_ref(), &claim_id.to_le_bytes()], bump = claim.bump)]
     pub claim: Box<Account<'info, Claim>>,
-    #[account(mut, seeds = [HOME_LOCK_SEED, &lock_id.to_le_bytes()], bump = lock.bump)]
+    #[account(mut, seeds = [HOME_LOCK_SEED, config.key().as_ref(), &lock_id.to_le_bytes()], bump = lock.bump)]
     pub lock: Box<Account<'info, HomeLock>>,
-    #[account(mut, seeds = [ASSET_SEED, &lock.asset.to_le_bytes()], bump = asset.bump)]
+    #[account(mut, seeds = [ASSET_SEED, config.key().as_ref(), &lock.asset.to_le_bytes()], bump = asset.bump)]
     pub asset: Box<Account<'info, HomeAsset>>,
     /// CHECK: the lock's owner, for SOL; checked in the handler.
     #[account(mut)]
     pub owner: UncheckedAccount<'info>,
     #[account(mut)]
     pub to: Option<Box<InterfaceAccount<'info, TokenAccount>>>,
-    #[account(mut, seeds = [HOME_TOKENS_SEED, asset.mint.as_ref()], bump)]
+    #[account(mut, seeds = [HOME_TOKENS_SEED, config.key().as_ref(), asset.mint.as_ref()], bump)]
     pub tokens: Option<Box<InterfaceAccount<'info, TokenAccount>>>,
     pub mint: Option<Box<InterfaceAccount<'info, Mint>>>,
     pub token_program: Option<Interface<'info, TokenInterface>>,

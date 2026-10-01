@@ -206,26 +206,42 @@ fn vt_pda(seeds: &[&[u8]]) -> Pubkey {
     Pubkey::find_program_address(seeds, &crate::programs::ipow_vault::ID).0
 }
 
+/// The configuration of the vault's pair with Ethereum, the pair these tests
+/// run (D132).
+fn pv_config() -> Pubkey {
+    vt_pda(&[b"config", &[ipow_protocol_core::vault::ETHEREUM]])
+}
+
+/// An account of that pair: its seeds after the first prefixed with the
+/// pair's configuration.
+fn pv(seeds: &[&[u8]]) -> Pubkey {
+    let c = pv_config();
+    let mut all: Vec<&[u8]> = vec![seeds[0], c.as_ref()];
+    all.extend_from_slice(&seeds[1..]);
+    vt_pda(&all)
+}
+
 impl SvmWorld {
-    /// Initializes the protocol's vault (section 11), naming the Ethereum
-    /// vault, with its deposit and least certifying escrow in lamports.
+    /// Sets up the vault's pair with Ethereum (section 11, D132), naming the
+    /// vault there, with its deposit and least certifying escrow in
+    /// lamports.
     pub fn init_vault(&self, ethereum_vault: [u8; 20], deposit: u64, min_certifying_escrow: u64) {
         use crate::programs::ipow_vault as vt;
-        let config = vt_pda(&[b"config"]);
+        let config = pv_config();
         self.chain
             .run(
                 &[ix(
                     vt::ID,
                     vt::client::accounts::Initialize {
                         config,
-                        sol: vt_pda(&[b"asset", &0u32.to_le_bytes()]),
+                        sol: pv(&[b"asset", &0u32.to_le_bytes()]),
                         application: SvmNetwork::pr_pda(&[b"application", config.as_ref()]),
                         payer: self.user.pubkey(),
                         program_data: SYSTEM,
                         protocol_program: pr::ID,
                         system_program: SYSTEM,
                     },
-                    vt::client::args::Initialize { ethereum_vault, deposit, min_certifying_escrow },
+                    vt::client::args::Initialize { peer: ipow_protocol_core::vault::ETHEREUM, peer_vault: ethereum_vault, deposit, min_certifying_escrow },
                 )],
                 &self.user,
             )
@@ -235,11 +251,11 @@ impl SvmWorld {
     /// The vault as a node with `key` sees it.
     pub fn vault_node(&self, key: &Keypair) -> (Arc<crate::vault::SvmVault>, Arc<SvmNetwork>) {
         let net = Arc::new(SvmNetwork::connect("solana", self.chain.clone(), key.insecure_clone(), &lc::ID.to_string(), &pr::ID.to_string()).unwrap());
-        (Arc::new(crate::vault::SvmVault::new(net.clone(), &crate::programs::ipow_vault::ID.to_string()).unwrap()), net)
+        (Arc::new(crate::vault::SvmVault::new(net.clone(), &crate::programs::ipow_vault::ID.to_string(), ipow_protocol_core::vault::ETHEREUM).unwrap()), net)
     }
 
     async fn config(&self) -> crate::programs::ipow_vault::accounts::Config {
-        let data = self.chain.account(&vt_pda(&[b"config"])).await.unwrap().unwrap();
+        let data = self.chain.account(&pv_config()).await.unwrap().unwrap();
         anchor_lang::AccountDeserialize::try_deserialize(&mut data.as_slice()).unwrap()
     }
 
@@ -250,7 +266,7 @@ impl SvmWorld {
 
     /// What `owner` holds of the receipt of Ethereum's asset `asset`.
     pub async fn receipt_balance(&self, asset: u32, owner: &Pubkey) -> u64 {
-        let account = anchor_spl::associated_token::get_associated_token_address(owner, &vt_pda(&[b"receipt", &asset.to_le_bytes()]));
+        let account = anchor_spl::associated_token::get_associated_token_address(owner, &pv(&[b"receipt", &asset.to_le_bytes()]));
         match self.chain.account(&account).await.unwrap() {
             Some(data) if !data.is_empty() => {
                 <anchor_spl::token::TokenAccount as anchor_lang::AccountDeserialize>::try_deserialize(&mut data.as_slice()).unwrap().amount
@@ -270,17 +286,17 @@ impl SvmWorld {
     pub async fn user_burn(&self, amount: u64, to: [u8; 20], fee: u64, fast_fee: u64) -> u64 {
         use crate::programs::ipow_vault as vt;
         let id = self.config().await.request_count + 1;
-        let mint = vt_pda(&[b"receipt", &0u32.to_le_bytes()]);
+        let mint = pv(&[b"receipt", &0u32.to_le_bytes()]);
         self.chain
             .run(
                 &[ix(
                     vt::ID,
                     vt::client::accounts::MakeRequest {
-                        config: vt_pda(&[b"config"]),
-                        request: vt_pda(&[b"request", &id.to_le_bytes()]),
+                        config: pv_config(),
+                        request: pv(&[b"request", &id.to_le_bytes()]),
                         mint,
                         from: anchor_spl::associated_token::get_associated_token_address(&self.user.pubkey(), &mint),
-                        holding: vt_pda(&[b"holding", &0u32.to_le_bytes()]),
+                        holding: pv(&[b"holding", &0u32.to_le_bytes()]),
                         user: self.user.pubkey(),
                         token_program: anchor_spl::token::ID,
                         system_program: SYSTEM,
@@ -303,9 +319,9 @@ impl SvmWorld {
                 &[ix(
                     vt::ID,
                     vt::client::accounts::Lock {
-                        config: vt_pda(&[b"config"]),
-                        home_asset: vt_pda(&[b"asset", &0u32.to_le_bytes()]),
-                        lock: vt_pda(&[b"home_lock", &id.to_le_bytes()]),
+                        config: pv_config(),
+                        home_asset: pv(&[b"asset", &0u32.to_le_bytes()]),
+                        lock: pv(&[b"home_lock", &id.to_le_bytes()]),
                         from: None,
                         tokens: None,
                         mint: None,
@@ -323,7 +339,7 @@ impl SvmWorld {
 
     /// Who took the fee of lock `id` here, if it was taken.
     pub async fn lock_fee_taken_by(&self, id: u64) -> Option<Pubkey> {
-        let data = self.chain.account(&vt_pda(&[b"home_lock", &id.to_le_bytes()])).await.unwrap()?;
+        let data = self.chain.account(&pv(&[b"home_lock", &id.to_le_bytes()])).await.unwrap()?;
         let l: crate::programs::ipow_vault::accounts::HomeLock = anchor_lang::AccountDeserialize::try_deserialize(&mut data.as_slice()).unwrap();
         l.fee_taken.then_some(l.fee_to)
     }
@@ -337,10 +353,10 @@ impl SvmWorld {
                 &[ix(
                     vt::ID,
                     vt::client::accounts::MakeReceipt {
-                        config: vt_pda(&[b"config"]),
-                        claim: vt_pda(&[b"claim", &claim_id.to_le_bytes()]),
-                        mint: vt_pda(&[b"receipt", &asset.to_le_bytes()]),
-                        holding: vt_pda(&[b"holding", &asset.to_le_bytes()]),
+                        config: pv_config(),
+                        claim: pv(&[b"claim", &claim_id.to_le_bytes()]),
+                        mint: pv(&[b"receipt", &asset.to_le_bytes()]),
+                        holding: pv(&[b"holding", &asset.to_le_bytes()]),
                         payer: self.user.pubkey(),
                         token_program: anchor_spl::token::ID,
                         system_program: SYSTEM,
@@ -360,7 +376,7 @@ impl SvmWorld {
         let asset = u32::from_be_bytes(record[2..6].try_into().unwrap());
         let lock_id = u64::from_be_bytes(record[6..14].try_into().unwrap());
         let recipient = Pubkey::new_from_array(record[22..54].try_into().unwrap());
-        let mint = vt_pda(&[b"receipt", &asset.to_le_bytes()]);
+        let mint = pv(&[b"receipt", &asset.to_le_bytes()]);
         let to = anchor_spl::associated_token::get_associated_token_address(&recipient, &mint);
         let create = anchor_spl::associated_token::spl_associated_token_account::instruction::create_associated_token_account_idempotent(
             &self.user.pubkey(),
@@ -374,11 +390,11 @@ impl SvmWorld {
                 &[ix(
                     vt::ID,
                     vt::client::accounts::Issue {
-                        claim: vt_pda(&[b"claim", &claim_id.to_le_bytes()]),
-                        mark: vt_pda(&[b"lock", &lock_id.to_le_bytes()]),
-                        config: vt_pda(&[b"config"]),
+                        claim: pv(&[b"claim", &claim_id.to_le_bytes()]),
+                        mark: pv(&[b"lock", &lock_id.to_le_bytes()]),
+                        config: pv_config(),
                         mint,
-                        holding: vt_pda(&[b"holding", &asset.to_le_bytes()]),
+                        holding: pv(&[b"holding", &asset.to_le_bytes()]),
                         to,
                         payer: self.user.pubkey(),
                         token_program: anchor_spl::token::ID,

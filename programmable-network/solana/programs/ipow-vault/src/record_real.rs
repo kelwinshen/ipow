@@ -4,7 +4,7 @@ use ipow_protocol::state::BlockRef;
 
 use crate::constants::*;
 use crate::errors::VaultError;
-use crate::state::Real;
+use crate::state::{Config, Real};
 
 /// Records a block below a real block as real, with a finished walk of the
 /// light client from `high` down to `low` (D108). Anyone may call.
@@ -17,7 +17,9 @@ pub fn handler(ctx: Context<RecordReal>, low: BlockRef, high: BlockRef) -> Resul
 #[derive(Accounts)]
 #[instruction(low: BlockRef, high: BlockRef)]
 pub struct RecordReal<'info> {
-    #[account(seeds = [REAL_SEED, high.hash.as_ref(), &high.height.to_le_bytes(), &high.epoch_time.to_le_bytes()], bump = high_real.bump)]
+    #[account(seeds = [CONFIG_SEED, &[config.peer]], bump = config.bump)]
+    pub config: Box<Account<'info, Config>>,
+    #[account(seeds = [REAL_SEED, config.key().as_ref(), high.hash.as_ref(), &high.height.to_le_bytes(), &high.epoch_time.to_le_bytes()], bump = high_real.bump)]
     pub high_real: Account<'info, Real>,
     /// CHECK: a finished walk of the light client; read and checked.
     pub walk: UncheckedAccount<'info>,
@@ -25,7 +27,7 @@ pub struct RecordReal<'info> {
         init,
         payer = payer,
         space = 8 + Real::INIT_SPACE,
-        seeds = [REAL_SEED, low.hash.as_ref(), &low.height.to_le_bytes(), &low.epoch_time.to_le_bytes()],
+        seeds = [REAL_SEED, config.key().as_ref(), low.hash.as_ref(), &low.height.to_le_bytes(), &low.epoch_time.to_le_bytes()],
         bump
     )]
     pub low_real: Account<'info, Real>,

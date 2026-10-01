@@ -11,24 +11,27 @@ import {BitcoinTxLib} from "./BitcoinTxLib.sol";
 import {VaultRecords as R, IVaultCore} from "./vault/VaultRecords.sol";
 import {VaultHome} from "./vault/VaultHome.sol";
 import {VaultReceipts} from "./vault/VaultReceipts.sol";
+import {VaultHomeFactory, VaultReceiptsFactory} from "./vault/VaultFactories.sol";
 import {VaultReceipt} from "./vault/VaultReceipt.sol";
 
 /// @title iPoWVault
-/// @notice The protocol's vault on Ethereum, for the pair Ethereum and
-/// Solana. Spec: docs/design/ipow-protocol.md, section 11, decisions D104 to
-/// D131. It is part of the protocol, beside the protocol contract (D104).
+/// @notice The protocol's vault on an EVM network, for one pair of networks:
+/// this one (`here`) and a peer, deployed once per peer (D132). Spec:
+/// docs/design/ipow-protocol.md, section 11, decisions D104 to D136. It is
+/// part of the protocol, beside the protocol contract (D104). Comments name
+/// the first pair, Ethereum and Solana: read "here" and "the peer".
 ///
 /// This core keeps the operators' pair chains and bonds, processes their
-/// messages, judges the records whose facts live on Ethereum (D109), and
-/// holds the records from Solana as claims for 7 days of objections (D111).
-/// Two parts it makes act on accepted claims: `home`, for the assets whose
-/// home is Ethereum, and `receipts`, for the receipts here of Solana's
-/// (section 11.9).
+/// messages, judges the records whose facts live here (D109), and holds the
+/// records from the peer as claims for 7 days of objections (D111). Two
+/// parts, made for it by their factories, act on accepted claims: `home`,
+/// for the assets whose home is here, and `receipts`, for the receipts here
+/// of the peer's (section 11.9).
 ///
 /// There is no owner and no key, and nothing here can be changed after
 /// deployment (D59). Money is never pushed to an address. It is credited and
 /// the address withdraws it.
-contract iPoWVault is ReentrancyGuard, IVaultCore {
+abstract contract iPoWVault is ReentrancyGuard, IVaultCore {
     using SafeERC20 for IERC20;
 
     // ------------------------------------------------------------------
@@ -184,7 +187,6 @@ contract iPoWVault is ReentrancyGuard, IVaultCore {
     error ChainEnded();
     error NotCertified();
     error BondNotFree();
-    error WrongDeposit();
     error NotOpen();
     error AlreadyHeld();
     error NotHeld();
@@ -198,16 +200,53 @@ contract iPoWVault is ReentrancyGuard, IVaultCore {
     error UnknownAsset();
     error WrongValue();
     error TransferFailed();
+    error BadNetworks();
 
-    constructor(iPoWProtocol protocol_, bytes32 peerVault_, uint256 deposit_, uint256 minCertifyingEscrow_) {
+    /// @notice This network's number, and its peer's (D133). Kept in
+    /// storage, set once here: an immutable's value is copied into the code
+    /// at every use, and the core is near the size limit.
+    uint8 public here;
+    uint8 public peer;
+    /// @notice The factories that made `home` and `receipts`.
+    address public homeFactory;
+    address public receiptsFactory;
+
+    /// @param here_ This network's number, `peer_` the other network's, and
+    /// `peerVault_` the vault there (D132, D133). The factories make its two
+    /// parts, bound to it.
+    constructor(
+        iPoWProtocol protocol_,
+        uint8 here_,
+        uint8 peer_,
+        bytes32 peerVault_,
+        uint256 deposit_,
+        uint256 minCertifyingEscrow_,
+        VaultHomeFactory homeFactory_,
+        VaultReceiptsFactory receiptsFactory_,
+        address coin_
+    ) {
         if (deposit_ == 0 || minCertifyingEscrow_ == 0) revert ZeroAmount();
+        // D133: two different networks of the list, 1 to 8.
+        if (here_ == 0 || peer_ == 0 || here_ > 8 || peer_ > 8 || here_ == peer_) revert BadNetworks();
+        here = here_;
+        peer = peer_;
         minCertifyingEscrow = minCertifyingEscrow_;
         protocol = protocol_;
         lightClient = protocol_.lightClient();
         peerVault = peerVault_;
         deposit = deposit_;
-        home = new VaultHome(this);
-        receipts = new VaultReceipts(this);
+        home = homeFactory_.make(here_, peer_, coin_);
+        receipts = receiptsFactory_.make(here_, peer_);
+        // Made for this vault and its pair. What the parts' code is, the
+        // factories' code shows: whoever checks a vault reads `homeFactory`
+        // and `receiptsFactory` and compares their code with the source.
+        if (
+            address(home.core()) != address(this) || address(receipts.core()) != address(this) || home.here() != here_
+                || home.peer() != peer_ || receipts.here() != here_ || receipts.peer() != peer_
+        ) revert BadNetworks();
+        homeFactory = address(homeFactory_);
+        receiptsFactory = address(receiptsFactory_);
+        if (home.getAsset(0).token != coin_) revert BadNetworks();
         // D116: the vault opens checkpoint jobs, as an application does.
         protocol_.registerApplication(new uint32[](0));
     }
@@ -256,7 +295,11 @@ contract iPoWVault is ReentrancyGuard, IVaultCore {
 
     /// @notice What a registration carries in its `OP_RETURN` (D106).
     function pairCommitment(address operator, bytes32 peerOperator) public view returns (bytes32) {
-        return sha256(abi.encodePacked("iPoW pair", address(this), operator, peerVault, peerOperator));
+        // The pair's two sides, the lower network number first, each as its
+        // number, its vault and its operator in 32 bytes (section 11.3).
+        bytes memory mine = abi.encodePacked(here, bytes32(uint256(uint160(address(this)))), bytes32(uint256(uint160(operator))));
+        bytes memory theirs = abi.encodePacked(peer, peerVault, peerOperator);
+        return sha256(here < peer ? abi.encodePacked("iPoW pair", mine, theirs) : abi.encodePacked("iPoW pair", theirs, mine));
     }
 
     /// @notice What a message carries in its `OP_RETURN` (D107).
@@ -304,20 +347,21 @@ contract iPoWVault is ReentrancyGuard, IVaultCore {
     /// @notice Opens a job whose only use is to make a real block (D116),
     /// with the escrow D118 asks, or the protocol's lowest if that is more.
     /// The sender pays its fees and receives them back if nobody takes it.
-    function openCheckpoint(uint16 confirmations) external payable returns (uint256 jobId) {
+    function openCheckpoint(uint16 confirmations, uint256 paid) external payable returns (uint256 jobId) {
         uint256 fee = protocol.commitmentFeeFor(confirmations);
         uint256 escrow = protocol.MIN_ESCROW_MULTIPLE() * fee;
         if (escrow < minCertifyingEscrow) escrow = minCertifyingEscrow;
         bytes32 tag = keccak256(abi.encode("iPoW checkpoint", address(this), ++checkpointCount));
-        jobId = protocol.openJob{value: msg.value}(tag, escrow, protocol.DEFAULT_ESCROW_FEE_BPS(), confirmations, 0, msg.sender);
+        _take(paid);
+        jobId = protocol.openJob{value: _jobValue(paid)}(tag, escrow, protocol.DEFAULT_ESCROW_FEE_BPS(), confirmations, 0, msg.sender, paid);
     }
 
     /// @notice Takes what the protocol owes the vault, the application's share
     /// of a slashed checkpoint job, into the backing of vETH. Anyone may call.
     function collectProtocolCredit() external nonReentrant {
-        uint256 before = address(this).balance;
+        uint256 before = _coinBalance();
         protocol.withdrawCredit();
-        _toBacking(address(this).balance - before);
+        _toBacking(_coinBalance() - before);
     }
 
     // ------------------------------------------------------------------
@@ -366,7 +410,7 @@ contract iPoWVault is ReentrancyGuard, IVaultCore {
         if (amount == 0) revert ZeroAmount();
         Position storage p = _position(msg.sender, asset);
         uint32 number = R.assetOf(asset);
-        if (R.homeOf(asset) == R.ETHEREUM) {
+        if (R.homeOf(asset) == here) {
             VaultHome.Asset memory a = home.getAsset(number);
             if (a.token == address(0)) {
                 if (msg.value != uint256(amount) * a.unit) revert WrongValue();
@@ -397,11 +441,13 @@ contract iPoWVault is ReentrancyGuard, IVaultCore {
         _payNative(msg.sender, asset, _native(asset, amount));
     }
 
-    /// @notice Adds money for the flat deposits of the caller's claims.
-    function addDeposits() external payable {
+    /// @notice Adds `amount` of the network's coin for the flat deposits of
+    /// the caller's claims; a native coin sends exactly that much (D138).
+    function addDeposits(uint256 amount) external payable {
         Chain storage c = _chains[msg.sender];
         if (!c.registered) revert NoChain();
-        c.deposits += msg.value;
+        _take(amount);
+        c.deposits += amount;
         emit DepositsChanged(msg.sender, c.deposits);
     }
 
@@ -410,7 +456,7 @@ contract iPoWVault is ReentrancyGuard, IVaultCore {
         if (amount == 0 || amount > c.deposits) revert ZeroAmount();
         c.deposits -= amount;
         emit DepositsChanged(msg.sender, c.deposits);
-        _send(msg.sender, amount);
+        _sendCoin(msg.sender, amount);
     }
 
     // ------------------------------------------------------------------
@@ -462,6 +508,7 @@ contract iPoWVault is ReentrancyGuard, IVaultCore {
 
     /// @notice Objects to a claim: it is held. Sent with the deposit.
     function object(uint256 claimId) external payable {
+        _take(deposit);
         Claim storage cl = _openClaim(claimId);
         if (cl.held) revert AlreadyHeld();
         cl.held = true;
@@ -474,6 +521,7 @@ contract iPoWVault is ReentrancyGuard, IVaultCore {
     /// @notice Answers the objection that holds a claim: the hold is lifted
     /// and the 7 days restart. Sent with the deposit.
     function answer(uint256 claimId) external payable {
+        _take(deposit);
         Claim storage cl = _openClaim(claimId);
         if (!cl.held) revert NotHeld();
         cl.held = false;
@@ -502,8 +550,8 @@ contract iPoWVault is ReentrancyGuard, IVaultCore {
         for (uint256 i; i < keys.length; i++) {
             Position storage p = _positions[cl.operator][keys[i]];
             p.openValue -= _claimValue[claimId][keys[i]];
-            uint64 peer = _claimPeerBond[claimId][keys[i]];
-            if (accepted && peer != 0) p.peerBond = peer;
+            uint64 peerBond = _claimPeerBond[claimId][keys[i]];
+            if (accepted && peerBond != 0) p.peerBond = peerBond;
         }
         if (!accepted) c.refused = true;
         // D111: the losing side's deposits are shared by the winning side.
@@ -534,7 +582,7 @@ contract iPoWVault is ReentrancyGuard, IVaultCore {
             objectionsOf[claimId][msg.sender] = 0;
         }
         if (entries == 0) revert NothingToCollect();
-        credit[msg.sender][R.key(R.ETHEREUM, 0)] += entries * cl.payout;
+        credit[msg.sender][R.key(here, 0)] += entries * cl.payout;
     }
 
     function withdrawCredit(uint40 asset) external nonReentrant {
@@ -584,17 +632,17 @@ contract iPoWVault is ReentrancyGuard, IVaultCore {
                 c.exited = true;
                 continue;
             }
-            bool here = uint8(r[1]) == R.ETHEREUM;
+            bool isHere = uint8(r[1]) == here;
             if (kind == R.BOND) {
                 uint40 k = R.key(uint8(r[2]), R.u32(r, 3));
-                if (here) _positions[operator][k].stated = R.u64(r, 7);
+                if (isHere) _positions[operator][k].stated = R.u64(r, 7);
                 // Only a claim that opened carries it: otherwise it can be
                 // carried again. A later one was not added to the claim.
                 else if (claimId != 0) {
                     uint256 i = _find(plan, k);
                     if (i < MAX_ASSETS && plan.peerBonds[i] != 0) _positions[operator][k].peerBondCarried = true;
                 }
-            } else if (here) {
+            } else if (isHere) {
                 // A slashed operator earns nothing; the fee waits for another.
                 if (!c.slashed && kind == R.LOCK) home.earnFee(R.u64(r, 6), operator);
                 if (!c.slashed && kind == R.REQUEST) receipts.earnFee(R.u64(r, 6), operator);
@@ -633,9 +681,9 @@ contract iPoWVault is ReentrancyGuard, IVaultCore {
                 continue;
             }
             uint8 net = uint8(r[1]);
-            if (net != R.ETHEREUM && net != R.SOLANA) return false;
+            if (net != here && net != peer) return false;
             if (kind != R.BOND && ++counted > MAX_RECORDS) return false;
-            if (net == R.ETHEREUM) {
+            if (net == here) {
                 if (kind != R.BOND) {
                     if (!_true(kind, r)) return false;
                     continue;
@@ -656,20 +704,20 @@ contract iPoWVault is ReentrancyGuard, IVaultCore {
             // is not acted on, so alone it opens no claim.
             if (kind != R.BOND) plan.acting = true;
             if (kind == R.LOCK) {
-                _add(plan, R.key(R.SOLANA, R.u32(r, 2)), uint256(R.u64(r, 14)) + R.u64(r, 62), 0);
+                _add(plan, R.key(peer, R.u32(r, 2)), uint256(R.u64(r, 14)) + R.u64(r, 62), 0);
             } else if (kind == R.REQUEST) {
                 // Paid here, to a real Ethereum address, in a registered asset:
                 // Solana writes no other.
                 if (R.addressOf(R.b32(r, 22)) == address(0)) return false;
                 uint32 a = R.u32(r, 2);
                 if (a >= home.assetCount()) return false;
-                _add(plan, R.key(R.ETHEREUM, a), uint256(R.u64(r, 14)) + R.u64(r, 62), 0);
+                _add(plan, R.key(here, a), uint256(R.u64(r, 14)) + R.u64(r, 62), 0);
             } else if (kind == R.CANCEL) {
                 // Solana gives up only a lock it learned from a true LOCK
                 // record, so a lock that does not exist here is a lie.
                 (uint32 a, uint64 value) = home.lockValue(R.u64(r, 2));
                 if (value == 0) return false;
-                _add(plan, R.key(R.ETHEREUM, a), value, 0);
+                _add(plan, R.key(here, a), value, 0);
             } else if (kind == R.BOND) {
                 // A fact of Solana, judged there (D109). Here the first one
                 // carried in a claim counts.
@@ -698,9 +746,9 @@ contract iPoWVault is ReentrancyGuard, IVaultCore {
 
     /// @dev The asset a BOND record names; zero when its home is neither
     /// network.
-    function _bondKey(bytes calldata r) private pure returns (uint40) {
+    function _bondKey(bytes calldata r) private view returns (uint40) {
         uint8 h = uint8(r[2]);
-        if (h != R.ETHEREUM && h != R.SOLANA) return 0;
+        if (h != here && h != peer) return 0;
         return R.key(h, R.u32(r, 3));
     }
 
@@ -793,10 +841,10 @@ contract iPoWVault is ReentrancyGuard, IVaultCore {
         if (backing == 0) revert NothingToCollect();
         slashBacking[operator][asset] = 0;
         uint32 number = R.assetOf(asset);
-        if (R.homeOf(asset) == R.ETHEREUM) {
+        if (R.homeOf(asset) == here) {
             VaultHome.Asset memory a = home.getAsset(number);
             if (a.token == address(0)) {
-                _send(address(home), uint256(backing) * a.unit);
+                _sendCoin(address(home), uint256(backing) * a.unit);
                 home.addBacking(number, backing);
             } else {
                 IERC20 t = IERC20(a.token);
@@ -812,42 +860,42 @@ contract iPoWVault is ReentrancyGuard, IVaultCore {
     /// @dev The chain's position in `asset`, made on first use.
     function _position(address operator, uint40 asset) private returns (Position storage) {
         uint8 h = R.homeOf(asset);
-        if (h != R.ETHEREUM && h != R.SOLANA) revert UnknownAsset();
+        if (h != here && h != peer) revert UnknownAsset();
         uint40[] storage keys = _assetsOf[operator];
         for (uint256 i; i < keys.length; i++) if (keys[i] == asset) return _positions[operator][asset];
         if (keys.length == MAX_ASSETS) revert TooManyAssets();
-        if (h == R.SOLANA && address(receipts.receiptOf(R.assetOf(asset))) == address(0)) revert UnknownAsset();
+        if (h == peer && address(receipts.receiptOf(R.assetOf(asset))) == address(0)) revert UnknownAsset();
         keys.push(asset);
         return _positions[operator][asset];
     }
 
     /// @dev Record units in an asset's native units.
     function _native(uint40 asset, uint64 amount) private view returns (uint256) {
-        if (R.homeOf(asset) != R.ETHEREUM) return amount;
+        if (R.homeOf(asset) != here) return amount;
         return uint256(amount) * home.getAsset(R.assetOf(asset)).unit;
     }
 
     function _payNative(address to, uint40 asset, uint256 amount) private {
         if (amount == 0) return;
         uint32 number = R.assetOf(asset);
-        if (R.homeOf(asset) == R.ETHEREUM) {
+        if (R.homeOf(asset) == here) {
             address token = home.getAsset(number).token;
-            if (token == address(0)) _send(to, amount);
+            if (token == address(0)) _sendCoin(to, amount);
             else IERC20(token).safeTransfer(to, amount);
         } else {
             IERC20(address(receipts.receiptOf(number))).safeTransfer(to, amount);
         }
     }
 
-    /// @dev Wei into the backing of vETH: what the vault gains in ETH.
+    /// @dev The coin into the backing of its receipt: what the vault gains
+    /// in its coin, asset 0.
     function _toBacking(uint256 amount) private {
         if (amount == 0) return;
-        _send(address(home), amount);
-        home.addBacking(0, amount / 1e9);
+        _sendCoin(address(home), amount);
+        home.addBacking(0, amount / home.getAsset(0).unit);
     }
 
     function _openClaim(uint256 claimId) private view returns (Claim storage cl) {
-        if (msg.value != deposit) revert WrongDeposit();
         cl = _claims[claimId];
         if (cl.operator == address(0) || cl.decided) revert NotOpen();
         if (block.timestamp >= uint256(cl.lastAt) + OBJECTION_WINDOW) revert WindowOver();
@@ -886,14 +934,57 @@ contract iPoWVault is ReentrancyGuard, IVaultCore {
         return lightClient.nodeId(b.hash, b.height, b.epochTime);
     }
 
-    function _send(address to, uint256 amount) private {
+    // ------------------------------------------------------------------
+    // The network's coin: by build (D136, D137)
+    // ------------------------------------------------------------------
+
+    /// @dev Takes exactly `amount` of the network's coin from the caller.
+    function _take(uint256 amount) internal virtual;
+
+    /// @dev Pays `amount` of the network's coin.
+    function _sendCoin(address to, uint256 amount) internal virtual;
+
+    function _coinBalance() internal view virtual returns (uint256);
+
+    /// @dev The native value a job's fees are sent to the protocol with.
+    function _jobValue(uint256 paid) internal pure virtual returns (uint256);
+}
+
+/// @title iPoWVaultNative
+/// @notice The vault on a network with a native coin (D137): deposits and a
+/// checkpoint's fees are sent with the call, exactly the amount named.
+contract iPoWVaultNative is iPoWVault {
+    constructor(
+        iPoWProtocol protocol_,
+        uint8 here_,
+        uint8 peer_,
+        bytes32 peerVault_,
+        uint256 deposit_,
+        uint256 minCertifyingEscrow_,
+        VaultHomeFactory homeFactory_,
+        VaultReceiptsFactory receiptsFactory_
+    ) iPoWVault(protocol_, here_, peer_, peerVault_, deposit_, minCertifyingEscrow_, homeFactory_, receiptsFactory_, address(0)) {}
+
+    function _take(uint256 amount) internal override {
+        if (msg.value != amount) revert WrongValue();
+    }
+
+    function _sendCoin(address to, uint256 amount) internal override {
         if (amount == 0) return;
         (bool ok, ) = to.call{value: amount}("");
         if (!ok) revert TransferFailed();
     }
 
-    /// @dev Only the protocol sends ETH here unasked, when the vault collects
-    /// its credit.
+    function _coinBalance() internal view override returns (uint256) {
+        return address(this).balance;
+    }
+
+    function _jobValue(uint256 paid) internal pure override returns (uint256) {
+        return paid;
+    }
+
+    /// @dev Only the protocol sends the coin here unasked, when the vault
+    /// collects its credit.
     receive() external payable {
         if (msg.sender != address(protocol)) revert();
     }

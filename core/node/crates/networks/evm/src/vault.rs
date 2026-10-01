@@ -12,7 +12,7 @@ use alloy::sol_types::SolEvent;
 use async_trait::async_trait;
 use ipow_protocol_core::types::{Amount, BlockRef};
 use ipow_protocol_core::vault::{
-    decode, AssetInfo, Chain, Claim, FastLock, Lock, Position, Record, Request, TxProof, VaultApp, ETHEREUM, SOLANA,
+    decode, AssetInfo, Chain, Claim, FastLock, Lock, Position, Record, Request, TxProof, VaultApp, SOLANA,
 };
 use tokio::sync::OnceCell;
 
@@ -23,6 +23,10 @@ use crate::network::{rejection, send, with_margin, EvmNetwork};
 pub struct EvmVault {
     net: Arc<EvmNetwork>,
     address: Address,
+    /// This network's number and the pair's other one, read from the vault
+    /// (D132, D133).
+    here: u8,
+    peer: u8,
     parts: OnceCell<(Address, Address)>,
 }
 
@@ -32,8 +36,13 @@ fn key(home: u8, asset: u32) -> alloy::primitives::aliases::U40 {
 }
 
 impl EvmVault {
-    pub fn new(net: Arc<EvmNetwork>, address: &str) -> anyhow::Result<Self> {
-        Ok(EvmVault { net, address: address.parse().map_err(|_| anyhow::anyhow!("the vault address is not valid"))?, parts: OnceCell::new() })
+    /// The vault at `address`: one pair's, its two network numbers read from
+    /// it.
+    pub async fn connect(net: Arc<EvmNetwork>, address: &str) -> anyhow::Result<Self> {
+        let address: Address = address.parse().map_err(|_| anyhow::anyhow!("the vault address is not valid"))?;
+        let c = IPoWVault::new(address, net.provider());
+        let (here, peer) = (c.here().call().await?, c.peer().call().await?);
+        Ok(EvmVault { net, address, here, peer, parts: OnceCell::new() })
     }
 
     fn contract(&self) -> IPoWVault::IPoWVaultInstance<&alloy::providers::DynProvider> {
@@ -57,6 +66,20 @@ impl EvmVault {
 
     async fn receipts(&self) -> anyhow::Result<VaultReceipts::VaultReceiptsInstance<&alloy::providers::DynProvider>> {
         Ok(VaultReceipts::new(self.parts().await?.1, self.net.provider()))
+    }
+
+    /// The operator on the peer in the vault's 32 bytes: a Solana key as it
+    /// is, an EVM address in the last 20 (section 11.3).
+    fn peer_word(&self, peer: &[u8]) -> anyhow::Result<[u8; 32]> {
+        match (self.peer == SOLANA, peer.len()) {
+            (true, 32) => Ok(peer.try_into().unwrap()),
+            (false, 20) => {
+                let mut w = [0u8; 32];
+                w[12..].copy_from_slice(peer);
+                Ok(w)
+            }
+            _ => anyhow::bail!("an operator on network {} is {} bytes, not {}", self.peer, if self.peer == SOLANA { 32 } else { 20 }, peer.len()),
+        }
     }
 
     fn operator(s: &str) -> anyhow::Result<Address> {
@@ -98,7 +121,19 @@ fn record_bytes(r: &Record) -> Bytes {
 #[async_trait]
 impl VaultApp for EvmVault {
     fn network_id(&self) -> u8 {
-        ETHEREUM
+        self.here
+    }
+
+    fn peer_id(&self) -> u8 {
+        self.peer
+    }
+
+    fn vault_id(&self) -> [u8; 32] {
+        self.address.into_word().0
+    }
+
+    async fn peer_vault(&self) -> anyhow::Result<[u8; 32]> {
+        Ok(self.contract().peerVault().call().await?.0)
     }
 
     fn me(&self) -> String {
@@ -114,8 +149,7 @@ impl VaultApp for EvmVault {
     }
 
     async fn pair_commitment(&self, peer: &[u8]) -> anyhow::Result<[u8; 32]> {
-        let peer: [u8; 32] = peer.try_into().map_err(|_| anyhow::anyhow!("an operator on Solana is 32 bytes"))?;
-        Ok(self.contract().pairCommitment(self.net.address(), FixedBytes(peer)).call().await?.0)
+        Ok(self.contract().pairCommitment(self.net.address(), FixedBytes(self.peer_word(peer)?)).call().await?.0)
     }
 
     async fn chain(&self, operator: &str) -> anyhow::Result<Option<Chain>> {
@@ -130,7 +164,8 @@ impl VaultApp for EvmVault {
             positions.push(self.position(operator, (k >> 32) as u8, k as u32).await?);
         }
         Ok(Some(Chain {
-            peer: c.peerOperator.0.to_vec(),
+            // An EVM peer's operator is an address: the last 20 bytes.
+            peer: if self.peer == SOLANA { c.peerOperator.0.to_vec() } else { c.peerOperator.0[12..].to_vec() },
             coin: (c.coinTxid.0, c.coinVout),
             messages: c.messages,
             exited: c.exited,
@@ -156,14 +191,13 @@ impl VaultApp for EvmVault {
     }
 
     async fn register_chain(&self, peer: &[u8], tx: &TxProof, coin_index: u32, tag_index: u32) -> anyhow::Result<()> {
-        let peer: [u8; 32] = peer.try_into().map_err(|_| anyhow::anyhow!("an operator on Solana is 32 bytes"))?;
-        send!(self.net, self.contract().registerChain(FixedBytes(peer), btc(tx), coin_index, tag_index));
+        send!(self.net, self.contract().registerChain(FixedBytes(self.peer_word(peer)?), btc(tx), coin_index, tag_index));
         Ok(())
     }
 
     async fn add_bond(&self, home: u8, asset: u32, amount: u64) -> anyhow::Result<()> {
         let mut value = U256::ZERO;
-        if home == ETHEREUM {
+        if home == self.here {
             let a = self.home().await?.getAsset(asset).call().await?;
             let native = U256::from(amount) * a.unit;
             if a.token == Address::ZERO {
@@ -180,7 +214,7 @@ impl VaultApp for EvmVault {
     }
 
     async fn add_deposits(&self, amount: Amount) -> anyhow::Result<()> {
-        send!(self.net, self.contract().addDeposits().value(U256::from(amount)));
+        send!(self.net, self.contract().addDeposits(U256::from(amount)).value(U256::from(amount)));
         Ok(())
     }
 
@@ -213,7 +247,7 @@ impl VaultApp for EvmVault {
     }
 
     async fn open_checkpoint(&self, confirmations: u16, paid: Amount) -> anyhow::Result<u64> {
-        let receipt = send!(self.net, self.contract().openCheckpoint(confirmations).value(U256::from(paid)));
+        let receipt = send!(self.net, self.contract().openCheckpoint(confirmations, U256::from(paid)).value(U256::from(paid)));
         for log in receipt.inner.logs() {
             if let Ok(e) = IPoWProtocol::JobOpened::decode_log(&log.inner) {
                 return Ok(e.data.jobId.to::<u64>());
@@ -427,7 +461,7 @@ impl VaultApp for EvmVault {
         let logs = self.net.provider().get_logs(&filter).await?;
         let log = logs.first().ok_or_else(|| anyhow::anyhow!("the batch of claim {id} was not found"))?;
         let batch = IPoWVault::ClaimBatch::decode_log(&log.inner)?.data.batch;
-        let records = decode(&batch).unwrap_or_default().into_iter().filter(|r| r.fact() == Some(SOLANA)).collect();
+        let records = decode(&batch).unwrap_or_default().into_iter().filter(|r| r.fact() == Some(self.peer)).collect();
         Ok(Claim {
             id,
             operator: c.operator.to_string(),
@@ -566,7 +600,7 @@ impl VaultApp for EvmVault {
         let mut total = to_u128(self.contract().credit(me, key(home, asset)).call().await?)?;
         // Fees earned, and what is owed for burns paid at once: in the
         // asset on its home, in receipts on the other.
-        total += if home == SOLANA {
+        total += if home == self.peer {
             to_u128(self.receipts().await?.credit(me, asset).call().await?)?
         } else {
             to_u128(self.home().await?.credit(me, asset).call().await?)?
@@ -578,7 +612,7 @@ impl VaultApp for EvmVault {
         if !self.contract().credit(self.net.address(), key(home, asset)).call().await?.is_zero() {
             send!(self.net, self.contract().withdrawCredit(key(home, asset)));
         }
-        if home == SOLANA {
+        if home == self.peer {
             let receipts = self.receipts().await?;
             if !receipts.credit(self.net.address(), asset).call().await?.is_zero() {
                 send!(self.net, receipts.withdrawCredit(asset));

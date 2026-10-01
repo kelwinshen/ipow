@@ -101,10 +101,26 @@ contract VaultHome is ReentrancyGuard {
         _;
     }
 
-    constructor(IVaultCore core_) {
+    /// @notice This network's number, and its peer's (D133), set once.
+    uint8 public here;
+    uint8 public peer;
+
+    /// @param coin_ The network's coin (D136): zero for a native coin, which
+    /// is asset 0 as ETH is; else the token that is asset 0.
+    constructor(IVaultCore core_, uint8 here_, uint8 peer_, address coin_) {
         core = core_;
-        _assets.push(Asset({token: address(0), decimals: 18, recordDecimals: 9, unit: 1e9}));
-        emit AssetRegistered(0, address(0), 18, 9);
+        here = here_;
+        peer = peer_;
+        if (coin_ == address(0)) {
+            _assets.push(Asset({token: address(0), decimals: 18, recordDecimals: 9, unit: 1e9}));
+        } else {
+            uint8 d = IERC20Metadata(coin_).decimals();
+            uint8 rd = d > R.MAX_DECIMALS ? R.MAX_DECIMALS : d;
+            _assets.push(Asset({token: coin_, decimals: d, recordDecimals: rd, unit: 10 ** (d - rd)}));
+            assetOfToken[coin_] = 1;
+        }
+        Asset storage c = _assets[0];
+        emit AssetRegistered(0, c.token, c.decimals, c.recordDecimals);
     }
 
     // ------------------------------------------------------------------
@@ -139,7 +155,7 @@ contract VaultHome is ReentrancyGuard {
     function assetRecordHash(uint32 asset) external view returns (bytes32) {
         if (asset >= _assets.length) return bytes32(0);
         Asset storage a = _assets[asset];
-        return keccak256(R.assetRecord(R.ETHEREUM, asset, bytes32(uint256(uint160(a.token))), a.recordDecimals));
+        return keccak256(R.assetRecord(here, asset, bytes32(uint256(uint160(a.token))), a.recordDecimals));
     }
 
     // ------------------------------------------------------------------
@@ -159,7 +175,8 @@ contract VaultHome is ReentrancyGuard {
         returns (uint64 lockId)
     {
         Asset memory a = getAsset(asset);
-        if (recipient == bytes32(0)) revert ZeroAddress();
+        // An address on the peer, or its receipt could never be issued.
+        if (!R.addressOn(recipient, peer)) revert ZeroAddress();
         uint256 total = uint256(amount) + fee + fastFee;
         if (amount == 0) revert ZeroAmount();
         if (total > type(uint64).max) revert TooLarge();
@@ -200,7 +217,7 @@ contract VaultHome is ReentrancyGuard {
     function lockRecordHash(uint64 lockId) external view returns (bytes32) {
         Lock storage l = _locks[lockId];
         if (l.owner == address(0)) return bytes32(0);
-        return keccak256(R.lock(R.ETHEREUM, l.asset, lockId, l.amount, l.recipient, l.fee, l.fastFee, l.lockedAt));
+        return keccak256(R.lock(here, l.asset, lockId, l.amount, l.recipient, l.fee, l.fastFee, l.lockedAt));
     }
 
     /// @notice The asset and what lock `lockId` backs: its amount and fast
@@ -224,7 +241,7 @@ contract VaultHome is ReentrancyGuard {
     /// @notice Returns a lock whose CANCEL an accepted claim carries, with its
     /// fee if no message earned it. Anyone may call.
     function returnLock(uint256 claimId, bytes calldata record) external nonReentrant {
-        if (record.length != R.CANCEL_LEN || uint8(record[0]) != R.CANCEL || uint8(record[1]) != R.SOLANA) revert WrongRecord();
+        if (record.length != R.CANCEL_LEN || uint8(record[0]) != R.CANCEL || uint8(record[1]) != peer) revert WrongRecord();
         _requireCarried(claimId, record);
         uint64 lockId = R.u64(record, 2);
         Lock storage l = _locks[lockId];
@@ -336,7 +353,7 @@ contract VaultHome is ReentrancyGuard {
         view
         returns (uint64 requestId, uint32 asset, uint64 amount, address to)
     {
-        if (record.length != R.REQUEST_LEN || uint8(record[0]) != R.REQUEST || uint8(record[1]) != R.SOLANA) revert WrongRecord();
+        if (record.length != R.REQUEST_LEN || uint8(record[0]) != R.REQUEST || uint8(record[1]) != peer) revert WrongRecord();
         asset = R.u32(record, 2);
         if (asset >= _assets.length) revert UnknownAsset();
         requestId = R.u64(record, 6);

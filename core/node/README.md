@@ -62,9 +62,12 @@ operator's to judge before listing it.
 
 ## The vault
 
-With a `vault` section naming an EVM network and a Solana network, the
-node works for the protocol's vault between them (spec section 11), in
-both directions (section 11.9): ETH and ERC-20 tokens locked on Ethereum
+With a `vault` section listing pairs of networks, the node works for the
+protocol's vault of each pair (spec section 11; a vault per pair, section
+11.10): an EVM network with Solana, or two EVM networks. Its operator and
+guardian run once per pair, each pair with its own chain on Bitcoin and its
+own journal. Within a pair, the vault works in both directions (section
+11.9), for example: ETH and ERC-20 tokens locked on Ethereum
 for their receipts on Solana (vETH for ETH), SOL and SPL tokens locked on
 Solana for their receipts on Ethereum (vSOL for SOL), and back. The
 operator carries only the assets listed in `assets`, each named by its

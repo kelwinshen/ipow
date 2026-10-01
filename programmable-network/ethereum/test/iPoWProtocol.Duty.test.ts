@@ -226,7 +226,7 @@ async function assignedJob(
       confirmations,
       opts.claimKind ?? 0,
       user.address,
-      { value: fee + ESCROW_FEE, gasLimit: GAS }
+      fee + ESCROW_FEE, { value: fee + ESCROW_FEE, gasLimit: GAS }
     );
   const openedAt = (await ethers.provider.getBlock(
     (await tx.wait())!.blockNumber
@@ -291,7 +291,7 @@ async function duty(
 
 async function readyOperator() {
   const ctx = await deploy();
-  await ctx.protocol.connect(ctx.operator).lockBond({ value: 3n * ETH });
+  await ctx.protocol.connect(ctx.operator).lockBond(3n * ETH, { value: 3n * ETH });
   const genesis = await registerChainHead(ctx);
   return { ...ctx, genesis };
 }
@@ -507,7 +507,7 @@ describe("iPoWProtocol: anchor of a job (D39)", function () {
     await setPrice(GWEI);
     await protocol
       .connect(application)
-      .openJob(TAG, ETH, 50, 6, 0, user.address, {
+      .openJob(TAG, ETH, 50, 6, 0, user.address, FEE + ESCROW_FEE, {
         value: FEE + ESCROW_FEE,
         gasLimit: GAS,
       });
@@ -1252,7 +1252,7 @@ describe("iPoWProtocol: challenge of a proof (D49, D81)", function () {
         .sealNote(await protocol.noteFor(guardian.address, job.jobId, deeper, ethers.id("2")));
       await expect(
         protocol.connect(guardian).askParent(job.jobId, ethers.id("2"), { value: deposit })
-      ).to.be.revertedWithCustomError(protocol, "WrongDeposit");
+      ).to.be.revertedWithCustomError(protocol, "WrongValue");
       await protocol
         .connect(guardian)
         .askParent(job.jobId, ethers.id("2"), { value: 2n * deposit });
@@ -1361,7 +1361,7 @@ describe("iPoWProtocol: challenge of a proof (D49, D81)", function () {
       await seal(ctx, jobId, evidence);
       await expect(
         protocol.connect(guardian).askParent(jobId, SALT, { value: deposit - 1n })
-      ).to.be.revertedWithCustomError(protocol, "WrongDeposit");
+      ).to.be.revertedWithCustomError(protocol, "WrongValue");
 
       await protocol.connect(guardian).askParent(jobId, SALT, { value: deposit });
       await protocol.showParent(await protocol.challengeCount(), 0);
@@ -1720,7 +1720,7 @@ describe("iPoWProtocol: claims and attest (D11, D42, D73, D74, D94)", function (
     const d = await duty(ctx, job.jobId);
     const sent = await ctx.protocol.connect(ctx.operator).proveJob(job.jobId, d.proof);
     const provenAt = (await ethers.provider.getBlock((await sent.wait())!.blockNumber))!.timestamp;
-    await ctx.protocol.connect(ctx.stranger).lockBond({ value: 2n * ETH });
+    await ctx.protocol.connect(ctx.stranger).lockBond(2n * ETH, { value: 2n * ETH });
     return { ...ctx, ...job, ...d, provenAt };
   }
 
@@ -1786,7 +1786,7 @@ describe("iPoWProtocol: claims and attest (D11, D42, D73, D74, D94)", function (
     const anchor = { hash: headerHashLE(header), height: 50, epochTime: chain.epochTime };
     const d = await duty(ctx, job.jobId, { anchor });
     await protocol.connect(operator).proveJob(job.jobId, d.proof);
-    await protocol.connect(stranger).lockBond({ value: 2n * ETH });
+    await protocol.connect(stranger).lockBond(2n * ETH, { value: 2n * ETH });
     await protocol.connect(stranger).attest(job.jobId);
 
     const deposit = (await protocol.getJob(job.jobId)).commitmentFee;
@@ -1808,7 +1808,7 @@ describe("iPoWProtocol: claims and attest (D11, D42, D73, D74, D94)", function (
     const { protocol, stranger, guardian, jobId, provenAt } = await provenClaim();
     await expect(protocol.connect(guardian).attest(jobId)).to.be.revertedWithCustomError(protocol, "BondNotFree");
     await protocol.connect(stranger).attest(jobId);
-    await protocol.connect(guardian).lockBond({ value: 2n * ETH });
+    await protocol.connect(guardian).lockBond(2n * ETH, { value: 2n * ETH });
     await expect(protocol.connect(guardian).attest(jobId)).to.be.revertedWithCustomError(protocol, "AlreadyAttested");
 
     const other = await provenClaim();
@@ -1823,7 +1823,7 @@ describe("iPoWProtocol: claims and attest (D11, D42, D73, D74, D94)", function (
   it("rejects an attest before the proof", async function () {
     const ctx = await readyOperator();
     const { jobId } = await assignedJob(ctx, { claimKind: 1 });
-    await ctx.protocol.connect(ctx.stranger).lockBond({ value: 2n * ETH });
+    await ctx.protocol.connect(ctx.stranger).lockBond(2n * ETH, { value: 2n * ETH });
     await expect(ctx.protocol.connect(ctx.stranger).attest(jobId)).to.be.revertedWithCustomError(
       ctx.protocol,
       "NotProven"

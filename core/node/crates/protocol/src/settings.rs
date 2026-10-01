@@ -56,36 +56,36 @@ pub struct Settings {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct VaultSettings {
-    /// The names, in `networks`, of the EVM network and the Solana network.
-    pub ethereum: String,
-    pub solana: String,
-    /// The vault contract on Ethereum, and the vault program on Solana.
-    pub ethereum_vault: String,
-    pub solana_vault: String,
+    /// The operator: claim deposits to keep in each vault.
+    #[serde(default = "default_deposits")]
+    pub deposits: u32,
+    /// The pairs of networks it works for: a vault per pair (D132).
+    pub pairs: Vec<VaultPair>,
+}
+
+/// One pair of networks and its two vaults (D132).
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VaultPair {
+    /// The names, in `networks`, of the pair's two networks.
+    pub networks: [String; 2],
+    /// Each one's vault, in the same order: the pair's vault contract on an
+    /// EVM network, the vault program on Solana.
+    pub vaults: [String; 2],
     /// The operator: the assets it carries records of, with its bonds and
     /// fees in each (section 11.9). An asset not listed is never carried,
     /// so a token anyone registered costs it nothing.
     #[serde(default)]
     pub assets: Vec<VaultAsset>,
-    /// The operator: claim deposits to keep in each vault.
-    #[serde(default = "default_deposits")]
-    pub deposits: u32,
-    /// The operator and the guardian: what to pay, on each network, to open
-    /// a checkpoint job when no real block is above a message (for the
-    /// guardian, a lie it would bring). None: never opens one.
-    pub checkpoint_paid_ethereum: Option<String>,
-    pub checkpoint_paid_solana: Option<String>,
-    /// The operator: the file that keeps every batch it wrote.
-    #[serde(default = "default_journal")]
+    /// The operator and the guardian: what to pay, on each network in the
+    /// same order, to open a checkpoint job when no real block is above a
+    /// message (for the guardian, a lie it would bring). None: never opens
+    /// one.
+    #[serde(default)]
+    pub checkpoint_paid: [Option<String>; 2],
+    /// The operator: the file that keeps every batch it wrote on this
+    /// pair's chain. One per pair.
     pub journal: String,
-}
-
-/// The network that is an asset's home.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum VaultNetwork {
-    Ethereum,
-    Solana,
 }
 
 /// One asset the operator carries. Amounts in record units: the receipt's
@@ -93,7 +93,8 @@ pub enum VaultNetwork {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct VaultAsset {
-    pub home: VaultNetwork,
+    /// Its home: the name of one of the pair's networks.
+    pub home: String,
     /// Its number in its home vault, the network's coin being 0.
     pub asset: u32,
     /// The bond to keep on its home network, in the asset: it covers locks
@@ -128,10 +129,6 @@ pub struct FastSettings {
 
 fn default_deposits() -> u32 {
     5
-}
-
-fn default_journal() -> String {
-    "vault.journal".into()
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -251,8 +248,14 @@ pub enum SettingsError {
     RepeatedVaultAsset(u32),
     #[error("vault.assets bonds more than 8 assets on one network: a chain keeps bonds in at most 8 there")]
     TooManyBonds,
-    #[error("vault.{field} names {name}, which is not an {kind} network of `networks`")]
-    VaultNetwork { field: &'static str, name: String, kind: &'static str },
+    #[error("the vault names {0}, which is not a network of `networks` (or, for an asset's home, not one of its pair's)")]
+    VaultNetwork(String),
+    #[error("a vault pair needs two different networks, not both Solana: {0}")]
+    BadVaultPair(String),
+    #[error("the vault pair {0} is listed twice")]
+    RepeatedVaultPair(String),
+    #[error("two vault pairs share the journal {0}: each pair keeps its own")]
+    RepeatedJournal(String),
 }
 
 impl Settings {
@@ -296,27 +299,46 @@ impl Settings {
             if v.deposits == 0 {
                 return Err(SettingsError::NoVaultDeposits);
             }
-            for (field, name, kind, want) in [("ethereum", &v.ethereum, "EVM", NetworkKind::Evm), ("solana", &v.solana, "Solana", NetworkKind::Svm)] {
-                if !self.networks.iter().any(|n| &n.name == name && n.kind == want) {
-                    return Err(SettingsError::VaultNetwork { field, name: name.clone(), kind });
+            let mut journals = HashSet::new();
+            let mut listed = HashSet::new();
+            for pair in &v.pairs {
+                let mut key = pair.networks.clone();
+                key.sort();
+                if !listed.insert(key) {
+                    return Err(SettingsError::RepeatedVaultPair(pair.networks.join(" and ")));
                 }
-            }
-            let mut seen = HashSet::new();
-            for a in &v.assets {
-                if !seen.insert((a.home, a.asset)) {
-                    return Err(SettingsError::RepeatedVaultAsset(a.asset));
+                let kinds: Vec<NetworkKind> = pair
+                    .networks
+                    .iter()
+                    .map(|name| self.networks.iter().find(|n| &n.name == name).map(|n| n.kind).ok_or(SettingsError::VaultNetwork(name.clone())))
+                    .collect::<Result<_, _>>()?;
+                // Two different networks; Solana pairs with an EVM network.
+                if pair.networks[0] == pair.networks[1] || kinds.iter().all(|k| *k == NetworkKind::Svm) {
+                    return Err(SettingsError::BadVaultPair(pair.networks.join(" and ")));
                 }
-            }
-            // D129: a chain keeps bonds in at most 8 assets on a network: its
-            // home bonds there and its receipt bonds of the other's assets.
-            for net in [VaultNetwork::Ethereum, VaultNetwork::Solana] {
-                let bonded = v.assets.iter().filter(|a| if a.home == net { a.bond_home > 0 } else { a.bond_receipt > 0 }).count();
-                if bonded > crate::vault::MAX_ASSETS {
-                    return Err(SettingsError::TooManyBonds);
+                if !journals.insert(pair.journal.clone()) {
+                    return Err(SettingsError::RepeatedJournal(pair.journal.clone()));
                 }
-            }
-            for amount in [v.checkpoint_paid_ethereum.as_ref(), v.checkpoint_paid_solana.as_ref()].into_iter().flatten() {
-                amount.parse::<u128>().map_err(|_| SettingsError::BadAmount(amount.clone()))?;
+                let mut seen = HashSet::new();
+                for a in &pair.assets {
+                    if !pair.networks.contains(&a.home) {
+                        return Err(SettingsError::VaultNetwork(a.home.clone()));
+                    }
+                    if !seen.insert((a.home.clone(), a.asset)) {
+                        return Err(SettingsError::RepeatedVaultAsset(a.asset));
+                    }
+                }
+                // D129: a chain keeps bonds in at most 8 assets on a network:
+                // its home bonds there and its receipt bonds of the other's.
+                for net in &pair.networks {
+                    let bonded = pair.assets.iter().filter(|a| if &a.home == net { a.bond_home > 0 } else { a.bond_receipt > 0 }).count();
+                    if bonded > crate::vault::MAX_ASSETS {
+                        return Err(SettingsError::TooManyBonds);
+                    }
+                }
+                for amount in pair.checkpoint_paid.iter().flatten() {
+                    amount.parse::<u128>().map_err(|_| SettingsError::BadAmount(amount.clone()))?;
+                }
             }
         }
         if !(self.bitcoin.max_fee_rate > 0.0) {
@@ -414,22 +436,55 @@ mod tests {
     protocol: "ChYhovM8vm2tuMRaRFn4m6etG979bjixVa71fXBDwjPL"
     guardian: { max_deposit: "100000000" }
 "#;
-        let vault = "\nvault:\n  ethereum: ethereum-sepolia\n  solana: solana-devnet\n  ethereum_vault: \"0x03\"\n  solana_vault: \"2e1ZUB5eqA6bQfH3f9pbfvibfie7WnvEJeKif53VAm7p\"\n  checkpoint_paid_ethereum: \"2000000000000000000\"\n  assets:\n    - { home: ethereum, asset: 0, bond_home: 2000000000, bond_receipt: 1000000000, min_fee: 10, fast: { min_fee: 5, max: 100000000 } }\n    - { home: solana, asset: 0, bond_home: 5000000000 }";
+        let vault = r#"
+vault:
+  pairs:
+    - networks: [ethereum-sepolia, solana-devnet]
+      vaults: ["0x03", "2e1ZUB5eqA6bQfH3f9pbfvibfie7WnvEJeKif53VAm7p"]
+      journal: eth-sol.journal
+      checkpoint_paid: ["2000000000000000000", null]
+      assets:
+        - { home: ethereum-sepolia, asset: 0, bond_home: 2000000000, bond_receipt: 1000000000, min_fee: 10, fast: { min_fee: 5, max: 100000000 } }
+        - { home: solana-devnet, asset: 0, bond_home: 5000000000 }"#;
         let text = format!("{}{vault}", with("[guardian]", true, &format!("{NETWORK}{sol}")));
         let s = Settings::parse(&text).unwrap();
         let v = s.vault.unwrap();
         assert_eq!(v.deposits, 5);
-        assert_eq!(v.journal, "vault.journal");
-        assert_eq!(v.assets.len(), 2);
-        assert_eq!(v.assets[1].home, VaultNetwork::Solana);
-        assert_eq!(v.assets[1].bond_receipt, 0);
-        assert!(v.assets[1].fast.is_none());
-        assert_eq!(v.assets[0].fast.as_ref().unwrap().max, 100_000_000);
-        let twice = text.replace("home: solana, asset: 0", "home: ethereum, asset: 0");
+        let pair = &v.pairs[0];
+        assert_eq!(pair.journal, "eth-sol.journal");
+        assert_eq!(pair.assets.len(), 2);
+        assert_eq!(pair.assets[1].home, "solana-devnet");
+        assert_eq!(pair.assets[1].bond_receipt, 0);
+        assert!(pair.assets[1].fast.is_none());
+        assert_eq!(pair.assets[0].fast.as_ref().unwrap().max, 100_000_000);
+        assert!(pair.checkpoint_paid[1].is_none());
+        let twice = text.replace("home: solana-devnet, asset: 0", "home: ethereum-sepolia, asset: 0");
         assert_eq!(Settings::parse(&twice).unwrap_err(), SettingsError::RepeatedVaultAsset(0));
-        let swapped = text.replace("ethereum: ethereum-sepolia", "ethereum: solana-devnet");
-        assert!(matches!(Settings::parse(&swapped).unwrap_err(), SettingsError::VaultNetwork { field: "ethereum", .. }));
-        assert_eq!(Settings::parse(&format!("{text}\n  deposits: 0")).unwrap_err(), SettingsError::NoVaultDeposits);
+        // A network that is not listed, or not one of the pair's for an asset.
+        let unknown = text.replace("networks: [ethereum-sepolia, solana-devnet]", "networks: [base-sepolia, solana-devnet]");
+        assert_eq!(Settings::parse(&unknown).unwrap_err(), SettingsError::VaultNetwork("base-sepolia".into()));
+        let elsewhere = text.replace("home: solana-devnet, asset: 0", "home: base-sepolia, asset: 0");
+        assert_eq!(Settings::parse(&elsewhere).unwrap_err(), SettingsError::VaultNetwork("base-sepolia".into()));
+        // Two different networks, not both Solana.
+        let same = text.replace("networks: [ethereum-sepolia, solana-devnet]", "networks: [solana-devnet, solana-devnet]");
+        assert!(matches!(Settings::parse(&same).unwrap_err(), SettingsError::BadVaultPair(_)));
+        // A journal per pair.
+        // The same pair twice, in any order.
+        let twice = format!(
+            "{text}\n    - networks: [solana-devnet, ethereum-sepolia]\n      vaults: [\"2e1ZUB5eqA6bQfH3f9pbfvibfie7WnvEJeKif53VAm7p\", \"0x04\"]\n      journal: other.journal"
+        );
+        assert!(matches!(Settings::parse(&twice).unwrap_err(), SettingsError::RepeatedVaultPair(_)));
+        // A journal per pair: Base and Solana may not share Ethereum's.
+        let base = NETWORK.replace("ethereum-sepolia", "base-sepolia");
+        let three = format!("{}{vault}", with("[guardian]", true, &format!("{NETWORK}{sol}{base}")));
+        let shared = format!(
+            "{three}\n    - networks: [base-sepolia, solana-devnet]\n      vaults: [\"0x05\", \"2e1ZUB5eqA6bQfH3f9pbfvibfie7WnvEJeKif53VAm7p\"]\n      journal: eth-sol.journal"
+        );
+        assert_eq!(Settings::parse(&shared).unwrap_err(), SettingsError::RepeatedJournal("eth-sol.journal".into()));
+        // With a journal of its own, both pairs are fine.
+        let own = shared.replacen("journal: eth-sol.journal", "journal: base-sol.journal", 2).replacen("journal: base-sol.journal", "journal: eth-sol.journal", 1);
+        assert_eq!(Settings::parse(&own).unwrap().vault.unwrap().pairs.len(), 2);
+        assert_eq!(Settings::parse(&text.replace("  pairs:", "  deposits: 0\n  pairs:")).unwrap_err(), SettingsError::NoVaultDeposits);
         let bad = text.replace("\"2000000000000000000\"", "\"2 ETH\"");
         assert_eq!(Settings::parse(&bad).unwrap_err(), SettingsError::BadAmount("2 ETH".into()));
     }

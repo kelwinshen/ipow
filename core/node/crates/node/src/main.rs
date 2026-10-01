@@ -1,6 +1,7 @@
 //! `ipow-node --settings node.yml` runs the roles chosen in the settings on
 //! the networks listed there, until stopped with Ctrl-C.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -14,7 +15,7 @@ use ipow_network_evm::conversion::EvmConversion;
 use ipow_network_evm::network::EvmNetwork;
 use ipow_network_evm::vault::EvmVault;
 use ipow_network_svm::vault::SvmVault;
-use ipow_node::vault::{Side, VaultGuardian, VaultOperator, VaultOperatorSettings};
+use ipow_node::vault::{CarriedAsset, Side, VaultGuardian, VaultOperator, VaultOperatorSettings};
 use ipow_protocol_core::vault::VaultApp;
 use ipow_network_svm::conversion::SvmConversion;
 use ipow_node::swaps::Swaps;
@@ -28,7 +29,7 @@ use ipow_node::secrets;
 use ipow_node::supervisor::{self, Timing, Worker};
 use ipow_node::wallet::SharedWallet;
 use ipow_protocol_core::network::ProtocolNetwork;
-use ipow_protocol_core::settings::{NetworkKind, NetworkSettings, Role, Settings};
+use ipow_protocol_core::settings::{NetworkKind, NetworkSettings, Role, Settings, VaultPair};
 use tokio::sync::watch;
 use tracing::info;
 
@@ -52,14 +53,20 @@ fn env(name: &str) -> anyhow::Result<String> {
 }
 
 /// A network, its Conversion application when the settings name one, and
-/// the protocol's vault on it when the settings' `vault` names it.
+/// the network itself as its kind, to connect vaults on it.
 struct Connected {
     net: Arc<dyn ProtocolNetwork>,
     conversion: Option<Arc<dyn ConversionApp>>,
-    vault: Option<Arc<dyn VaultApp>>,
+    kind: Kind,
 }
 
-fn connect(n: &NetworkSettings, vault: Option<&str>) -> anyhow::Result<Connected> {
+#[derive(Clone)]
+enum Kind {
+    Evm(Arc<EvmNetwork>),
+    Svm(Arc<SvmNetwork>),
+}
+
+fn connect(n: &NetworkSettings) -> anyhow::Result<Connected> {
     let (rpc, key) = (env(&n.rpc_env)?, env(&n.key_env)?);
     Ok(match n.kind {
         NetworkKind::Evm => {
@@ -68,11 +75,7 @@ fn connect(n: &NetworkSettings, vault: Option<&str>) -> anyhow::Result<Connected
                 Some(c) => Some(Arc::new(EvmConversion::new(net.clone(), &c.address)?) as Arc<dyn ConversionApp>),
                 None => None,
             };
-            let vault = match vault {
-                Some(a) => Some(Arc::new(EvmVault::new(net.clone(), a)?) as Arc<dyn VaultApp>),
-                None => None,
-            };
-            Connected { net, conversion, vault }
+            Connected { net: net.clone(), conversion, kind: Kind::Evm(net) }
         }
         NetworkKind::Svm => {
             let net = Arc::new(SvmNetwork::connect(&n.name, Arc::new(Rpc::new(&rpc)), parse_key(&key)?, &n.light_client, &n.protocol)?);
@@ -80,13 +83,40 @@ fn connect(n: &NetworkSettings, vault: Option<&str>) -> anyhow::Result<Connected
                 Some(c) => Some(Arc::new(SvmConversion::new(net.clone(), &c.address)?) as Arc<dyn ConversionApp>),
                 None => None,
             };
-            let vault = match vault {
-                Some(a) => Some(Arc::new(SvmVault::new(net.clone(), a)?) as Arc<dyn VaultApp>),
-                None => None,
-            };
-            Connected { net, conversion, vault }
+            Connected { net: net.clone(), conversion, kind: Kind::Svm(net) }
         }
     })
+}
+
+/// The two sides of a vault pair (D132). The EVM side's vault is read first:
+/// it tells a Solana side which peer its pair has.
+async fn pair_sides(pair: &VaultPair, kinds: &HashMap<String, (Kind, Arc<dyn ProtocolNetwork>)>) -> anyhow::Result<[Side; 2]> {
+    let mut evm: [Option<Arc<dyn VaultApp>>; 2] = [None, None];
+    for i in 0..2 {
+        if let (Kind::Evm(net), _) = &kinds[&pair.networks[i]] {
+            evm[i] = Some(Arc::new(EvmVault::connect(net.clone(), &pair.vaults[i]).await?) as Arc<dyn VaultApp>);
+        }
+    }
+    let mut sides = vec![];
+    for i in 0..2 {
+        let (kind, net) = &kinds[&pair.networks[i]];
+        let vault = match kind {
+            Kind::Evm(_) => evm[i].clone().unwrap(),
+            Kind::Svm(svm) => {
+                let peer = evm[1 - i].as_ref().map(|v| v.network_id()).context("Solana pairs with an EVM network")?;
+                Arc::new(SvmVault::new(svm.clone(), &pair.vaults[i], peer)?) as Arc<dyn VaultApp>
+            }
+        };
+        sides.push(Side { vault, net: net.clone() });
+    }
+    let [a, b] = [sides.remove(0), sides.remove(0)];
+    ipow_node::vault::check_pair(&a, &b).await.with_context(|| format!("the vault pair {}", pair.networks.join(" and ")))?;
+    Ok([a, b])
+}
+
+/// What to pay for a checkpoint job, as the settings already checked.
+fn checkpoint_paid(pair: &VaultPair) -> [Option<u128>; 2] {
+    [0, 1].map(|i| pair.checkpoint_paid[i].as_ref().map(|a| a.parse().expect("checked when the settings were read")))
 }
 
 /// An amount the settings already checked.
@@ -123,22 +153,10 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let mut pairs: Vec<(Arc<dyn Worker>, Arc<dyn ProtocolNetwork>)> = vec![];
-    let mut vault_sides: [Option<Side>; 2] = [None, None];
+    let mut kinds: HashMap<String, (Kind, Arc<dyn ProtocolNetwork>)> = HashMap::new();
     for n in &settings.networks {
-        let vault_address = settings.vault.as_ref().and_then(|v| {
-            if v.ethereum == n.name {
-                Some(v.ethereum_vault.as_str())
-            } else if v.solana == n.name {
-                Some(v.solana_vault.as_str())
-            } else {
-                None
-            }
-        });
-        let Connected { net: network, conversion, vault } = connect(n, vault_address)?;
-        if let (Some(v), Some(vault)) = (&settings.vault, vault) {
-            let i = if v.ethereum == n.name { 0 } else { 1 };
-            vault_sides[i] = Some(Side { vault, net: network.clone() });
-        }
+        let Connected { net: network, conversion, kind } = connect(n)?;
+        kinds.insert(n.name.clone(), (kind, network.clone()));
         info!(network = %n.name, address = %network.me(), "connected");
         for role in &settings.roles {
             let worker: Arc<dyn Worker> = match role {
@@ -157,35 +175,41 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    // The vault's roles work on both networks at once; the supervisor names
-    // them by the Ethereum side.
-    if let (Some(v), [Some(eth), Some(sol)]) = (&settings.vault, &vault_sides) {
-        if settings.runs(Role::Operator) {
-            let wallet = wallet.clone().expect("checked when the settings were read");
-            let op = VaultOperator::new(
-                eth.clone(),
-                sol.clone(),
-                btc.clone(),
-                wallet,
-                VaultOperatorSettings {
-                    assets: v.assets.clone(),
-                    deposits: v.deposits,
-                    checkpoint_paid: [
-                        v.checkpoint_paid_ethereum.as_ref().map(|a| a.parse().expect("checked when the settings were read")),
-                        v.checkpoint_paid_solana.as_ref().map(|a| a.parse().expect("checked when the settings were read")),
-                    ],
-                    journal: PathBuf::from(&v.journal),
-                },
-            );
-            info!(journal = %v.journal, "vault operator");
-            pairs.push((Arc::new(op), eth.net.clone()));
-        }
-        if settings.runs(Role::Guardian) {
-            let checkpoint_paid = [
-                v.checkpoint_paid_ethereum.as_ref().map(|a| a.parse().expect("checked when the settings were read")),
-                v.checkpoint_paid_solana.as_ref().map(|a| a.parse().expect("checked when the settings were read")),
-            ];
-            pairs.push((Arc::new(VaultGuardian::new(eth.clone(), sol.clone(), btc.clone(), checkpoint_paid)), eth.net.clone()));
+    // The vault's roles, one of each per pair (D132), work on both of its
+    // networks at once; the supervisor names them by the pair's first.
+    if let Some(v) = &settings.vault {
+        for pair in &v.pairs {
+            let [a, b] = pair_sides(pair, &kinds).await?;
+            let number = |name: &String| if *name == pair.networks[0] { a.vault.network_id() } else { b.vault.network_id() };
+            if settings.runs(Role::Operator) {
+                let wallet = wallet.clone().expect("checked when the settings were read");
+                let assets = pair
+                    .assets
+                    .iter()
+                    .map(|x| CarriedAsset {
+                        home: number(&x.home),
+                        asset: x.asset,
+                        bond_home: x.bond_home,
+                        bond_receipt: x.bond_receipt,
+                        min_fee: x.min_fee,
+                        fast: x.fast.clone(),
+                    })
+                    .collect();
+                let op = VaultOperator::new(
+                    a.clone(),
+                    b.clone(),
+                    btc.clone(),
+                    wallet,
+                    VaultOperatorSettings { assets, deposits: v.deposits, checkpoint_paid: checkpoint_paid(pair), journal: PathBuf::from(&pair.journal) },
+                )?;
+                info!(pair = %pair.networks.join(" and "), journal = %pair.journal, "vault operator");
+                pairs.push((Arc::new(op), a.net.clone()));
+            }
+            if settings.runs(Role::Guardian) {
+                let g = VaultGuardian::new(a.clone(), b.clone(), btc.clone(), checkpoint_paid(pair))?;
+                info!(pair = %pair.networks.join(" and "), "vault guardian");
+                pairs.push((Arc::new(g), a.net.clone()));
+            }
         }
     }
 

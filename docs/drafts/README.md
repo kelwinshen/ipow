@@ -14,7 +14,10 @@ for that:
   [`ipow-beta-app.md`](ipow-beta-app.md), BETA on the new protocol
   (stage 6), with open questions;
   [`ipow-vault-claims.md`](ipow-vault-claims.md), a proposed protocol extension: a vault that
-  issues receipt tokens across networks, which BETA would be built on.
+  issues receipt tokens across networks, which BETA would be built on;
+  [`ipow-stage7-networks.md`](ipow-stage7-networks.md), the questions
+  of stage 7 (the vault across many networks, and what each network
+  needs), with recommendations.
   The protocol redesign was approved on 2026-09-28 and moved to
   [`../design/ipow-protocol.md`](../design/ipow-protocol.md). Its build
   plan is [`ipow-build-plan.md`](ipow-build-plan.md).

@@ -21,7 +21,7 @@ pub fn handler(ctx: Context<OpenCheckpoint>, confirmations: u16, paid: u64) -> R
     let n = ctx.accounts.config.checkpoint_count + 1;
     ctx.accounts.config.checkpoint_count = n;
     let a = &ctx.accounts;
-    let seeds: &[&[u8]] = &[CONFIG_SEED, &[a.config.bump]];
+    let seeds: &[&[u8]] = &[CONFIG_SEED, &[a.config.peer], &[a.config.bump]];
     ipow_protocol::cpi::open_job(
         CpiContext::new_with_signer(
             ipow_protocol::ID,
@@ -49,7 +49,7 @@ pub fn handler(ctx: Context<OpenCheckpoint>, confirmations: u16, paid: u64) -> R
 
 #[derive(Accounts)]
 pub struct OpenCheckpoint<'info> {
-    #[account(mut, seeds = [CONFIG_SEED], bump = config.bump)]
+    #[account(mut, seeds = [CONFIG_SEED, &[config.peer]], bump = config.bump)]
     pub config: Account<'info, Config>,
     #[account(mut, seeds = [b"protocol"], bump = protocol.bump, seeds::program = ipow_protocol::ID)]
     pub protocol: Account<'info, ipow_protocol::state::Protocol>,

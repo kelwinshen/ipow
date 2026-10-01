@@ -17,7 +17,7 @@ use crate::util::{create_pda, now, save, EthLock, Receipt};
 /// days from its first (D126); not once its receipt was counted or it was
 /// given up.
 pub fn handler(ctx: Context<AttestLock>, asset: u32, record: Vec<u8>) -> Result<()> {
-    let l = EthLock::read(&record)?;
+    let l = EthLock::read(&record, ctx.accounts.config.peer)?;
     require!(l.asset == asset && l.amount > 0, VaultError::WrongRecord);
     require_keys_eq!(ctx.accounts.to.owner, l.recipient, VaultError::WrongAccount);
     let c = &ctx.accounts.chain;
@@ -26,7 +26,7 @@ pub fn handler(ctx: Context<AttestLock>, asset: u32, record: Vec<u8>) -> Result<
     let collateral = u64::try_from(collateral).map_err(|_| error!(VaultError::Overflow))?;
 
     // The lock's mark: made by its first attest.
-    let (address, bump) = Pubkey::find_program_address(&[LOCK_SEED, &l.id.to_le_bytes()], &crate::ID);
+    let (address, bump) = Pubkey::find_program_address(&[LOCK_SEED, ctx.accounts.config.key().as_ref(), &l.id.to_le_bytes()], &crate::ID);
     let mark_info = ctx.accounts.mark.to_account_info();
     require_keys_eq!(mark_info.key(), address, VaultError::WrongAccount);
     let mut mark = if mark_info.owner == &crate::ID && !mark_info.data_is_empty() {
@@ -38,7 +38,7 @@ pub fn handler(ctx: Context<AttestLock>, asset: u32, record: Vec<u8>) -> Result<
             &ctx.accounts.attester.to_account_info(),
             &ctx.accounts.system_program.to_account_info(),
             8 + LockMark::INIT_SPACE,
-            &[LOCK_SEED, &l.id.to_le_bytes(), &[bump]],
+            &[LOCK_SEED, ctx.accounts.config.key().as_ref(), &l.id.to_le_bytes(), &[bump]],
         )?;
         LockMark { lock_id: l.id, issued: false, given_up: false, attests: 0, settled: 0, first_at: now()?, last_attest: 0, bump }
     };
@@ -80,6 +80,7 @@ pub fn handler(ctx: Context<AttestLock>, asset: u32, record: Vec<u8>) -> Result<
     let a = &ctx.accounts;
     let receipt = Receipt {
         config: &a.config.to_account_info(),
+        config_peer: a.config.peer,
         config_bump: a.config.bump,
         mint: &a.mint.to_account_info(),
         holding: &a.holding.to_account_info(),
@@ -91,9 +92,9 @@ pub fn handler(ctx: Context<AttestLock>, asset: u32, record: Vec<u8>) -> Result<
 #[derive(Accounts)]
 #[instruction(asset: u32)]
 pub struct AttestLock<'info> {
-    #[account(mut, seeds = [CONFIG_SEED], bump = config.bump)]
+    #[account(mut, seeds = [CONFIG_SEED, &[config.peer]], bump = config.bump)]
     pub config: Box<Account<'info, Config>>,
-    #[account(seeds = [CHAIN_SEED, attester.key().as_ref()], bump = chain.bump)]
+    #[account(seeds = [CHAIN_SEED, config.key().as_ref(), attester.key().as_ref()], bump = chain.bump)]
     pub chain: Box<Account<'info, Chain>>,
     /// CHECK: the lock's mark at ["lock", lock_id]; checked, and created by
     /// the first attest, in the handler.
@@ -103,13 +104,13 @@ pub struct AttestLock<'info> {
         init,
         payer = attester,
         space = 8 + FastLock::INIT_SPACE,
-        seeds = [FAST_SEED, &(config.attest_count + 1).to_le_bytes()],
+        seeds = [FAST_SEED, config.key().as_ref(), &(config.attest_count + 1).to_le_bytes()],
         bump
     )]
     pub fast: Box<Account<'info, FastLock>>,
-    #[account(mut, seeds = [RECEIPT_SEED, &asset.to_le_bytes()], bump)]
+    #[account(mut, seeds = [RECEIPT_SEED, config.key().as_ref(), &asset.to_le_bytes()], bump)]
     pub mint: Box<Account<'info, Mint>>,
-    #[account(mut, seeds = [HOLDING_SEED, &asset.to_le_bytes()], bump)]
+    #[account(mut, seeds = [HOLDING_SEED, config.key().as_ref(), &asset.to_le_bytes()], bump)]
     pub holding: Box<Account<'info, TokenAccount>>,
     #[account(mut, token::mint = mint, token::authority = attester)]
     pub from: Box<Account<'info, TokenAccount>>,

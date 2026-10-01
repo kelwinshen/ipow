@@ -56,7 +56,7 @@ pub fn add_receipt(ctx: Context<AddBondReceipt>, asset: u32, amount: u64) -> Res
         amount,
     )?;
     let c = &mut ctx.accounts.chain;
-    let i = c.slot(ETHEREUM, asset)?;
+    let i = c.slot(ctx.accounts.config.peer, asset)?;
     c.positions[i].bond = c.positions[i].bond.checked_add(amount).ok_or(VaultError::Overflow)?;
     Ok(())
 }
@@ -90,6 +90,7 @@ pub fn withdraw_home<'info>(ctx: Context<'info, WithdrawBondHome<'info>>, asset:
         &s.home_asset,
         amount,
         &s.config.to_account_info(),
+        s.config.peer,
         s.config.bump,
         &to,
         s.tokens.as_ref().map(|t| t.to_account_info()).as_ref(),
@@ -100,10 +101,11 @@ pub fn withdraw_home<'info>(ctx: Context<'info, WithdrawBondHome<'info>>, asset:
 
 /// Withdraws free bond in receipts of an asset of Ethereum.
 pub fn withdraw_receipt(ctx: Context<WithdrawBondReceipt>, asset: u32, amount: u64) -> Result<()> {
-    take_free(&mut ctx.accounts.chain, ETHEREUM, asset, amount)?;
+    take_free(&mut ctx.accounts.chain, ctx.accounts.config.peer, asset, amount)?;
     let s = &ctx.accounts;
     let receipt = Receipt {
         config: &s.config.to_account_info(),
+        config_peer: s.config.peer,
         config_bump: s.config.bump,
         mint: &s.mint.to_account_info(),
         holding: &s.holding.to_account_info(),
@@ -115,15 +117,15 @@ pub fn withdraw_receipt(ctx: Context<WithdrawBondReceipt>, asset: u32, amount: u
 #[derive(Accounts)]
 #[instruction(asset: u32)]
 pub struct AddBondHome<'info> {
-    #[account(mut, seeds = [CHAIN_SEED, operator.key().as_ref()], bump = chain.bump)]
+    #[account(mut, seeds = [CHAIN_SEED, config.key().as_ref(), operator.key().as_ref()], bump = chain.bump)]
     pub chain: Box<Account<'info, Chain>>,
-    #[account(mut, seeds = [CONFIG_SEED], bump = config.bump)]
+    #[account(mut, seeds = [CONFIG_SEED, &[config.peer]], bump = config.bump)]
     pub config: Box<Account<'info, Config>>,
-    #[account(seeds = [ASSET_SEED, &asset.to_le_bytes()], bump = home_asset.bump)]
+    #[account(seeds = [ASSET_SEED, config.key().as_ref(), &asset.to_le_bytes()], bump = home_asset.bump)]
     pub home_asset: Box<Account<'info, HomeAsset>>,
     #[account(mut, token::authority = operator)]
     pub from: Option<Box<InterfaceAccount<'info, AnyTokenAccount>>>,
-    #[account(mut, seeds = [HOME_TOKENS_SEED, home_asset.mint.as_ref()], bump)]
+    #[account(mut, seeds = [HOME_TOKENS_SEED, config.key().as_ref(), home_asset.mint.as_ref()], bump)]
     pub tokens: Option<Box<InterfaceAccount<'info, AnyTokenAccount>>>,
     pub mint: Option<Box<InterfaceAccount<'info, AnyMint>>>,
     pub token_program: Option<Interface<'info, TokenInterface>>,
@@ -135,13 +137,15 @@ pub struct AddBondHome<'info> {
 #[derive(Accounts)]
 #[instruction(asset: u32)]
 pub struct AddBondReceipt<'info> {
-    #[account(mut, seeds = [CHAIN_SEED, operator.key().as_ref()], bump = chain.bump)]
+    #[account(seeds = [CONFIG_SEED, &[config.peer]], bump = config.bump)]
+    pub config: Box<Account<'info, Config>>,
+    #[account(mut, seeds = [CHAIN_SEED, config.key().as_ref(), operator.key().as_ref()], bump = chain.bump)]
     pub chain: Box<Account<'info, Chain>>,
-    #[account(seeds = [RECEIPT_SEED, &asset.to_le_bytes()], bump)]
+    #[account(seeds = [RECEIPT_SEED, config.key().as_ref(), &asset.to_le_bytes()], bump)]
     pub mint: Box<Account<'info, Mint>>,
     #[account(mut, token::mint = mint, token::authority = operator)]
     pub from: Box<Account<'info, TokenAccount>>,
-    #[account(mut, seeds = [HOLDING_SEED, &asset.to_le_bytes()], bump)]
+    #[account(mut, seeds = [HOLDING_SEED, config.key().as_ref(), &asset.to_le_bytes()], bump)]
     pub holding: Box<Account<'info, TokenAccount>>,
     pub operator: Signer<'info>,
     pub token_program: Program<'info, Token>,
@@ -150,15 +154,15 @@ pub struct AddBondReceipt<'info> {
 #[derive(Accounts)]
 #[instruction(asset: u32)]
 pub struct WithdrawBondHome<'info> {
-    #[account(mut, seeds = [CHAIN_SEED, operator.key().as_ref()], bump = chain.bump)]
+    #[account(mut, seeds = [CHAIN_SEED, config.key().as_ref(), operator.key().as_ref()], bump = chain.bump)]
     pub chain: Box<Account<'info, Chain>>,
-    #[account(mut, seeds = [CONFIG_SEED], bump = config.bump)]
+    #[account(mut, seeds = [CONFIG_SEED, &[config.peer]], bump = config.bump)]
     pub config: Box<Account<'info, Config>>,
-    #[account(seeds = [ASSET_SEED, &asset.to_le_bytes()], bump = home_asset.bump)]
+    #[account(seeds = [ASSET_SEED, config.key().as_ref(), &asset.to_le_bytes()], bump = home_asset.bump)]
     pub home_asset: Box<Account<'info, HomeAsset>>,
     #[account(mut, token::authority = operator)]
     pub to: Option<Box<InterfaceAccount<'info, AnyTokenAccount>>>,
-    #[account(mut, seeds = [HOME_TOKENS_SEED, home_asset.mint.as_ref()], bump)]
+    #[account(mut, seeds = [HOME_TOKENS_SEED, config.key().as_ref(), home_asset.mint.as_ref()], bump)]
     pub tokens: Option<Box<InterfaceAccount<'info, AnyTokenAccount>>>,
     pub mint: Option<Box<InterfaceAccount<'info, AnyMint>>>,
     pub token_program: Option<Interface<'info, TokenInterface>>,
@@ -169,13 +173,13 @@ pub struct WithdrawBondHome<'info> {
 #[derive(Accounts)]
 #[instruction(asset: u32)]
 pub struct WithdrawBondReceipt<'info> {
-    #[account(mut, seeds = [CHAIN_SEED, operator.key().as_ref()], bump = chain.bump)]
+    #[account(mut, seeds = [CHAIN_SEED, config.key().as_ref(), operator.key().as_ref()], bump = chain.bump)]
     pub chain: Box<Account<'info, Chain>>,
-    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
+    #[account(seeds = [CONFIG_SEED, &[config.peer]], bump = config.bump)]
     pub config: Box<Account<'info, Config>>,
-    #[account(seeds = [RECEIPT_SEED, &asset.to_le_bytes()], bump)]
+    #[account(seeds = [RECEIPT_SEED, config.key().as_ref(), &asset.to_le_bytes()], bump)]
     pub mint: Box<Account<'info, Mint>>,
-    #[account(mut, seeds = [HOLDING_SEED, &asset.to_le_bytes()], bump)]
+    #[account(mut, seeds = [HOLDING_SEED, config.key().as_ref(), &asset.to_le_bytes()], bump)]
     pub holding: Box<Account<'info, TokenAccount>>,
     #[account(mut, token::mint = mint)]
     pub to: Box<Account<'info, TokenAccount>>,

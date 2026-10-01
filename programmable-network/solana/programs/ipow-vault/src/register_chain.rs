@@ -15,7 +15,7 @@ pub fn handler(ctx: Context<RegisterChain>, peer_operator: [u8; 20], btc: Btc, c
     let v = read(&btc.raw_tx, 0, coin_index as u64, tag_index as u64)?;
     require!(v.has_coin, VaultError::NoCoin);
     let operator = ctx.accounts.operator.key();
-    require!(v.has_tag && v.tag == pair_commitment(&ctx.accounts.config.ethereum_vault, &peer_operator, &operator), VaultError::WrongTag);
+    require!(v.has_tag && v.tag == pair_commitment(ctx.accounts.config.peer, &ctx.accounts.config.peer_vault, &peer_operator, &ctx.accounts.config.key(), &operator), VaultError::WrongTag);
 
     let c = &mut ctx.accounts.chain;
     c.operator = operator;
@@ -29,11 +29,11 @@ pub fn handler(ctx: Context<RegisterChain>, peer_operator: [u8; 20], btc: Btc, c
 #[derive(Accounts)]
 #[instruction(peer_operator: [u8; 20], btc: Btc)]
 pub struct RegisterChain<'info> {
-    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
+    #[account(seeds = [CONFIG_SEED, &[config.peer]], bump = config.bump)]
     pub config: Account<'info, Config>,
-    #[account(init, payer = operator, space = 8 + Chain::INIT_SPACE, seeds = [CHAIN_SEED, operator.key().as_ref()], bump)]
+    #[account(init, payer = operator, space = 8 + Chain::INIT_SPACE, seeds = [CHAIN_SEED, config.key().as_ref(), operator.key().as_ref()], bump)]
     pub chain: Account<'info, Chain>,
-    #[account(seeds = [REAL_SEED, btc.real.hash.as_ref(), &btc.real.height.to_le_bytes(), &btc.real.epoch_time.to_le_bytes()], bump = real.bump)]
+    #[account(seeds = [REAL_SEED, config.key().as_ref(), btc.real.hash.as_ref(), &btc.real.height.to_le_bytes(), &btc.real.epoch_time.to_le_bytes()], bump = real.bump)]
     pub real: Account<'info, Real>,
     /// CHECK: a finished walk from the real block down; read and checked.
     pub walk: UncheckedAccount<'info>,

@@ -63,13 +63,13 @@ fn check_mint(mint: &AccountInfo) -> Result<u8> {
 
 #[derive(Accounts)]
 pub struct RegisterAsset<'info> {
-    #[account(mut, seeds = [CONFIG_SEED], bump = config.bump)]
+    #[account(mut, seeds = [CONFIG_SEED, &[config.peer]], bump = config.bump)]
     pub config: Box<Account<'info, Config>>,
     #[account(
         init,
         payer = payer,
         space = 8 + HomeAsset::INIT_SPACE,
-        seeds = [ASSET_SEED, &config.asset_count.to_le_bytes()],
+        seeds = [ASSET_SEED, config.key().as_ref(), &config.asset_count.to_le_bytes()],
         bump
     )]
     pub asset: Box<Account<'info, HomeAsset>>,
@@ -80,7 +80,7 @@ pub struct RegisterAsset<'info> {
     #[account(
         init,
         payer = payer,
-        seeds = [HOME_TOKENS_SEED, mint.key().as_ref()],
+        seeds = [HOME_TOKENS_SEED, config.key().as_ref(), mint.key().as_ref()],
         bump,
         token::mint = mint,
         token::authority = config,

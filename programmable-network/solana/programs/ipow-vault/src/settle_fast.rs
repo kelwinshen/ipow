@@ -24,16 +24,16 @@ pub fn handler(ctx: Context<SettleFast>, _claim_id: u64, _attest: u64) -> Result
     let claim = &ctx.accounts.claim;
     require!(claim.accepted, VaultError::NotAccepted);
     let f = &ctx.accounts.fast;
-    let (record, bytes) = find_eth_lock(&claim.records, f.lock_id).ok_or(VaultError::NotInClaim)?;
+    let (record, bytes) = find_eth_lock(&claim.records, f.lock_id, ctx.accounts.config.peer).ok_or(VaultError::NotInClaim)?;
     require!(ctx.accounts.mark.lock_id == f.lock_id, VaultError::WrongAccount);
     if f.prev != 0 {
         // The attest before it is settled: its account is closed.
         let prev = ctx.accounts.prev.as_ref().ok_or(VaultError::NotInOrder)?;
-        let (address, _) = Pubkey::find_program_address(&[FAST_SEED, &f.prev.to_le_bytes()], &crate::ID);
+        let (address, _) = Pubkey::find_program_address(&[FAST_SEED, ctx.accounts.config.key().as_ref(), &f.prev.to_le_bytes()], &crate::ID);
         require_keys_eq!(prev.key(), address, VaultError::WrongAccount);
         require!(prev.data_is_empty() || prev.owner != &crate::ID, VaultError::NotInOrder);
     }
-    let counts = bytes == stated_record(f) && !ctx.accounts.mark.issued;
+    let counts = bytes == stated_record(f, ctx.accounts.config.peer) && !ctx.accounts.mark.issued;
     let mark = &mut ctx.accounts.mark;
     mark.settled = mark.settled.checked_add(1).ok_or(VaultError::Overflow)?;
     let last = mark.settled == mark.attests && now()? >= mark.first_at + FAST_OPEN_WINDOW;
@@ -42,6 +42,7 @@ pub fn handler(ctx: Context<SettleFast>, _claim_id: u64, _attest: u64) -> Result
     let system = a.system_program.to_account_info();
     let receipt = Receipt {
         config: &a.config.to_account_info(),
+        config_peer: a.config.peer,
         config_bump: a.config.bump,
         mint: &a.mint.to_account_info(),
         holding: &a.holding.to_account_info(),
@@ -75,9 +76,9 @@ pub fn handler(ctx: Context<SettleFast>, _claim_id: u64, _attest: u64) -> Result
     if minted > 0 {
         receipt.mint_to(&a.holding.to_account_info(), minted)?;
     }
-    credit_to(&a.attester_credit, &attester, ETHEREUM, asset, to_attester, &payer, &system)?;
+    credit_to(&a.attester_credit, &a.config.key(), &attester, a.config.peer, asset, to_attester, &payer, &system)?;
     let caller = a.caller.key();
-    credit_to(&a.caller_credit, &caller, ETHEREUM, asset, to_caller, &payer, &system)?;
+    credit_to(&a.caller_credit, &a.config.key(), &caller, a.config.peer, asset, to_caller, &payer, &system)?;
     // The receipt is counted: by this attest, or issued to the recipient.
     if counts || to_recipient >= record.amount {
         ctx.accounts.mark.issued = true;
@@ -88,20 +89,20 @@ pub fn handler(ctx: Context<SettleFast>, _claim_id: u64, _attest: u64) -> Result
 #[derive(Accounts)]
 #[instruction(claim_id: u64, attest: u64)]
 pub struct SettleFast<'info> {
-    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
+    #[account(seeds = [CONFIG_SEED, &[config.peer]], bump = config.bump)]
     pub config: Box<Account<'info, Config>>,
-    #[account(seeds = [CLAIM_SEED, &claim_id.to_le_bytes()], bump = claim.bump)]
+    #[account(seeds = [CLAIM_SEED, config.key().as_ref(), &claim_id.to_le_bytes()], bump = claim.bump)]
     pub claim: Box<Account<'info, Claim>>,
-    #[account(mut, close = attester, seeds = [FAST_SEED, &attest.to_le_bytes()], bump = fast.bump)]
+    #[account(mut, close = attester, seeds = [FAST_SEED, config.key().as_ref(), &attest.to_le_bytes()], bump = fast.bump)]
     pub fast: Box<Account<'info, FastLock>>,
-    #[account(mut, seeds = [LOCK_SEED, &fast.lock_id.to_le_bytes()], bump = mark.bump)]
+    #[account(mut, seeds = [LOCK_SEED, config.key().as_ref(), &fast.lock_id.to_le_bytes()], bump = mark.bump)]
     pub mark: Box<Account<'info, LockMark>>,
     /// CHECK: the attester, as the attest records; its rent goes back to it.
     #[account(mut, address = fast.attester)]
     pub attester: UncheckedAccount<'info>,
-    #[account(mut, seeds = [RECEIPT_SEED, &fast.asset.to_le_bytes()], bump)]
+    #[account(mut, seeds = [RECEIPT_SEED, config.key().as_ref(), &fast.asset.to_le_bytes()], bump)]
     pub mint: Box<Account<'info, Mint>>,
-    #[account(mut, seeds = [HOLDING_SEED, &fast.asset.to_le_bytes()], bump)]
+    #[account(mut, seeds = [HOLDING_SEED, config.key().as_ref(), &fast.asset.to_le_bytes()], bump)]
     pub holding: Box<Account<'info, TokenAccount>>,
     /// CHECK: the attest of the same lock made before this one, when there
     /// is one: it must be settled. Checked in the handler.

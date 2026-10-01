@@ -21,14 +21,14 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use ipow_bitcoin::view::{BitcoinView, TxStatus};
 use ipow_protocol_core::network::ProtocolNetwork;
-use ipow_protocol_core::settings::{Role, VaultAsset, VaultNetwork};
+use ipow_protocol_core::settings::{FastSettings, Role};
 use ipow_protocol_core::types::{Amount, BlockRef, JobStatus};
 use ipow_protocol_core::vault::{
-    decode, encode, message_payload, other, record_hash, AssetInfo, Chain, Position, Record, TxProof, VaultApp, ETHEREUM, MAX_ASSETS, MAX_BATCH,
+    decode, encode, message_payload, record_hash, AssetInfo, Chain, Position, Record, TxProof, VaultApp, MAX_ASSETS, MAX_BATCH,
     MAX_LOCKS_ON_SOLANA, MAX_RAW_TX, MAX_RECORDS, SOLANA,
 };
 #[cfg(test)]
-use ipow_protocol_core::vault::eth_address32;
+use ipow_protocol_core::vault::{eth_address32, ETHEREUM};
 use tokio::sync::Mutex;
 use tracing::{debug, info, warn};
 
@@ -273,34 +273,74 @@ impl Journal {
 pub struct VaultOperatorSettings {
     /// The assets it carries, with its bonds, fees and fast paths in each
     /// (section 11.9). An asset not listed is never carried.
-    pub assets: Vec<VaultAsset>,
+    pub assets: Vec<CarriedAsset>,
     /// Claim deposits to keep in each vault, as a count of deposits: at
     /// least 1.
     pub deposits: u32,
     /// What to pay to open a checkpoint job when no real block is above a
-    /// message, on Ethereum and on Solana; `None` never opens one.
+    /// message, on each network of the pair; `None` never opens one.
     pub checkpoint_paid: [Option<Amount>; 2],
     pub journal: PathBuf,
 }
 
 impl VaultOperatorSettings {
     /// The settings of asset (`home`, `asset`), if it is carried.
-    fn asset(&self, home: u8, asset: u32) -> Option<&VaultAsset> {
-        self.assets.iter().find(|a| net_of(a.home) == home && a.asset == asset)
+    fn asset(&self, home: u8, asset: u32) -> Option<&CarriedAsset> {
+        self.assets.iter().find(|a| a.home == home && a.asset == asset)
     }
 }
 
-/// The network a setting names.
-fn net_of(n: VaultNetwork) -> u8 {
-    match n {
-        VaultNetwork::Ethereum => ETHEREUM,
-        VaultNetwork::Solana => SOLANA,
-    }
+/// An asset the operator carries, its home by network number (D133), and
+/// what it keeps and asks in it, in record units (settings: `VaultAsset`).
+#[derive(Clone, Debug)]
+pub struct CarriedAsset {
+    pub home: u8,
+    pub asset: u32,
+    pub bond_home: u64,
+    pub bond_receipt: u64,
+    pub min_fee: u64,
+    pub fast: Option<FastSettings>,
 }
 
-/// Where a network's part sits in the pairs the roles keep: Ethereum first.
-fn ix(net: u8) -> usize {
-    if net == ETHEREUM { 0 } else { 1 }
+/// Whether two vaults name each other as their pair's other vault: a
+/// vault's peer number alone does not tell a pair from another of the same
+/// two networks (a redeployed vault, a wrong address in the settings).
+pub async fn check_pair(a: &Side, b: &Side) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        a.vault.peer_vault().await? == b.vault.vault_id() && b.vault.peer_vault().await? == a.vault.vault_id(),
+        "the vaults of networks {} and {} do not name each other",
+        a.vault.network_id(),
+        b.vault.network_id()
+    );
+    Ok(())
+}
+
+/// The pair of two vaults: each must name the other's network as its peer.
+fn pair_of(a: &Side, b: &Side) -> anyhow::Result<Nets> {
+    let (x, y) = (a.vault.network_id(), b.vault.network_id());
+    anyhow::ensure!(
+        a.vault.peer_id() == y && b.vault.peer_id() == x,
+        "the two vaults are not one pair: networks {x} and {y}, peers {} and {}",
+        a.vault.peer_id(),
+        b.vault.peer_id()
+    );
+    Ok(Nets([x, y]))
+}
+
+/// A pair's two networks, as a role keeps them: its sides in this order
+/// (D132).
+#[derive(Clone, Copy, Debug)]
+struct Nets([u8; 2]);
+
+impl Nets {
+    /// Where a network's part sits in the pair.
+    fn ix(&self, net: u8) -> usize {
+        if net == self.0[0] { 0 } else { 1 }
+    }
+    /// The pair's other network.
+    fn other(&self, net: u8) -> u8 {
+        if net == self.0[0] { self.0[1] } else { self.0[0] }
+    }
 }
 
 /// Section 11.7: an attester locks 1.25 times a lock's amount, and a claim
@@ -378,11 +418,11 @@ fn next_turn(set: &BTreeSet<u64>, seen: &[u64]) -> u64 {
 /// What batches on their way to network `at`, from its message `messages`
 /// on, will move there in each asset of network `home`: cover the vault
 /// does not count yet.
-fn in_flight_value(in_flight: &[(u64, Moved)], at: u8, home: u8, messages: u64) -> HashMap<u32, u64> {
+fn in_flight_value(in_flight: &[(u64, Moved)], at: usize, home: u8, messages: u64) -> HashMap<u32, u64> {
     let mut out: HashMap<u32, u64> = HashMap::new();
     for (index, moved) in in_flight {
         if *index >= messages {
-            for ((h, asset), value) in &moved[ix(at)] {
+            for ((h, asset), value) in &moved[at] {
                 if *h == home {
                     *out.entry(*asset).or_default() += value;
                 }
@@ -403,6 +443,7 @@ struct Gathered<'a> {
     /// The chain on each network, as each vault sees it, and its places.
     chains: &'a [Chain; 2],
     positions: [Positions; 2],
+    nets: Nets,
     records: Vec<Record>,
     len: usize,
     counted: usize,
@@ -415,12 +456,12 @@ struct Gathered<'a> {
 type Moved = [Vec<((u8, u32), u64)>; 2];
 
 impl<'a> Gathered<'a> {
-    fn new(chains: &'a [Chain; 2], positions: [Positions; 2]) -> Self {
-        Gathered { chains, positions, records: vec![], len: 0, counted: 0, locks_on_solana: 0, moved: [vec![], vec![]] }
+    fn new(chains: &'a [Chain; 2], positions: [Positions; 2], nets: Nets) -> Self {
+        Gathered { chains, positions, nets, records: vec![], len: 0, counted: 0, locks_on_solana: 0, moved: [vec![], vec![]] }
     }
 
     fn position(&self, net: u8, k: (u8, u32)) -> Position {
-        self.positions[ix(net)].get(&k).cloned().unwrap_or(Position { home: k.0, asset: k.1, ..Default::default() })
+        self.positions[self.nets.ix(net)].get(&k).cloned().unwrap_or(Position { home: k.0, asset: k.1, ..Default::default() })
     }
 
     /// Adds `r`, acted on by network `acting`, moving `value` there in asset
@@ -437,7 +478,7 @@ impl<'a> Gathered<'a> {
         if lock_on_solana && self.locks_on_solana >= MAX_LOCKS_ON_SOLANA {
             return false;
         }
-        let i = ix(acting);
+        let i = self.nets.ix(acting);
         if let Some(k) = key {
             let chain = &self.chains[i];
             let moved = &self.moved[i];
@@ -513,8 +554,10 @@ struct OpState {
 }
 
 pub struct VaultOperator {
-    eth: Side,
-    sol: Side,
+    /// The pair's two sides (D132).
+    a: Side,
+    b: Side,
+    nets: Nets,
     btc: Arc<dyn BitcoinView>,
     wallet: Arc<SharedWallet>,
     settings: VaultOperatorSettings,
@@ -552,9 +595,20 @@ async fn withdraw_credits(side: &Side, assets: &[(u8, u32)]) {
 }
 
 impl VaultOperator {
-    pub fn new(eth: Side, sol: Side, btc: Arc<dyn BitcoinView>, wallet: Arc<SharedWallet>, settings: VaultOperatorSettings) -> Self {
+    /// The operator of the pair whose sides are `a` and `b`: two vaults of
+    /// one pair (D132), each knowing its network and the other's.
+    pub fn new(a: Side, b: Side, btc: Arc<dyn BitcoinView>, wallet: Arc<SharedWallet>, settings: VaultOperatorSettings) -> anyhow::Result<Self> {
+        let nets = pair_of(&a, &b)?;
         let journal = Journal::new(settings.journal.clone());
-        VaultOperator { eth, sol, btc, wallet, settings, journal, state: Mutex::new(OpState::default()) }
+        Ok(VaultOperator { a, b, nets, btc, wallet, settings, journal, state: Mutex::new(OpState::default()) })
+    }
+
+    fn ix(&self, net: u8) -> usize {
+        self.nets.ix(net)
+    }
+
+    fn other(&self, net: u8) -> u8 {
+        self.nets.other(net)
     }
 
     /// Forgets all it learned, as after a restart: the next round reads its
@@ -564,11 +618,11 @@ impl VaultOperator {
     }
 
     fn sides(&self) -> [&Side; 2] {
-        [&self.eth, &self.sol]
+        [&self.a, &self.b]
     }
 
     fn side(&self, net: u8) -> &Side {
-        if net == ETHEREUM { &self.eth } else { &self.sol }
+        if net == self.nets.0[0] { &self.a } else { &self.b }
     }
 
     /// Registers the pair chain on each network that does not know it yet.
@@ -577,8 +631,8 @@ impl VaultOperator {
         if chains.iter().all(Option::is_some) {
             return Ok(true);
         }
-        let eth_commitment = self.eth.vault.pair_commitment(&self.sol.vault.me_bytes()).await?;
-        let sol_commitment = self.sol.vault.pair_commitment(&self.eth.vault.me_bytes()).await?;
+        let eth_commitment = self.a.vault.pair_commitment(&self.b.vault.me_bytes()).await?;
+        let sol_commitment = self.b.vault.pair_commitment(&self.a.vault.me_bytes()).await?;
         anyhow::ensure!(eth_commitment == sol_commitment, "the two vaults compute different registrations: check their settings");
         let Some(txid) = st.journal.registration else {
             if !self.wallet.can_pay().await? {
@@ -600,7 +654,7 @@ impl VaultOperator {
             }
             let Some(real) = reach(side, self.btc.as_ref(), &mut st.reals[i], &block, self.settings.checkpoint_paid[i]).await? else { continue };
             fill_down(side.net.as_ref(), self.btc.as_ref(), &real, &block).await?;
-            let other = if i == 0 { &self.sol } else { &self.eth };
+            let other = if i == 0 { &self.b } else { &self.a };
             let proof = tx_proof(self.btc.as_ref(), &txid, &block, real).await?;
             side.vault.register_chain(&other.vault.me_bytes(), &proof, 0, 1).await?;
             info!(network = side.net.name(), "registered the vault's pair chain");
@@ -614,10 +668,10 @@ impl VaultOperator {
     async fn top_up(&self, chains: &[Chain; 2]) {
         let mut asks: Vec<(&Side, &str, anyhow::Result<()>)> = vec![];
         for s in &self.settings.assets {
-            let home = net_of(s.home);
+            let home = s.home;
             // In the asset on its home, in its receipt on the other network.
-            for (net, want) in [(home, s.bond_home), (other(home), s.bond_receipt)] {
-                let c = &chains[ix(net)];
+            for (net, want) in [(home, s.bond_home), (self.other(home), s.bond_receipt)] {
+                let c = &chains[self.ix(net)];
                 let have = c.position(home, s.asset).bond;
                 if want > have && !c.slashed {
                     let side = self.side(net);
@@ -644,7 +698,7 @@ impl VaultOperator {
             }
             .await;
             asks.push((side, "deposits", outcome));
-            let assets: Vec<(u8, u32)> = self.settings.assets.iter().map(|a| (net_of(a.home), a.asset)).collect();
+            let assets: Vec<(u8, u32)> = self.settings.assets.iter().map(|a| (a.home, a.asset)).collect();
             withdraw_credits(side, &assets).await;
         }
         for (side, what, outcome) in asks {
@@ -773,10 +827,10 @@ impl VaultOperator {
     /// accepted claim carries: until then no lock of it can be issued.
     async fn make_receipts(&self, st: &mut OpState) {
         for s in self.settings.assets.clone() {
-            let (home, acting) = (net_of(s.home), other(net_of(s.home)));
+            let (home, acting) = (s.home, self.other(s.home));
             let outcome: anyhow::Result<()> = async {
                 let Some(r) = self.asset_record(st, home, s.asset).await? else { return Ok(()) };
-                let Some(claim) = st.claims[ix(acting)].accepted(&r) else { return Ok(()) };
+                let Some(claim) = st.claims[self.ix(acting)].accepted(&r) else { return Ok(()) };
                 let there = self.side(acting);
                 if !there.vault.has_receipt(s.asset).await? {
                     there.vault.make_receipt(claim, &r).await?;
@@ -795,8 +849,8 @@ impl VaultOperator {
     /// round, once final, into those open. Every round, also while a message
     /// is on its way: the fast paths act on them at once.
     async fn discover(&self, st: &mut OpState) -> anyhow::Result<()> {
-        for net in [ETHEREUM, SOLANA] {
-            let (i, side) = (ix(net), self.side(net));
+        for net in self.nets.0 {
+            let (i, side) = (self.ix(net), self.side(net));
             for l in side.vault.final_locks_after(st.lock_cursor[i], WINDOW).await? {
                 st.lock_cursor[i] = l.id;
                 if self.settings.asset(net, l.asset).is_some() {
@@ -806,7 +860,7 @@ impl VaultOperator {
             // A burn here is of a receipt of the other network's asset.
             for q in side.vault.requests_after(st.request_cursor[i], WINDOW).await? {
                 st.request_cursor[i] = q.id;
-                if self.settings.asset(other(net), q.asset).is_some() {
+                if self.settings.asset(self.other(net), q.asset).is_some() {
                     st.open_requests[i].insert(q.id);
                 }
             }
@@ -818,9 +872,9 @@ impl VaultOperator {
     /// limits of section 11.9, of each chain's counted bond in each asset,
     /// and only toward a network where the chain can open a claim.
     async fn gather(&self, st: &mut OpState, chains: &[Chain; 2]) -> anyhow::Result<(Vec<Record>, Moved)> {
-        let open = [can_open(&self.eth, &chains[0]).await?, can_open(&self.sol, &chains[1]).await?];
+        let open = [can_open(&self.a, &chains[0]).await?, can_open(&self.b, &chains[1]).await?];
         // Its place in every asset it carries or is bonded in, on both.
-        let mut keys: Vec<(u8, u32)> = self.settings.assets.iter().map(|a| (net_of(a.home), a.asset)).collect();
+        let mut keys: Vec<(u8, u32)> = self.settings.assets.iter().map(|a| (a.home, a.asset)).collect();
         keys.extend(chains.iter().flat_map(|c| c.positions.iter().map(|p| (p.home, p.asset))));
         keys.sort_unstable();
         keys.dedup();
@@ -831,17 +885,17 @@ impl VaultOperator {
                 positions[i].insert(k, side.vault.position(&me, k.0, k.1).await?);
             }
         }
-        let mut g = Gathered::new(chains, positions);
+        let mut g = Gathered::new(chains, positions, self.nets);
 
         // BOND records, until the other network counts the bond. The same
         // amount again is true: it is carried again when its claim could
         // not open.
-        for fact in [ETHEREUM, SOLANA] {
-            let acting = other(fact);
-            if !open[ix(acting)] {
+        for fact in self.nets.0 {
+            let acting = self.other(fact);
+            if !open[self.ix(acting)] {
                 continue;
             }
-            for p in &chains[ix(fact)].positions {
+            for p in &chains[self.ix(fact)].positions {
                 if p.bond == 0 || g.position(acting, (p.home, p.asset)).peer_bond_carried {
                     continue;
                 }
@@ -852,12 +906,12 @@ impl VaultOperator {
 
         // ASSET records: the receipt of each carried asset, once.
         for s in self.settings.assets.clone() {
-            let (home, acting) = (net_of(s.home), other(net_of(s.home)));
-            if !open[ix(acting)] {
+            let (home, acting) = (s.home, self.other(s.home));
+            if !open[self.ix(acting)] {
                 continue;
             }
             let Some(r) = self.asset_record(st, home, s.asset).await? else { continue };
-            if st.claims[ix(acting)].handled(&r) || self.side(acting).vault.has_receipt(s.asset).await? {
+            if st.claims[self.ix(acting)].handled(&r) || self.side(acting).vault.has_receipt(s.asset).await? {
                 continue;
             }
             g.add(r, acting, None, 0);
@@ -865,9 +919,9 @@ impl VaultOperator {
 
         // Locks: LOCK toward the other network, or CANCEL home once given up
         // there. Each fits 80% of the bond in its asset where it acts.
-        for home in [ETHEREUM, SOLANA] {
-            let acting = other(home);
-            let (h, a) = (ix(home), ix(acting));
+        for home in self.nets.0 {
+            let acting = self.other(home);
+            let (h, a) = (self.ix(home), self.ix(acting));
             let (hs, ts) = (self.side(home), self.side(acting));
             let me = ts.vault.me();
             // Its own attested locks first: each needs a claim within 7 days
@@ -923,9 +977,9 @@ impl VaultOperator {
         }
 
         // Burns: REQUEST toward the asset's home.
-        for net in [ETHEREUM, SOLANA] {
-            let home = other(net);
-            let (n, a) = (ix(net), ix(home));
+        for net in self.nets.0 {
+            let home = self.other(net);
+            let (n, a) = (self.ix(net), self.ix(home));
             let (bs, hs) = (self.side(net), self.side(home));
             let ids = window(&st.open_requests[n], st.request_turn[n]);
             st.request_turn[n] = next_turn(&st.open_requests[n], &ids);
@@ -979,8 +1033,8 @@ impl VaultOperator {
     /// of locks on the other network, and burns on the other network paid
     /// there at once. Each on its own: one that fails is only logged.
     async fn fast(&self, st: &mut OpState, chains: &[Chain; 2]) {
-        for at in [ETHEREUM, SOLANA] {
-            if let Err(e) = self.fast_on(st, at, &chains[ix(at)]).await {
+        for at in self.nets.0 {
+            if let Err(e) = self.fast_on(st, at, &chains[self.ix(at)]).await {
                 warn!(network = self.side(at).net.name(), error = %crate::secrets::redact(&e), "the fast paths failed");
             }
         }
@@ -989,8 +1043,8 @@ impl VaultOperator {
     async fn fast_on(&self, st: &mut OpState, at: u8, chain: &Chain) -> anyhow::Result<()> {
         // The home of the locks attested here, and the network of the burns
         // paid here.
-        let home = other(at);
-        let (i, h) = (ix(at), ix(home));
+        let home = self.other(at);
+        let (i, h) = (self.ix(at), self.ix(home));
         let (here, there) = (self.side(at), self.side(home));
         let me = here.vault.me();
 
@@ -1052,7 +1106,7 @@ impl VaultOperator {
         }
         let waiting = if !unknown && can_open(here, chain).await? { self.waiting_attests(st, at).await } else { None };
         if let Some(mut waiting) = waiting {
-            for (asset, value) in in_flight_value(&st.in_flight, at, home, chain.messages) {
+            for (asset, value) in in_flight_value(&st.in_flight, self.ix(at), home, chain.messages) {
                 *waiting.entry(asset).or_default() += value;
             }
             let mut locks = vec![];
@@ -1175,7 +1229,7 @@ impl VaultOperator {
     /// that cover. `None`
     /// when a lock cannot be read: then nothing is attested this round.
     async fn waiting_attests(&self, st: &OpState, at: u8) -> Option<HashMap<u32, u64>> {
-        let (i, home) = (ix(at), other(at));
+        let (i, home) = (self.ix(at), self.other(at));
         let me = self.side(at).vault.me();
         let mut waiting: HashMap<u32, u64> = HashMap::new();
         for (&n, &lock) in &st.attests[i] {
@@ -1208,15 +1262,15 @@ impl VaultOperator {
     /// Links one of this node's attests on network `at` to a claim carrying
     /// its lock's record, and settles it once such a claim is accepted.
     async fn tend_attest(&self, st: &mut OpState, at: u8, n: u64) -> anyhow::Result<()> {
-        let (here, there) = (self.side(at), self.side(other(at)));
-        let i = ix(at);
+        let (here, there) = (self.side(at), self.side(self.other(at)));
+        let i = self.ix(at);
         let Some(f) = here.vault.fast_lock(n).await? else {
             st.attests[i].remove(&n);
             return Ok(());
         };
         // It attests only a lock it read: the record is the lock's own.
         let Some(l) = there.vault.lock(f.lock_id).await? else { return Ok(()) };
-        let r = l.record(other(at));
+        let r = l.record(self.other(at));
         let idx = &st.claims[i];
         if let Some(claim) = idx.accepted(&r) {
             settle_in_order(here.vault.as_ref(), claim, n).await?;
@@ -1288,7 +1342,7 @@ impl Worker for VaultOperator {
             st.journal = self.journal.read()?;
             st.loaded = true;
         }
-        let chains = [self.eth.vault.chain(&self.eth.vault.me()).await?, self.sol.vault.chain(&self.sol.vault.me()).await?];
+        let chains = [self.a.vault.chain(&self.a.vault.me()).await?, self.b.vault.chain(&self.b.vault.me()).await?];
         if !self.register(&mut st, &chains).await? {
             return Ok(());
         }
@@ -1313,7 +1367,7 @@ impl Worker for VaultOperator {
             return Ok(());
         }
         // Both vaults are at the end of the chain, and no message waits.
-        let chains = [self.eth.vault.chain(&self.eth.vault.me()).await?.unwrap(), self.sol.vault.chain(&self.sol.vault.me()).await?.unwrap()];
+        let chains = [self.a.vault.chain(&self.a.vault.me()).await?.unwrap(), self.b.vault.chain(&self.b.vault.me()).await?.unwrap()];
         anyhow::ensure!(chains[0].coin == chains[1].coin, "the two vaults follow different coins of the pair chain");
         anyhow::ensure!(chains[0].messages == chains[1].messages, "the two vaults count different messages of the pair chain");
         // A message sent that the explorer does not show spending the coin
@@ -1380,8 +1434,10 @@ struct GuardState {
 }
 
 pub struct VaultGuardian {
-    eth: Side,
-    sol: Side,
+    /// The pair's two sides (D132).
+    a: Side,
+    b: Side,
+    nets: Nets,
     btc: Arc<dyn BitcoinView>,
     /// What to pay to open a checkpoint job when a lie waits for a real
     /// block above it, by network (Ethereum, Solana): the lie's slash pays
@@ -1399,12 +1455,21 @@ const LOOK_AHEAD: u64 = 20;
 type Bonds = HashMap<(u8, u32), u64>;
 
 impl VaultGuardian {
-    pub fn new(eth: Side, sol: Side, btc: Arc<dyn BitcoinView>, checkpoint_paid: [Option<Amount>; 2]) -> Self {
-        VaultGuardian { eth, sol, btc, checkpoint_paid, state: Mutex::new(GuardState::default()) }
+    pub fn new(a: Side, b: Side, btc: Arc<dyn BitcoinView>, checkpoint_paid: [Option<Amount>; 2]) -> anyhow::Result<Self> {
+        let nets = pair_of(&a, &b)?;
+        Ok(VaultGuardian { a, b, nets, btc, checkpoint_paid, state: Mutex::new(GuardState::default()) })
     }
 
     fn side(&self, net: u8) -> &Side {
-        if net == ETHEREUM { &self.eth } else { &self.sol }
+        if net == self.nets.0[0] { &self.a } else { &self.b }
+    }
+
+    fn ix(&self, net: u8) -> usize {
+        self.nets.ix(net)
+    }
+
+    fn other(&self, net: u8) -> u8 {
+        self.nets.other(net)
     }
 
     /// Learns the chain of a claim's operator: its address on both
@@ -1412,8 +1477,11 @@ impl VaultGuardian {
     async fn learn(&self, st: &mut GuardState, acting: u8, operator: &str) -> anyhow::Result<()> {
         let Some(c) = self.side(acting).vault.chain(operator).await? else { return Ok(()) };
         let peer = peer_address(&c.peer);
-        // Ethereum addresses in one spelling, so a chain is held once.
-        let pair = if acting == ETHEREUM { (operator.to_lowercase(), peer) } else { (peer, operator.to_string()) };
+        // EVM addresses in one spelling, so a chain is held once; the pair's
+        // first side first.
+        let norm = |net: u8, a: String| if net == SOLANA { a } else { a.to_lowercase() };
+        let (mine, theirs) = (norm(acting, operator.to_string()), norm(self.other(acting), peer));
+        let pair = if self.ix(acting) == 0 { (mine, theirs) } else { (theirs, mine) };
         st.chains.insert(pair);
         Ok(())
     }
@@ -1425,7 +1493,7 @@ impl VaultGuardian {
     /// as they will be once the messages before this one are processed.
     async fn false_on(&self, j: u8, raw_len: usize, batch: &[u8], stated: &mut Bonds, bonds: &Bonds) -> anyhow::Result<bool> {
         let Some(records) = decode(batch) else { return Ok(true) };
-        let Some(next) = shape_false(j, raw_len, batch.len(), &records, stated, bonds) else { return Ok(true) };
+        let Some(next) = shape_false(j, self.other(j), raw_len, batch.len(), &records, stated, bonds) else { return Ok(true) };
         let v = &self.side(j).vault;
         let mut assets: Option<Vec<AssetInfo>> = None;
         for r in &records {
@@ -1471,21 +1539,21 @@ impl VaultGuardian {
     /// comes from the vault that published it, and must match the hash the
     /// message carries on Bitcoin.
     async fn bring_hidden(&self, st: &mut GuardState) {
-        for (eth_op, sol_op) in st.chains.clone() {
-            if let Err(e) = self.bring_chain(st, &eth_op, &sol_op).await {
-                warn!(ethereum = %eth_op, solana = %sol_op, error = %crate::secrets::redact(&e), "bringing a hidden message failed");
+        for (first_op, second_op) in st.chains.clone() {
+            if let Err(e) = self.bring_chain(st, &first_op, &second_op).await {
+                warn!(first = %first_op, second = %second_op, error = %crate::secrets::redact(&e), "bringing a hidden message failed");
             }
         }
     }
 
-    async fn bring_chain(&self, st: &mut GuardState, eth_op: &str, sol_op: &str) -> anyhow::Result<()> {
-        let (Some(e), Some(s)) = (self.eth.vault.chain(eth_op).await?, self.sol.vault.chain(sol_op).await?) else { return Ok(()) };
+    async fn bring_chain(&self, st: &mut GuardState, first_op: &str, second_op: &str) -> anyhow::Result<()> {
+        let (Some(e), Some(s)) = (self.a.vault.chain(first_op).await?, self.b.vault.chain(second_op).await?) else { return Ok(()) };
         if e.messages == s.messages {
             return Ok(());
         }
         let (j, behind_op, ahead_op, chain, lead) =
-            if e.messages < s.messages { (ETHEREUM, eth_op, sol_op, e, s.messages) } else { (SOLANA, sol_op, eth_op, s, e.messages) };
-        let (behind, ahead) = (self.side(j), self.side(other(j)));
+            if e.messages < s.messages { (self.nets.0[0], first_op, second_op, e, s.messages) } else { (self.nets.0[1], second_op, first_op, s, e.messages) };
+        let (behind, ahead) = (self.side(j), self.side(self.other(j)));
         // Already slashed, or the chain ended here. A chain with no bond is
         // still brought to: the slash marks it, which settles the other
         // network's claims that count a bond it never had.
@@ -1517,7 +1585,7 @@ impl VaultGuardian {
         if !lie {
             return Ok(());
         }
-        let i = ix(j);
+        let i = self.ix(j);
         for (index, batch, txid, input, tag) in path.into_iter().take(BRING_PER_ROUND) {
             let Some(block) = mined_in(self.btc.as_ref(), &txid).await? else { break };
             let Some(real) = reach(behind, self.btc.as_ref(), &mut st.reals[i], &block, self.checkpoint_paid[i]).await? else { break };
@@ -1533,9 +1601,9 @@ impl VaultGuardian {
     /// may, and on Solana it credits the slasher's 20%. Then withdraws this
     /// node's share, if it was the slasher.
     async fn settle_slashes(&self, st: &mut GuardState) {
-        for (eth_op, sol_op) in st.chains.clone() {
-            for (net, op) in [(ETHEREUM, eth_op), (SOLANA, sol_op)] {
-                let i = ix(net);
+        for (first_op, second_op) in st.chains.clone() {
+            for (net, op) in [(self.nets.0[0], first_op), (self.nets.0[1], second_op)] {
+                let i = self.ix(net);
                 if st.settled.contains(&(i, op.clone())) {
                     continue;
                 }
@@ -1577,7 +1645,7 @@ impl VaultGuardian {
     /// Checks one claim: collects it once decided, decides it once its 7
     /// days are over, objects to it when a record is false.
     async fn tend_claim(&self, st: &mut GuardState, acting: u8, id: u64, now: i64) -> anyhow::Result<()> {
-        let i = ix(acting);
+        let i = self.ix(acting);
         let side = self.side(acting);
         let c = side.vault.claim(id).await?;
         if st.learned.insert((i, id)) {
@@ -1621,7 +1689,7 @@ impl VaultGuardian {
     /// states otherwise. Either pays this node the quarter above the
     /// amount.
     async fn tend_attests(&self, st: &mut GuardState, at: u8) -> anyhow::Result<()> {
-        let i = ix(at);
+        let i = self.ix(at);
         let here = self.side(at);
         let count = here.vault.attest_count().await?;
         for n in (st.attest_cursor[i] + 1)..=count {
@@ -1644,7 +1712,7 @@ impl VaultGuardian {
                     // As stated: its attester settles it.
                     if record_hash(&record) != f.stated {
                         settle_in_order(here.vault.as_ref(), claim, n).await?;
-                        st.rewards[i].insert((other(at), f.asset));
+                        st.rewards[i].insert((self.other(at), f.asset));
                         info!(network = here.net.name(), attest = n, claim, "settled an attest that stated its lock wrongly");
                     }
                     st.open_attests[i].remove(&n);
@@ -1661,7 +1729,7 @@ impl VaultGuardian {
                 };
                 if burnable {
                     here.vault.burn_fast(n, (f.claim != 0).then_some(f.claim)).await?;
-                    st.rewards[i].insert((other(at), f.asset));
+                    st.rewards[i].insert((self.other(at), f.asset));
                     st.open_attests[i].remove(&n);
                     info!(network = here.net.name(), attest = n, lock = f.lock_id, "burned an attest with no claim to back it");
                 }
@@ -1676,7 +1744,7 @@ impl VaultGuardian {
     }
 
     async fn tend_claims(&self, st: &mut GuardState, acting: u8) -> anyhow::Result<()> {
-        let i = ix(acting);
+        let i = self.ix(acting);
         let side = self.side(acting);
         let count = side.vault.claim_count().await?;
         for id in (st.claim_cursor[i] + 1)..=count {
@@ -1696,7 +1764,7 @@ impl VaultGuardian {
     /// Whether a record acted on by network `acting` is true on the other
     /// network, where its fact lives: `None` when that cannot be told yet.
     async fn is_true(&self, acting: u8, operator: &str, record: &Record) -> anyhow::Result<Option<bool>> {
-        let fact = other(acting);
+        let fact = self.other(acting);
         let v = &self.side(fact).vault;
         Ok(match record {
             Record::Lock { id, .. } => Some(v.lock(*id).await?.is_some_and(|l| l.record(fact) == *record)),
@@ -1733,16 +1801,16 @@ fn net_byte(r: &Record) -> Option<u8> {
 }
 
 /// The rules of a message's shape that make it false on network `j`, as
-/// both vaults judge it (D109, D110, D119, D131): a transaction or batch
-/// too large, a record of an unknown network, more than 32 LOCK, REQUEST,
-/// CANCEL and ASSET records, a BOND of `j` that is zero, repeated in the
-/// batch, or not the chain's bond, a BOND of an asset of an unknown
-/// network, a REQUEST paid on `j` to no address, or on Solana a lock or
+/// both vaults judge it (D109, D110, D119, D131), in the pair of `j` and
+/// `peer` (D132): a transaction or batch too large, a record of a network
+/// outside the pair, more than 32 LOCK, REQUEST, CANCEL and ASSET records,
+/// a BOND of `j` that is zero, repeated in the batch, or not the chain's
+/// bond, a BOND of an asset of a network outside the pair, a REQUEST paid on `j` to no address, or on Solana a lock or
 /// burn whose amount and fast fee overflow. `None` when false; otherwise
 /// the chain's stated bonds on `j` after the message. What the records say
 /// about locks, burns, give-ups and assets is checked against the vault by
 /// the caller.
-fn shape_false(j: u8, raw_len: usize, batch_len: usize, records: &[Record], stated: &Bonds, bonds: &Bonds) -> Option<Bonds> {
+fn shape_false(j: u8, peer: u8, raw_len: usize, batch_len: usize, records: &[Record], stated: &Bonds, bonds: &Bonds) -> Option<Bonds> {
     if raw_len > MAX_RAW_TX || batch_len > MAX_BATCH {
         return None;
     }
@@ -1751,7 +1819,7 @@ fn shape_false(j: u8, raw_len: usize, batch_len: usize, records: &[Record], stat
     let mut seen: Vec<(u8, u32)> = vec![];
     for r in records {
         let Some(net) = net_byte(r) else { continue };
-        if net != ETHEREUM && net != SOLANA {
+        if net != j && net != peer {
             return None;
         }
         if r.counted() {
@@ -1762,7 +1830,7 @@ fn shape_false(j: u8, raw_len: usize, batch_len: usize, records: &[Record], stat
         }
         match r {
             Record::Bond { home, asset, amount, .. } => {
-                if *home != ETHEREUM && *home != SOLANA {
+                if *home != j && *home != peer {
                     return None;
                 }
                 if net == j {
@@ -1834,7 +1902,7 @@ impl Worker for VaultGuardian {
 
     async fn round(&self, _network: &dyn ProtocolNetwork) -> anyhow::Result<()> {
         let mut st = self.state.lock().await;
-        for net in [ETHEREUM, SOLANA] {
+        for net in self.nets.0 {
             if let Err(e) = self.tend_claims(&mut st, net).await {
                 warn!(network = self.side(net).net.name(), error = %crate::secrets::redact(&e), "reading claims failed");
             }
@@ -1844,7 +1912,7 @@ impl Worker for VaultGuardian {
         }
         self.bring_hidden(&mut st).await;
         self.settle_slashes(&mut st).await;
-        for (i, side) in [&self.eth, &self.sol].into_iter().enumerate() {
+        for (i, side) in [&self.a, &self.b].into_iter().enumerate() {
             let rewards: Vec<(u8, u32)> = st.rewards[i].iter().copied().collect();
             withdraw_credits(side, &rewards).await;
         }
@@ -1869,45 +1937,63 @@ mod tests {
         let none = Bonds::new();
         let held = bonds(&[(eth, 5)]);
         // True: the chain's first stated bond, carried forward.
-        assert_eq!(shape_false(ETHEREUM, 300, 15, &[bond(ETHEREUM, ETHEREUM, 5)], &none, &held), Some(bonds(&[(eth, 5)])));
+        assert_eq!(shape_false(ETHEREUM, SOLANA, 300, 15, &[bond(ETHEREUM, ETHEREUM, 5)], &none, &held), Some(bonds(&[(eth, 5)])));
         // The same BOND again is true; another one is not.
         let more = bonds(&[(eth, 9)]);
-        assert_eq!(shape_false(ETHEREUM, 300, 15, &[bond(ETHEREUM, ETHEREUM, 5)], &held, &more), Some(held.clone()));
-        assert_eq!(shape_false(ETHEREUM, 300, 15, &[bond(ETHEREUM, ETHEREUM, 4)], &held, &more), None);
+        assert_eq!(shape_false(ETHEREUM, SOLANA, 300, 15, &[bond(ETHEREUM, ETHEREUM, 5)], &held, &more), Some(held.clone()));
+        assert_eq!(shape_false(ETHEREUM, SOLANA, 300, 15, &[bond(ETHEREUM, ETHEREUM, 4)], &held, &more), None);
         // More than the bond, zero, twice in a batch, of an unknown network
         // or of an asset of one.
-        assert_eq!(shape_false(ETHEREUM, 300, 15, &[bond(ETHEREUM, ETHEREUM, 6)], &none, &held), None);
-        assert_eq!(shape_false(ETHEREUM, 300, 15, &[bond(ETHEREUM, ETHEREUM, 0)], &none, &held), None);
-        assert_eq!(shape_false(ETHEREUM, 300, 30, &[bond(ETHEREUM, ETHEREUM, 5), bond(ETHEREUM, ETHEREUM, 5)], &none, &held), None);
-        assert_eq!(shape_false(SOLANA, 300, 15, &[bond(9, ETHEREUM, 5)], &none, &held), None);
-        assert_eq!(shape_false(SOLANA, 300, 15, &[bond(ETHEREUM, 9, 5)], &none, &held), None);
+        assert_eq!(shape_false(ETHEREUM, SOLANA, 300, 15, &[bond(ETHEREUM, ETHEREUM, 6)], &none, &held), None);
+        assert_eq!(shape_false(ETHEREUM, SOLANA, 300, 15, &[bond(ETHEREUM, ETHEREUM, 0)], &none, &held), None);
+        assert_eq!(shape_false(ETHEREUM, SOLANA, 300, 30, &[bond(ETHEREUM, ETHEREUM, 5), bond(ETHEREUM, ETHEREUM, 5)], &none, &held), None);
+        assert_eq!(shape_false(SOLANA, ETHEREUM, 300, 15, &[bond(9, ETHEREUM, 5)], &none, &held), None);
+        assert_eq!(shape_false(SOLANA, ETHEREUM, 300, 15, &[bond(ETHEREUM, 9, 5)], &none, &held), None);
         // The other network's BOND is not judged here.
-        assert_eq!(shape_false(SOLANA, 300, 15, &[bond(ETHEREUM, ETHEREUM, 999)], &none, &none), Some(none.clone()));
+        assert_eq!(shape_false(SOLANA, ETHEREUM, 300, 15, &[bond(ETHEREUM, ETHEREUM, 999)], &none, &none), Some(none.clone()));
         // A REQUEST paid to no address, as each network reads one.
-        assert_eq!(shape_false(ETHEREUM, 300, 78, &[request(SOLANA, [0; 32])], &none, &none), None);
+        assert_eq!(shape_false(ETHEREUM, SOLANA, 300, 78, &[request(SOLANA, [0; 32])], &none, &none), None);
         let mut high = eth_address32(&[1; 20]);
         high[0] = 1;
-        assert_eq!(shape_false(ETHEREUM, 300, 78, &[request(SOLANA, high)], &none, &none), None);
-        assert_eq!(shape_false(ETHEREUM, 300, 78, &[request(SOLANA, eth_address32(&[1; 20]))], &none, &none), Some(none.clone()));
-        assert_eq!(shape_false(SOLANA, 300, 78, &[request(ETHEREUM, [0; 32])], &none, &none), None);
-        assert_eq!(shape_false(SOLANA, 300, 78, &[request(ETHEREUM, high)], &none, &none), Some(none.clone()));
+        assert_eq!(shape_false(ETHEREUM, SOLANA, 300, 78, &[request(SOLANA, high)], &none, &none), None);
+        assert_eq!(shape_false(ETHEREUM, SOLANA, 300, 78, &[request(SOLANA, eth_address32(&[1; 20]))], &none, &none), Some(none.clone()));
+        assert_eq!(shape_false(SOLANA, ETHEREUM, 300, 78, &[request(ETHEREUM, [0; 32])], &none, &none), None);
+        assert_eq!(shape_false(SOLANA, ETHEREUM, 300, 78, &[request(ETHEREUM, high)], &none, &none), Some(none.clone()));
         // A burn made on `j` is judged against the vault, not here.
-        assert_eq!(shape_false(SOLANA, 300, 78, &[request(SOLANA, [0; 32])], &none, &none), Some(none.clone()));
+        assert_eq!(shape_false(SOLANA, ETHEREUM, 300, 78, &[request(SOLANA, [0; 32])], &none, &none), Some(none.clone()));
         // A lock whose amount and fast fee overflow is false on Solana only.
-        assert_eq!(shape_false(SOLANA, 300, 78, &[lock(ETHEREUM, u64::MAX, 1)], &none, &none), None);
-        assert_eq!(shape_false(ETHEREUM, 300, 78, &[lock(SOLANA, u64::MAX, 1)], &none, &none), Some(none.clone()));
+        assert_eq!(shape_false(SOLANA, ETHEREUM, 300, 78, &[lock(ETHEREUM, u64::MAX, 1)], &none, &none), None);
+        assert_eq!(shape_false(ETHEREUM, SOLANA, 300, 78, &[lock(SOLANA, u64::MAX, 1)], &none, &none), Some(none.clone()));
         // D119: sizes, and the count of LOCK, REQUEST, CANCEL and ASSET
         // records on both networks together; BOND is not counted.
-        assert_eq!(shape_false(SOLANA, MAX_RAW_TX + 1, 10, &[], &none, &none), None);
-        assert_eq!(shape_false(SOLANA, 300, MAX_BATCH + 1, &[], &none, &none), None);
+        assert_eq!(shape_false(SOLANA, ETHEREUM, MAX_RAW_TX + 1, 10, &[], &none, &none), None);
+        assert_eq!(shape_false(SOLANA, ETHEREUM, 300, MAX_BATCH + 1, &[], &none, &none), None);
         let mut many = vec![Record::Cancel { net: ETHEREUM, id: 1 }; 16];
         many.extend(vec![Record::Cancel { net: SOLANA, id: 1 }; 16]);
-        assert_eq!(shape_false(SOLANA, 300, 320, &many, &none, &none), Some(none.clone()));
+        assert_eq!(shape_false(SOLANA, ETHEREUM, 300, 320, &many, &none, &none), Some(none.clone()));
         many.push(Record::Asset { home: ETHEREUM, asset: 0, token: [0; 32], decimals: 9 });
-        assert_eq!(shape_false(SOLANA, 300, 359, &many, &none, &none), None);
+        assert_eq!(shape_false(SOLANA, ETHEREUM, 300, 359, &many, &none, &none), None);
         many.pop();
         many.push(bond(ETHEREUM, SOLANA, 1));
-        assert_eq!(shape_false(SOLANA, 300, 335, &many, &none, &none), Some(none.clone()));
+        assert_eq!(shape_false(SOLANA, ETHEREUM, 300, 335, &many, &none, &none), Some(none.clone()));
+    }
+
+    #[test]
+    fn judges_a_pair_of_two_evm_networks_by_the_same_shape() {
+        use ipow_protocol_core::vault::BASE;
+        let none = Bonds::new();
+        let request = |net, to| Record::Request { net, asset: 0, id: 1, amount: 1, to, fee: 0, fast_fee: 0, at: 0 };
+        // In the pair Ethereum and Base, a record of Solana is false.
+        assert_eq!(shape_false(ETHEREUM, BASE, 300, 10, &[Record::Cancel { net: SOLANA, id: 1 }], &none, &none), None);
+        assert_eq!(shape_false(ETHEREUM, BASE, 300, 10, &[Record::Cancel { net: BASE, id: 1 }], &none, &none), Some(none.clone()));
+        // A burn on Base paid on Ethereum, to an address there; the same
+        // rule the other way.
+        assert_eq!(shape_false(ETHEREUM, BASE, 300, 78, &[request(BASE, eth_address32(&[1; 20]))], &none, &none), Some(none.clone()));
+        assert_eq!(shape_false(BASE, ETHEREUM, 300, 78, &[request(ETHEREUM, [7; 32])], &none, &none), None);
+        // Solana's limits do not apply: a lock whose amount and fast fee
+        // overflow opens no claim on an EVM network, and is not false.
+        let lock = Record::Lock { home: BASE, asset: 0, id: 1, amount: u64::MAX, recipient: [0; 32], fee: 0, fast_fee: 1, at: 0 };
+        assert_eq!(shape_false(ETHEREUM, BASE, 300, 78, &[lock], &none, &none), Some(none.clone()));
     }
 
     #[test]
@@ -1916,7 +2002,7 @@ mod tests {
         let sol_chain = Chain { positions: vec![eth0.clone()], ..Default::default() };
         let chains = [Chain::default(), sol_chain];
         let positions = || [Positions::new(), Positions::from([((ETHEREUM, 0), eth0.clone())])];
-        let mut g = Gathered::new(&chains, positions());
+        let mut g = Gathered::new(&chains, positions(), Nets([ETHEREUM, SOLANA]));
         let lock = |id, amount| Record::Lock { home: ETHEREUM, asset: 0, id, amount, recipient: [1; 32], fee: 0, fast_fee: 0, at: 0 };
         // 80% of the bond counted on Solana.
         assert!(g.add(lock(1, 500), SOLANA, Some((ETHEREUM, 0)), 500));
@@ -1925,19 +2011,19 @@ mod tests {
         // An asset with no bond counted moves nothing.
         assert!(!g.add(lock(3, 1), SOLANA, Some((ETHEREUM, 1)), 1));
         // At most 10 LOCK records act on Solana.
-        let mut g = Gathered::new(&chains, positions());
+        let mut g = Gathered::new(&chains, positions(), Nets([ETHEREUM, SOLANA]));
         for id in 0..MAX_LOCKS_ON_SOLANA as u64 {
             assert!(g.add(lock(id, 0), SOLANA, Some((ETHEREUM, 0)), 0));
         }
         assert!(!g.add(lock(99, 0), SOLANA, Some((ETHEREUM, 0)), 0));
         // On Solana a claim's assets count with the chain's own: 8 at most.
-        let mut g = Gathered::new(&chains, positions());
+        let mut g = Gathered::new(&chains, positions(), Nets([ETHEREUM, SOLANA]));
         for asset in 1..MAX_ASSETS as u32 {
             assert!(g.add(Record::Bond { net: ETHEREUM, home: ETHEREUM, asset, amount: 1 }, SOLANA, Some((ETHEREUM, asset)), 0));
         }
         assert!(!g.add(Record::Bond { net: ETHEREUM, home: ETHEREUM, asset: 99, amount: 1 }, SOLANA, Some((ETHEREUM, 99)), 0));
         // 32 counted records in all, whichever network acts.
-        let mut g = Gathered::new(&chains, positions());
+        let mut g = Gathered::new(&chains, positions(), Nets([ETHEREUM, SOLANA]));
         for id in 0..MAX_RECORDS as u64 {
             assert!(g.add(Record::Cancel { net: SOLANA, id }, ETHEREUM, None, 0));
         }
@@ -1966,10 +2052,10 @@ mod tests {
             (4, moved(vec![((ETHEREUM, 0), 7)], vec![((ETHEREUM, 0), 50), ((ETHEREUM, 2), 9), ((SOLANA, 0), 1)])),
             (5, moved(vec![], vec![((ETHEREUM, 0), 5)])),
         ];
-        let on_solana = in_flight_value(&in_flight, SOLANA, ETHEREUM, 4);
+        let on_solana = in_flight_value(&in_flight, 1, ETHEREUM, 4);
         assert_eq!(on_solana, HashMap::from([(0, 55), (2, 9)]));
-        assert_eq!(in_flight_value(&in_flight, SOLANA, ETHEREUM, 6), HashMap::new());
-        assert_eq!(in_flight_value(&in_flight, ETHEREUM, ETHEREUM, 0), HashMap::from([(0, 7)]));
+        assert_eq!(in_flight_value(&in_flight, 1, ETHEREUM, 6), HashMap::new());
+        assert_eq!(in_flight_value(&in_flight, 0, ETHEREUM, 0), HashMap::from([(0, 7)]));
     }
 
     #[test]

@@ -21,7 +21,7 @@ const GAS = 1_000_000n;
 
 async function deploy() {
   const lightClient = await ethers.deployContract("iPoWLightClient", [0]);
-  const protocol = await ethers.deployContract("iPoWProtocol", [
+  const protocol = await ethers.deployContract("iPoWProtocolNative", [
     await lightClient.getAddress(),
   ]);
   const [, application, user, operatorA, operatorB, stranger] =
@@ -95,7 +95,7 @@ async function openJob(
       opts.confirmations ?? 6,
       opts.claimKind ?? 0,
       ctx.user.address,
-      { value: opts.value ?? exact + (opts.extra ?? 0n), gasLimit: GAS }
+      opts.value ?? exact + (opts.extra ?? 0n), { value: opts.value ?? exact + (opts.extra ?? 0n), gasLimit: GAS }
     );
   const receipt = await tx.wait();
   const jobId = await ctx.protocol.jobCount();
@@ -110,7 +110,7 @@ async function openJob(
 describe("iPoWProtocol: operators (D12, D31, D43)", function () {
   it("makes anyone an operator by locking a bond, with no minimum", async function () {
     const { protocol, stranger } = await deploy();
-    await expect(protocol.connect(stranger).lockBond({ value: 1n }))
+    await expect(protocol.connect(stranger).lockBond(1n, { value: 1n }))
       .to.emit(protocol, "BondLocked")
       .withArgs(stranger.address, 1n);
     expect(await protocol.bondOf(stranger.address)).to.deep.equal([1n, 0n]);
@@ -119,13 +119,13 @@ describe("iPoWProtocol: operators (D12, D31, D43)", function () {
   it("rejects an empty bond", async function () {
     const { protocol, stranger } = await deploy();
     await expect(
-      protocol.connect(stranger).lockBond({ value: 0n })
+      protocol.connect(stranger).lockBond(0n, { value: 0n })
     ).to.be.revertedWithCustomError(protocol, "ZeroAmount");
   });
 
   it("lets an operator withdraw free bond", async function () {
     const { protocol, operatorA } = await deploy();
-    await protocol.connect(operatorA).lockBond({ value: 3n * ETH });
+    await protocol.connect(operatorA).lockBond(3n * ETH, { value: 3n * ETH });
     await expect(
       protocol.connect(operatorA).withdrawBond(2n * ETH)
     ).to.changeEtherBalances(
@@ -138,7 +138,7 @@ describe("iPoWProtocol: operators (D12, D31, D43)", function () {
 
   it("does not let an operator withdraw more than it has", async function () {
     const { protocol, operatorA } = await deploy();
-    await protocol.connect(operatorA).lockBond({ value: ETH });
+    await protocol.connect(operatorA).lockBond(ETH, { value: ETH });
     await expect(
       protocol.connect(operatorA).withdrawBond(ETH + 1n)
     ).to.be.revertedWithCustomError(protocol, "BondNotFree");
@@ -147,7 +147,7 @@ describe("iPoWProtocol: operators (D12, D31, D43)", function () {
   it("keeps bond that is locked for a job", async function () {
     const ctx = await deploy();
     const { protocol, operatorA } = ctx;
-    await protocol.connect(operatorA).lockBond({ value: 3n * ETH });
+    await protocol.connect(operatorA).lockBond(3n * ETH, { value: 3n * ETH });
     const { jobId } = await openJob(ctx);
     await protocol.connect(operatorA).bid(jobId, 2n * ETH);
 
@@ -343,7 +343,7 @@ describe("iPoWProtocol: opening a job (D19, D40, D55, D56, D65)", function () {
     await expect(
       protocol
         .connect(stranger)
-        .openJob(TAG, ETH, 50, 6, 0, user.address, {
+        .openJob(TAG, ETH, 50, 6, 0, user.address, ETH / 10n, {
         value: ETH / 10n,
         gasLimit: GAS,
       })
@@ -366,7 +366,7 @@ describe("iPoWProtocol: opening a job (D19, D40, D55, D56, D65)", function () {
     await protocol.connect(stranger).registerApplication([]);
     await protocol
       .connect(stranger)
-      .openJob(TAG, ETH, 50, 6, 0, user.address, {
+      .openJob(TAG, ETH, 50, 6, 0, user.address, ETH / 10n, {
         value: ETH / 10n,
         gasLimit: GAS,
       });
@@ -386,7 +386,7 @@ describe("iPoWProtocol: opening a job (D19, D40, D55, D56, D65)", function () {
     await expect(
       protocol
         .connect(application)
-        .openJob(TAG, ETH, 50, 6, 0, ethers.ZeroAddress, {
+        .openJob(TAG, ETH, 50, 6, 0, ethers.ZeroAddress, ETH / 10n, {
           value: ETH / 10n,
           gasLimit: GAS,
         })
@@ -402,7 +402,7 @@ describe("iPoWProtocol: opening a job (D19, D40, D55, D56, D65)", function () {
     await setPrice(GWEI);
     await protocol
       .connect(stranger)
-      .openJob(TAG, ETH, 50, 6, 32, user.address, {
+      .openJob(TAG, ETH, 50, 6, 32, user.address, ETH / 10n, {
         value: ETH / 10n,
         gasLimit: GAS,
       });
@@ -411,7 +411,7 @@ describe("iPoWProtocol: opening a job (D19, D40, D55, D56, D65)", function () {
     await expect(
       protocol
         .connect(stranger)
-        .openJob(ethers.id("x"), ETH, 50, 6, 33, user.address, {
+        .openJob(ethers.id("x"), ETH, 50, 6, 33, user.address, ETH / 10n, {
           value: ETH / 10n,
           gasLimit: GAS,
         })
@@ -448,8 +448,8 @@ describe("iPoWProtocol: opening a job (D19, D40, D55, D56, D65)", function () {
 describe("iPoWProtocol: auction (D29, D32, D33, D37, D60)", function () {
   async function withJob() {
     const ctx = await deploy();
-    await ctx.protocol.connect(ctx.operatorA).lockBond({ value: 3n * ETH });
-    await ctx.protocol.connect(ctx.operatorB).lockBond({ value: 3n * ETH });
+    await ctx.protocol.connect(ctx.operatorA).lockBond(3n * ETH, { value: 3n * ETH });
+    await ctx.protocol.connect(ctx.operatorB).lockBond(3n * ETH, { value: 3n * ETH });
     const opened = await openJob(ctx);
     return { ...ctx, ...opened };
   }
@@ -586,7 +586,7 @@ describe("iPoWProtocol: auction (D29, D32, D33, D37, D60)", function () {
 
   it("gives a job with 76 confirmations a deadline of 80 hours (D69, D70)", async function () {
     const ctx = await deploy();
-    await ctx.protocol.connect(ctx.operatorA).lockBond({ value: 3n * ETH });
+    await ctx.protocol.connect(ctx.operatorA).lockBond(3n * ETH, { value: 3n * ETH });
     const { jobId, openedAt } = await openJob(ctx, { confirmations: 76 });
     await at(openedAt + MINUTE);
     await ctx.protocol.connect(ctx.operatorA).bid(jobId, ETH);
@@ -702,7 +702,7 @@ describe("iPoWProtocol: a job nobody takes (D61)", function () {
 
   it("does not expire a job that has a winner", async function () {
     const ctx = await deploy();
-    await ctx.protocol.connect(ctx.operatorA).lockBond({ value: ETH });
+    await ctx.protocol.connect(ctx.operatorA).lockBond(ETH, { value: ETH });
     const { jobId, openedAt } = await openJob(ctx);
     await ctx.protocol.connect(ctx.operatorA).bid(jobId, ETH);
     await at(openedAt + 15 * MINUTE);
@@ -725,7 +725,7 @@ describe("iPoWProtocol: a job nobody takes (D61)", function () {
 
   it("rejects a bid after the job expired", async function () {
     const ctx = await deploy();
-    await ctx.protocol.connect(ctx.operatorA).lockBond({ value: ETH });
+    await ctx.protocol.connect(ctx.operatorA).lockBond(ETH, { value: ETH });
     const { jobId, openedAt } = await openJob(ctx);
     await mineAt(openedAt + 15 * MINUTE);
     await expect(
@@ -743,7 +743,7 @@ describe("iPoWProtocol: a job nobody takes (D61)", function () {
 
 describe("iPoWProtocol: no person in control (D59)", function () {
   it("cannot be deployed without a light client", async function () {
-    const factory = await ethers.getContractFactory("iPoWProtocol");
+    const factory = await ethers.getContractFactory("iPoWProtocolNative");
     await expect(
       factory.deploy(ethers.ZeroAddress)
     ).to.be.revertedWithCustomError(factory, "ZeroAddress");
@@ -765,8 +765,8 @@ describe("iPoWProtocol: no person in control (D59)", function () {
       ).to.equal(expected);
     }
 
-    await protocol.connect(operatorA).lockBond({ value: 3n * ETH });
-    await protocol.connect(operatorB).lockBond({ value: 3n * ETH });
+    await protocol.connect(operatorA).lockBond(3n * ETH, { value: 3n * ETH });
+    await protocol.connect(operatorB).lockBond(3n * ETH, { value: 3n * ETH });
     const first = await openJob(ctx, { tag: ethers.id("1"), value: ETH });
     const second = await openJob(ctx, { tag: ethers.id("2"), value: ETH });
     const jobs = [first.jobId, second.jobId];
@@ -823,7 +823,7 @@ describe("iPoWProtocol: an operator that is a contract", function () {
   it("does not stop a better bid when it refuses money", async function () {
     const ctx = await withActor();
     const { protocol, actor, operatorA } = ctx;
-    await protocol.connect(operatorA).lockBond({ value: 3n * ETH });
+    await protocol.connect(operatorA).lockBond(3n * ETH, { value: 3n * ETH });
     const { jobId } = await openJob(ctx);
 
     await actor.bid(jobId, ETH);

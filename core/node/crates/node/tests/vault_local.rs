@@ -17,8 +17,9 @@ use ipow_node::operator::Operator;
 use ipow_node::supervisor::Worker;
 use ipow_node::vault::{Side, VaultGuardian, VaultOperator, VaultOperatorSettings};
 use ipow_node::wallet::{head_spend, SharedWallet};
-use ipow_protocol_core::settings::{FastSettings, VaultAsset, VaultNetwork};
-use ipow_protocol_core::vault::{encode, message_payload, Record, TxProof, VaultApp, ETHEREUM, SOLANA};
+use ipow_node::vault::CarriedAsset;
+use ipow_protocol_core::settings::FastSettings;
+use ipow_protocol_core::vault::{eth_address32, encode, message_payload, Record, TxProof, VaultApp, BASE, ETHEREUM, SOLANA};
 use ipow_testing::{World, mine};
 use solana_sdk::signer::Signer;
 
@@ -45,14 +46,27 @@ struct Setup {
     g_eth: Arc<dyn VaultApp>,
     /// Whether Mallory's node runs in each round: stopped before she lies.
     mallory_runs: std::sync::atomic::AtomicBool,
+    /// A second pair, of two EVM networks, when a test asks for it.
+    evm_pair: Option<EvmPair>,
     _journal: tempfile::TempDir,
+}
+
+/// A pair of two EVM networks (D132), Ethereum (1) and Base (3), both
+/// vaults on the local chain, with the same operator and guardian.
+struct EvmPair {
+    op: VaultOperator,
+    guardian: VaultGuardian,
+    a: Arc<dyn VaultApp>,
+    b: Arc<dyn VaultApp>,
+    a_address: alloy::primitives::Address,
+    b_address: alloy::primitives::Address,
 }
 
 /// ETH, asset 0 of Ethereum, carried with a bond of `bond` gwei there, and
 /// the fast paths for a fast fee of 1 gwei or more.
-fn eth_asset(bond: u64, fast: bool) -> VaultAsset {
-    VaultAsset {
-        home: VaultNetwork::Ethereum,
+fn eth_asset(bond: u64, fast: bool) -> CarriedAsset {
+    CarriedAsset {
+        home: ETHEREUM,
         asset: 0,
         bond_home: bond,
         bond_receipt: 0,
@@ -74,7 +88,13 @@ async fn accepted_carrying(v: &dyn VaultApp, r: &Record) -> Option<u64> {
 
 impl Setup {
     /// The honest operator carries `assets`.
-    async fn new(assets: Vec<VaultAsset>) -> Self {
+    async fn new(assets: Vec<CarriedAsset>) -> Self {
+        Self::build(assets, None).await
+    }
+
+    /// The same, with also a pair of two EVM networks whose operator carries
+    /// `evm_assets`.
+    async fn build(assets: Vec<CarriedAsset>, evm_assets: Option<Vec<CarriedAsset>>) -> Self {
         let _ = tracing_subscriber::fmt().with_test_writer().with_env_filter("warn,ipow_node::vault=info,ipow_node::operator=info").try_init();
         let eth = EvmWorld::new().await;
         let sol = SvmWorld::new().await;
@@ -100,13 +120,18 @@ impl Setup {
         let shared = Arc::new(SharedWallet::new(wallet, btc.clone(), 200.0));
         let mallory_shared = Arc::new(SharedWallet::new(mallory_wallet, btc.clone(), 200.0));
 
-        // The vaults: each names the other; 1 ETH and 1 SOL certify.
-        let program = ipow_network_svm::programs::ipow_vault::ID.to_bytes();
-        let address = eth.deploy_vault(program, ETH / 100, ETH).await;
+        // The pair Ethereum and Solana (D132): each vault names the other,
+        // Solana's being the pair's configuration; 1 ETH and 1 SOL certify.
+        let pair_config = ipow_network_svm::vault::Pdas::new(ETHEREUM).config.to_bytes();
+        let address = eth.deploy_vault(ETHEREUM, SOLANA, pair_config, ETH / 100, ETH).await;
         sol.init_vault(address.0.0, (SOL / 20) as u64, SOL as u64);
 
         let (eth_vault, eth_net) = eth.vault_node(address, 0).await;
         let (sol_vault, sol_net) = sol.vault_node(&sol.operator_key);
+        // The two vaults name each other (D132).
+        ipow_node::vault::check_pair(&Side { vault: eth_vault.clone(), net: eth_net.clone() }, &Side { vault: sol_vault.clone(), net: sol_net.clone() })
+            .await
+            .unwrap();
         let journal = tempfile::tempdir().unwrap();
         let vault_op = VaultOperator::new(
             Side { vault: eth_vault.clone(), net: eth_net },
@@ -119,7 +144,8 @@ impl Setup {
                 checkpoint_paid: [Some(ETH / 10), Some(SOL / 10)],
                 journal: journal.path().join("vault.journal"),
             },
-        );
+        )
+        .unwrap();
         // Mallory: another operator, with its own keys and journal.
         let (m_eth, m_eth_net) = eth.vault_node(address, 3).await;
         let m_key = sol.chain.funded(100);
@@ -135,11 +161,39 @@ impl Setup {
                 checkpoint_paid: [None, None],
                 journal: journal.path().join("mallory.journal"),
             },
-        );
+        )
+        .unwrap();
         let (g_eth, g_eth_net) = eth.vault_node(address, 2).await;
         let g_key = sol.chain.funded(100);
         let (g_sol, g_sol_net) = sol.vault_node(&g_key);
-        let guardian = VaultGuardian::new(Side { vault: g_eth.clone(), net: g_eth_net }, Side { vault: g_sol, net: g_sol_net }, btc.clone(), [Some(ETH / 10), None]);
+        let guardian = VaultGuardian::new(Side { vault: g_eth.clone(), net: g_eth_net }, Side { vault: g_sol, net: g_sol_net }, btc.clone(), [Some(ETH / 10), None]).unwrap();
+
+        let evm_pair = match evm_assets {
+            None => None,
+            Some(evm_assets) => {
+                let (a_address, b_address) = eth.deploy_evm_pair(ETHEREUM, BASE, ETH / 100, ETH).await;
+                let (a, a_net) = eth.vault_node(a_address, 0).await;
+                let (b, b_net) = eth.vault_node(b_address, 0).await;
+                ipow_node::vault::check_pair(&Side { vault: a.clone(), net: a_net.clone() }, &Side { vault: b.clone(), net: b_net.clone() }).await.unwrap();
+                let op = VaultOperator::new(
+                    Side { vault: a.clone(), net: a_net },
+                    Side { vault: b.clone(), net: b_net },
+                    btc.clone(),
+                    shared.clone(),
+                    VaultOperatorSettings {
+                        assets: evm_assets,
+                        deposits: 5,
+                        checkpoint_paid: [Some(ETH / 10), Some(ETH / 10)],
+                        journal: journal.path().join("evm.journal"),
+                    },
+                )
+                .unwrap();
+                let (ga, ga_net) = eth.vault_node(a_address, 2).await;
+                let (gb, gb_net) = eth.vault_node(b_address, 2).await;
+                let guardian = VaultGuardian::new(Side { vault: ga, net: ga_net }, Side { vault: gb, net: gb_net }, btc.clone(), [Some(ETH / 10), Some(ETH / 10)]).unwrap();
+                Some(EvmPair { op, guardian, a, b, a_address, b_address })
+            }
+        };
 
         // The protocol operators take the checkpoint jobs.
         eth.operator().lock_bond(10 * ETH).await.unwrap();
@@ -163,6 +217,7 @@ impl Setup {
             m_sol,
             g_eth,
             mallory_runs: std::sync::atomic::AtomicBool::new(false),
+            evm_pair,
             _journal: journal,
         }
     }
@@ -179,6 +234,10 @@ impl Setup {
             self.mallory.round(self.eth.operator()).await.unwrap();
         }
         self.guardian.round(self.eth.operator()).await.unwrap();
+        if let Some(p) = &self.evm_pair {
+            p.op.round(self.eth.operator()).await.unwrap();
+            p.guardian.round(self.eth.operator()).await.unwrap();
+        }
     }
 
     async fn tick(&self, s: u64) {
@@ -367,7 +426,7 @@ async fn a_guardian_objects_to_a_made_up_lock_and_the_claim_is_refused() {
 #[tokio::test(flavor = "multi_thread")]
 async fn issues_a_receipt_at_once_and_pays_a_burn_at_once() {
     // With 0.3 vETH bonded on Solana, so that burns of vETH are carried.
-    let s = Setup::new(vec![VaultAsset { bond_receipt: 300_000_000, ..eth_asset(2_000_000_000, true) }]).await;
+    let s = Setup::new(vec![CarriedAsset { bond_receipt: 300_000_000, ..eth_asset(2_000_000_000, true) }]).await;
     let sol_me = s.sol_vault.me();
     let op = s.sol.operator_key.pubkey();
     s.until("the bond counted on Solana, and vETH made", async |s| {
@@ -451,8 +510,8 @@ async fn issues_a_receipt_at_once_and_pays_a_burn_at_once() {
 /// Ethereum, with vSOL as collateral.
 #[tokio::test(flavor = "multi_thread")]
 async fn carries_sol_to_vsol_on_ethereum_and_back() {
-    let sol = VaultAsset {
-        home: VaultNetwork::Solana,
+    let sol = CarriedAsset {
+        home: SOLANA,
         asset: 0,
         bond_home: 5 * SOL as u64,
         bond_receipt: SOL as u64,
@@ -537,4 +596,31 @@ async fn carries_sol_to_vsol_on_ethereum_and_back() {
     assert!(s.sol_vault.request_paid(id).await.unwrap());
     // The attest is settled once its claim is accepted.
     s.until("the attest settled on Ethereum", async |s| s.eth_vault.fast_lock(1).await.unwrap().is_none()).await;
+}
+
+/// A pair of two EVM networks (D132): ETH locked in Ethereum's vault for
+/// Base is issued as its receipt by Base's vault, through the same node,
+/// with no Solana in the pair.
+#[tokio::test(flavor = "multi_thread")]
+async fn carries_a_lock_between_two_evm_networks() {
+    let s = Setup::build(vec![], Some(vec![eth_asset(2_000_000_000, false)])).await;
+    let p = s.evm_pair.as_ref().unwrap();
+    assert_eq!((p.a.network_id(), p.a.peer_id(), p.b.network_id(), p.b.peer_id()), (ETHEREUM, BASE, BASE, ETHEREUM));
+    let me = p.b.me();
+    s.until("ETH's bond counted on Base, and its receipt made", async |s| {
+        let p = s.evm_pair.as_ref().unwrap();
+        p.b.chain(&me).await.unwrap().is_some() && p.b.position(&me, ETHEREUM, 0).await.unwrap().peer_bond == 2_000_000_000 && p.b.has_receipt(0).await.unwrap()
+    })
+    .await;
+
+    // Alice locks 1 ETH in Ethereum's vault for Base, for its receipt there.
+    let alice = s.eth.user_address().await;
+    s.eth.user_lock(p.a_address, eth_address32(&alice.0.0), ETH, 1_000_000_000, 0).await;
+    let record = p.a.lock(1).await.unwrap().unwrap().record(ETHEREUM);
+    s.until("the lock's claim accepted on Base", async |s| accepted_carrying(s.evm_pair.as_ref().unwrap().b.as_ref(), &record).await.is_some()).await;
+    let claim = accepted_carrying(p.b.as_ref(), &record).await.unwrap();
+    s.eth.issue_receipt(p.b_address, claim, &record.bytes()).await;
+    assert_eq!(s.eth.receipt_balance(p.b_address, 0, alice).await, 1_000_000_000);
+    // The operator earned the lock's fee on Ethereum.
+    assert!(p.a.lock(1).await.unwrap().unwrap().fee_paid);
 }

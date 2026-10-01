@@ -7,19 +7,21 @@ use crate::state::{Config, HomeAsset};
 /// The loader that holds upgradeable programs.
 const UPGRADEABLE_LOADER: Pubkey = pubkey!("BPFLoaderUpgradeab1e11111111111111111111111");
 
-/// Sets what is fixed at deployment, once: the vault on Ethereum, the flat
+/// Sets up the pair with `peer`, once (D132): the vault there, the flat
 /// deposit (D121) and the least certifying escrow (D118), as Ethereum's
 /// constructor does. Only the program's upgrade authority may call it, so
 /// nobody else can set them first; the authority is then removed and
 /// nothing can change (D59). Records SOL as asset 0 (section 11.9), and
 /// registers the vault with the protocol as an application with no claims,
 /// so that it can open checkpoint jobs (D116).
-pub fn handler(ctx: Context<Initialize>, ethereum_vault: [u8; 20], deposit: u64, min_certifying_escrow: u64) -> Result<()> {
-    require!(ethereum_vault != [0u8; 20] && deposit > 0 && min_certifying_escrow > 0, VaultError::ZeroAmount);
+pub fn handler(ctx: Context<Initialize>, peer: u8, peer_vault: [u8; 20], deposit: u64, min_certifying_escrow: u64) -> Result<()> {
+    require!(peer_vault != [0u8; 20] && deposit > 0 && min_certifying_escrow > 0, VaultError::ZeroAmount);
+    require!((1..=MAX_NETWORK).contains(&peer) && peer != SOLANA, VaultError::BadNetwork);
     #[cfg(not(feature = "test-limits"))]
     require_upgrade_authority(ctx.program_id, &ctx.accounts.program_data, &ctx.accounts.payer.key())?;
     let c = &mut ctx.accounts.config;
-    c.ethereum_vault = ethereum_vault;
+    c.peer = peer;
+    c.peer_vault = peer_vault;
     c.deposit = deposit;
     c.min_certifying_escrow = min_certifying_escrow;
     c.asset_count = 1;
@@ -32,7 +34,7 @@ pub fn handler(ctx: Context<Initialize>, ethereum_vault: [u8; 20], deposit: u64,
     s.record_decimals = 9;
     s.unit = 1;
     s.bump = ctx.bumps.sol;
-    let seeds: &[&[u8]] = &[CONFIG_SEED, &[ctx.bumps.config]];
+    let seeds: &[&[u8]] = &[CONFIG_SEED, &[peer], &[ctx.bumps.config]];
     ipow_protocol::cpi::register_application(
         CpiContext::new_with_signer(
             ipow_protocol::ID,
@@ -63,10 +65,11 @@ fn require_upgrade_authority(program_id: &Pubkey, program_data: &AccountInfo, au
 }
 
 #[derive(Accounts)]
+#[instruction(peer: u8)]
 pub struct Initialize<'info> {
-    #[account(init, payer = payer, space = 8 + Config::INIT_SPACE, seeds = [CONFIG_SEED], bump)]
+    #[account(init, payer = payer, space = 8 + Config::INIT_SPACE, seeds = [CONFIG_SEED, &[peer]], bump)]
     pub config: Account<'info, Config>,
-    #[account(init, payer = payer, space = 8 + HomeAsset::INIT_SPACE, seeds = [ASSET_SEED, &0u32.to_le_bytes()], bump)]
+    #[account(init, payer = payer, space = 8 + HomeAsset::INIT_SPACE, seeds = [ASSET_SEED, config.key().as_ref(), &0u32.to_le_bytes()], bump)]
     pub sol: Account<'info, HomeAsset>,
     /// CHECK: the application's record in the protocol, created by it.
     #[account(mut)]

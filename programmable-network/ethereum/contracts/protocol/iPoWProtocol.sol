@@ -22,7 +22,12 @@ import {BitcoinTxLib} from "./BitcoinTxLib.sol";
 ///
 /// Money is never pushed to an address. It is credited and the address
 /// withdraws it.
-contract iPoWProtocol is ReentrancyGuard {
+///
+/// This is the shared logic of two builds (D137): `iPoWProtocolNative`, whose
+/// money is the network's native coin, and `iPoWProtocolToken`, whose money
+/// is a token, for a network without a native coin (D136). They differ only
+/// in how money moves (`_take`, `_send`) and in the unit of the price.
+abstract contract iPoWProtocol is ReentrancyGuard {
     // ------------------------------------------------------------------
     // Rules fixed by the protocol
     // ------------------------------------------------------------------
@@ -358,7 +363,7 @@ contract iPoWProtocol is ReentrancyGuard {
     error ChallengeWindowClosed();
     error ChallengeOpen();
     error NoChallenge();
-    error WrongDeposit();
+    error WrongValue();
     error ResponseTimeNotOver();
     error ResponseTimeOver();
     error NotOnOperatorBranch();
@@ -378,12 +383,14 @@ contract iPoWProtocol is ReentrancyGuard {
     // Operators (D12, D31, D43)
     // ------------------------------------------------------------------
 
-    /// @notice Locks a bond. This is all it takes to be an operator (D12).
-    /// There is no minimum (D43).
-    function lockBond() external payable {
-        if (msg.value == 0) revert ZeroAmount();
-        _operators[msg.sender].bond += msg.value;
-        emit BondLocked(msg.sender, msg.value);
+    /// @notice Locks a bond of `amount`. This is all it takes to be an
+    /// operator (D12). There is no minimum (D43). A native coin sends exactly
+    /// `amount` (D138).
+    function lockBond(uint256 amount) external payable {
+        if (amount == 0) revert ZeroAmount();
+        _take(amount);
+        _operators[msg.sender].bond += amount;
+        emit BondLocked(msg.sender, amount);
     }
 
     /// @notice Withdraws free bond. Bond that is locked for a job stays (D43).
@@ -453,10 +460,12 @@ contract iPoWProtocol is ReentrancyGuard {
         return commitmentFeeAt(confirmations, _price());
     }
 
-    /// @notice The commitment fee at a given price of work.
-    function commitmentFeeAt(uint16 confirmations, uint256 price) public pure returns (uint256) {
+    /// @notice The commitment fee at a given price of work, in the network's
+    /// coin: the price is in the units of the network's gas price, divided by
+    /// the units of it per unit of the coin (D136).
+    function commitmentFeeAt(uint16 confirmations, uint256 price) public view returns (uint256) {
         uint256 work = WORK_PER_BLOCK * windowOf(confirmations) + WORK_FIXED;
-        return (work * price * MARGIN_NUMERATOR) / MARGIN_DENOMINATOR;
+        return (work * price * MARGIN_NUMERATOR) / MARGIN_DENOMINATOR / _priceScale();
     }
 
     /// @notice D69: the time an operator has, from the moment it is locked in.
@@ -488,7 +497,8 @@ contract iPoWProtocol is ReentrancyGuard {
         uint16 escrowFeeBps,
         uint16 confirmations,
         uint16 claimKind,
-        address payer
+        address payer,
+        uint256 paid
     ) external payable returns (uint256 jobId) {
         Application storage app = _applications[msg.sender];
         if (!app.registered) revert NotRegistered();
@@ -505,9 +515,10 @@ contract iPoWProtocol is ReentrancyGuard {
         // D33: on x, never on a bid.
         uint256 escrowFee = (escrow * escrowFeeBps) / BPS;
 
-        if (msg.value < commitmentFee + escrowFee) revert FeesNotPaid();
+        // D138: the amount paid is named; a native coin sends exactly it.
+        if (paid < commitmentFee + escrowFee) revert FeesNotPaid();
         // D79.
-        commitmentFee = msg.value - escrowFee;
+        commitmentFee = paid - escrowFee;
 
         jobId = ++jobCount;
         _jobOfTag[tagKey] = jobId;
@@ -526,6 +537,8 @@ contract iPoWProtocol is ReentrancyGuard {
             lastBidAt: 0,
             feesReturned: false
         });
+        // Taken after the job is recorded: a token build calls the coin.
+        _take(paid);
         emit JobOpened(
             jobId,
             msg.sender,
@@ -1258,17 +1271,16 @@ contract iPoWProtocol is ReentrancyGuard {
         // D99: the lock never moves, and the last challenge opens 12 hours
         // before it ends, so every challenge is decided within the lock.
         if (block.timestamp + RESPONSE_TIME > duty.lockEnd) revert ChallengeWindowClosed();
-        // D81, D91.
-        if (msg.value != deposit) revert WrongDeposit();
-
         challengeId = ++challengeCount;
         Challenge storage challenge = _challenges[challengeId];
         challenge.kind = kind;
         challenge.jobId = jobId;
         challenge.guardian = msg.sender;
-        challenge.deposit = msg.value;
+        challenge.deposit = deposit;
         challenge.openedAt = uint40(block.timestamp);
         openChallengesOf[jobId] += 1;
+        // D81, D91: taken after the record; a token build calls the coin.
+        _take(deposit);
     }
 
     function _close(uint256 challengeId) private {
@@ -1368,9 +1380,16 @@ contract iPoWProtocol is ReentrancyGuard {
         emit Credited(to, amount);
     }
 
-    function _send(address to, uint256 amount) private {
-        (bool ok, ) = to.call{value: amount}("");
-        if (!ok) revert TransferFailed();
+    /// @dev D137: takes exactly `amount` of the network's coin from the
+    /// caller.
+    function _take(uint256 amount) internal virtual;
+
+    /// @dev D137: pays `amount` of the network's coin.
+    function _send(address to, uint256 amount) internal virtual;
+
+    /// @dev D136: units of the price of work per unit of the coin.
+    function _priceScale() internal view virtual returns (uint256) {
+        return 1;
     }
 
     /// @dev D92. Virtual only so that a test can lower it.
@@ -1381,5 +1400,21 @@ contract iPoWProtocol is ReentrancyGuard {
     /// @dev D58: the price of work on this network, read by the contract.
     function _price() internal view virtual returns (uint256) {
         return block.basefee;
+    }
+}
+
+/// @title iPoWProtocolNative
+/// @notice The protocol on a network with a native coin (D137): bonds, fees
+/// and deposits are sent with the call, exactly the amount named.
+contract iPoWProtocolNative is iPoWProtocol {
+    constructor(iPoWLightClient lightClient_) iPoWProtocol(lightClient_) {}
+
+    function _take(uint256 amount) internal override {
+        if (msg.value != amount) revert WrongValue();
+    }
+
+    function _send(address to, uint256 amount) internal override {
+        (bool ok, ) = to.call{value: amount}("");
+        if (!ok) revert TransferFailed();
     }
 }

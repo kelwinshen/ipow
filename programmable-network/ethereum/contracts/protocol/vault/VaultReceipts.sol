@@ -106,8 +106,14 @@ contract VaultReceipts is ReentrancyGuard {
         _;
     }
 
-    constructor(IVaultCore core_) {
+    /// @notice This network's number, and its peer's (D133), set once.
+    uint8 public here;
+    uint8 public peer;
+
+    constructor(IVaultCore core_, uint8 here_, uint8 peer_) {
         core = core_;
+        here = here_;
+        peer = peer_;
     }
 
     // ------------------------------------------------------------------
@@ -117,20 +123,34 @@ contract VaultReceipts is ReentrancyGuard {
     /// @notice Makes the receipt of an asset on Solana, from an accepted claim
     /// carrying its ASSET record. Anyone may call, once per asset.
     function makeReceipt(uint256 claimId, bytes calldata record) external returns (address) {
-        if (record.length != R.ASSET_LEN || uint8(record[0]) != R.ASSET || uint8(record[1]) != R.SOLANA) revert WrongRecord();
+        if (record.length != R.ASSET_LEN || uint8(record[0]) != R.ASSET || uint8(record[1]) != peer) revert WrongRecord();
         _requireCarried(claimId, record);
         uint32 asset = R.u32(record, 2);
         if (address(receiptOf[asset]) != address(0)) revert AssetExists();
         uint8 decimals = uint8(record[38]);
         if (decimals > R.MAX_DECIMALS) revert WrongRecord();
         string memory n = Strings.toString(asset);
+        (string memory net, string memory coin) = _names(peer);
         (string memory name, string memory symbol) = asset == 0
-            ? ("iPoW vSOL", "vSOL")
-            : (string.concat("iPoW Solana asset ", n), string.concat("vSPL", n));
+            ? (string.concat("iPoW v", coin), string.concat("v", coin))
+            : (string.concat("iPoW ", net, " asset ", n), string.concat("v", coin, "-", n));
         VaultReceipt r = new VaultReceipt{salt: bytes32(uint256(asset))}(name, symbol, decimals);
         receiptOf[asset] = r;
         emit ReceiptMade(asset, address(r), R.b32(record, 6), decimals);
         return address(r);
+    }
+
+    /// @dev A network of D133's list by name, and its coin as a receipt's name
+    /// shows it: vETH for Ethereum's ETH, vETH.base for Base's.
+    function _names(uint8 net) private pure returns (string memory, string memory) {
+        if (net == 1) return ("Ethereum", "ETH");
+        if (net == 2) return ("Solana", "SOL");
+        if (net == 3) return ("Base", "ETH.base");
+        if (net == 4) return ("Robinhood", "ETH.robinhood");
+        if (net == 5) return ("Polkadot", "DOT");
+        if (net == 6) return ("Hedera", "HBAR");
+        if (net == 7) return ("Hyperliquid", "HYPE");
+        return ("Tempo", "USD.tempo");
     }
 
     function _receipt(uint32 asset) private view returns (VaultReceipt r) {
@@ -190,7 +210,9 @@ contract VaultReceipts is ReentrancyGuard {
     function burn(uint32 asset, bytes32 to, uint64 amount, uint64 fee, uint64 fastFee) external returns (uint64 requestId) {
         VaultReceipt r = _receipt(asset);
         if (amount == 0) revert ZeroAmount();
-        if (to == bytes32(0)) revert ZeroAddress();
+        // An address on the peer: a REQUEST to anything else is judged false
+        // there, and its operator slashed.
+        if (!R.addressOn(to, peer)) revert ZeroAddress();
         if (uint256(amount) + fee + fastFee > type(uint64).max) revert TooLarge();
         r.burnFrom(msg.sender, uint256(amount) + fastFee);
         if (fee != 0) {
@@ -220,7 +242,7 @@ contract VaultReceipts is ReentrancyGuard {
     function burnRecordHash(uint64 requestId) external view returns (bytes32) {
         Burn storage b = _burns[requestId];
         if (b.owner == address(0)) return bytes32(0);
-        return keccak256(R.request(R.ETHEREUM, b.asset, requestId, b.amount, b.to, b.fee, b.fastFee, b.at));
+        return keccak256(R.request(here, b.asset, requestId, b.amount, b.to, b.fee, b.fastFee, b.at));
     }
 
     /// @notice The core pays a burn's fee to the operator of the first true
@@ -393,8 +415,8 @@ contract VaultReceipts is ReentrancyGuard {
     /// @dev A LOCK record of a lock on Solana for a real Ethereum address,
     /// whose receipt exists: its number, asset, value (amount and fast fee)
     /// and recipient.
-    function _readLock(bytes calldata record) private pure returns (uint64 lockId, uint32 asset, uint64 value, address to) {
-        if (record.length != R.LOCK_LEN || uint8(record[0]) != R.LOCK || uint8(record[1]) != R.SOLANA) revert WrongRecord();
+    function _readLock(bytes calldata record) private view returns (uint64 lockId, uint32 asset, uint64 value, address to) {
+        if (record.length != R.LOCK_LEN || uint8(record[0]) != R.LOCK || uint8(record[1]) != peer) revert WrongRecord();
         asset = R.u32(record, 2);
         lockId = R.u64(record, 6);
         value = R.u64(record, 14) + R.u64(record, 62);

@@ -41,10 +41,10 @@ pub fn handler(ctx: Context<Decide>, _claim_id: u64) -> Result<()> {
 #[derive(Accounts)]
 #[instruction(claim_id: u64)]
 pub struct Decide<'info> {
-    #[account(mut, seeds = [CLAIM_SEED, &claim_id.to_le_bytes()], bump = claim.bump)]
+    #[account(mut, seeds = [CLAIM_SEED, config.key().as_ref(), &claim_id.to_le_bytes()], bump = claim.bump)]
     pub claim: Box<Account<'info, Claim>>,
-    #[account(mut, seeds = [CHAIN_SEED, claim.operator.as_ref()], bump = chain.bump)]
+    #[account(mut, seeds = [CHAIN_SEED, config.key().as_ref(), claim.operator.as_ref()], bump = chain.bump)]
     pub chain: Box<Account<'info, Chain>>,
-    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
+    #[account(seeds = [CONFIG_SEED, &[config.peer]], bump = config.bump)]
     pub config: Box<Account<'info, Config>>,
 }

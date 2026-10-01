@@ -9,14 +9,17 @@ use sha2::{Digest, Sha256};
 
 use crate::types::{Amount, BlockRef};
 
-/// The networks of the pair, as records name them (section 11.5).
+/// Network numbers, fixed for good (D133). A vault serves one pair of them
+/// (D132).
 pub const ETHEREUM: u8 = 1;
 pub const SOLANA: u8 = 2;
-
-/// The other network of the pair.
-pub fn other(network: u8) -> u8 {
-    if network == ETHEREUM { SOLANA } else { ETHEREUM }
-}
+pub const BASE: u8 = 3;
+pub const ROBINHOOD: u8 = 4;
+pub const POLKADOT: u8 = 5;
+pub const HEDERA: u8 = 6;
+pub const HYPERLIQUID: u8 = 7;
+pub const TEMPO: u8 = 8;
+pub const MAX_NETWORK: u8 = 8;
 
 /// D119: a message is false when its batch is longer than this, its Bitcoin
 /// transaction longer than this, or it carries more LOCK, REQUEST, CANCEL
@@ -379,8 +382,16 @@ pub struct FastLock {
 
 #[async_trait]
 pub trait VaultApp: Send + Sync {
-    /// ETHEREUM or SOLANA.
+    /// This network's number (D133).
     fn network_id(&self) -> u8;
+    /// The number of the pair's other network.
+    fn peer_id(&self) -> u8;
+    /// This vault as the other network's vault names it, in 32 bytes: an
+    /// EVM vault's address in the last 20, on Solana the pair's
+    /// configuration account (section 11.3).
+    fn vault_id(&self) -> [u8; 32];
+    /// The vault this one names as its pair's other, in the same form.
+    async fn peer_vault(&self) -> anyhow::Result<[u8; 32]>;
     /// This node's address here, as the vault names an operator.
     fn me(&self) -> String;
     /// This node's address here, as the other vault's records name it: 20

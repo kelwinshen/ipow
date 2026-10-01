@@ -53,21 +53,21 @@ pub fn handler(ctx: Context<MakeRequest>, asset: u32, amount: u64, to: [u8; 32],
 #[derive(Accounts)]
 #[instruction(asset: u32)]
 pub struct MakeRequest<'info> {
-    #[account(mut, seeds = [CONFIG_SEED], bump = config.bump)]
+    #[account(mut, seeds = [CONFIG_SEED, &[config.peer]], bump = config.bump)]
     pub config: Box<Account<'info, Config>>,
     #[account(
         init,
         payer = user,
         space = 8 + Request::INIT_SPACE,
-        seeds = [REQUEST_SEED, &(config.request_count + 1).to_le_bytes()],
+        seeds = [REQUEST_SEED, config.key().as_ref(), &(config.request_count + 1).to_le_bytes()],
         bump
     )]
     pub request: Box<Account<'info, Request>>,
-    #[account(mut, seeds = [RECEIPT_SEED, &asset.to_le_bytes()], bump)]
+    #[account(mut, seeds = [RECEIPT_SEED, config.key().as_ref(), &asset.to_le_bytes()], bump)]
     pub mint: Box<Account<'info, Mint>>,
     #[account(mut, token::mint = mint, token::authority = user)]
     pub from: Box<Account<'info, TokenAccount>>,
-    #[account(mut, seeds = [HOLDING_SEED, &asset.to_le_bytes()], bump)]
+    #[account(mut, seeds = [HOLDING_SEED, config.key().as_ref(), &asset.to_le_bytes()], bump)]
     pub holding: Box<Account<'info, TokenAccount>>,
     #[account(mut)]
     pub user: Signer<'info>,

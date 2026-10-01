@@ -6,6 +6,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 import {iPoWProtocol} from "../protocol/iPoWProtocol.sol";
+import {iPoWProtocolToken} from "../protocol/iPoWProtocolToken.sol";
 import {iPoWLightClient} from "../protocol/iPoWLightClient.sol";
 import {BitcoinTxLib} from "../protocol/BitcoinTxLib.sol";
 import {BitcoinPaymentLib} from "./BitcoinPaymentLib.sol";
@@ -93,6 +94,9 @@ contract Conversion is ReentrancyGuard {
     /// their own payment on made-up blocks must mine at Bitcoin's full
     /// difficulty on top of the anchor; this keeps that unprofitable.
     uint64 public immutable maxSats;
+    /// @notice D136: the network's coin; zero for its native coin. The
+    /// protocol must be the build for it (D137).
+    address public immutable coin;
 
     uint256 public swapCount;
     mapping(uint256 => Swap) private _swaps;
@@ -137,10 +141,19 @@ contract Conversion is ReentrancyGuard {
     error NotAnchored();
     error AnchorTooOld();
     error NotSlashed();
+    error WrongCoin();
 
-    constructor(iPoWProtocol protocol_, uint64 maxSats_) {
+    /// @param coin_ The network's coin: zero for a native coin, else the token
+    /// the protocol takes (D136).
+    constructor(iPoWProtocol protocol_, uint64 maxSats_, address coin_) {
         if (maxSats_ == 0) revert InvalidAmount();
         protocol = protocol_;
+        coin = coin_;
+        // The protocol takes each job's fees in the coin from this contract.
+        if (coin_ != address(0)) {
+            if (coin_ != address(iPoWProtocolToken(address(protocol_)).coin())) revert WrongCoin();
+            IERC20(coin_).forceApprove(address(protocol_), type(uint256).max);
+        }
         lightClient = protocol_.lightClient();
         maxSats = maxSats_;
         uint32[] memory periods = new uint32[](1);
@@ -177,23 +190,24 @@ contract Conversion is ReentrancyGuard {
     // Sell: coin to BTC
     // ------------------------------------------------------------------
 
-    /// @notice Locks `amount` of `token` (zero for the coin, sent with the
-    /// call) for at least `sats` paid to `script`. The job's fees are the
-    /// rest of the coin sent.
+    /// @notice Locks `amount` of `token` (zero for a native coin, sent with
+    /// the call) for at least `sats` paid to `script`, and pays `fees` for its
+    /// job in the network's coin (D138): sent with the call, or taken from the
+    /// caller on a network whose coin is a token.
     function sell(
         address token,
         uint256 amount,
         uint64 sats,
         bytes calldata script,
-        uint16 confirmations
+        uint16 confirmations,
+        uint256 fees
     ) external payable nonReentrant returns (uint256 swapId) {
         if (amount == 0 || sats == 0) revert InvalidAmount();
         if (script.length == 0 || script.length > MAX_SCRIPT_LENGTH) revert InvalidScript();
-        uint256 fees = msg.value;
         if (token == address(0)) {
-            if (msg.value < amount) revert InvalidAmount();
-            fees = msg.value - amount;
+            if (coin != address(0) || msg.value != amount + fees) revert InvalidAmount();
         } else {
+            _takeFees(fees);
             amount = _pull(token, amount);
         }
         swapId = ++swapCount;
@@ -268,11 +282,19 @@ contract Conversion is ReentrancyGuard {
     // Buy: BTC to coin
     // ------------------------------------------------------------------
 
-    /// @notice Asks for `amount` of `token` (zero for the coin) for `sats`
-    /// paid on Bitcoin. The coin sent pays the job's fees.
-    function buy(address token, uint256 amount, uint64 sats, uint16 confirmations) external payable nonReentrant returns (uint256 swapId) {
+    /// @notice Asks for `amount` of `token` (zero for a native coin) for
+    /// `sats` paid on Bitcoin, and pays `fees` for its job in the network's
+    /// coin (D138).
+    function buy(address token, uint256 amount, uint64 sats, uint16 confirmations, uint256 fees)
+        external
+        payable
+        nonReentrant
+        returns (uint256 swapId)
+    {
         if (amount == 0 || sats == 0) revert InvalidAmount();
         if (sats > maxSats) revert TooLarge();
+        if (token == address(0) && coin != address(0)) revert InvalidAmount();
+        _takeFees(fees);
         swapId = ++swapCount;
         Swap storage s = _swaps[swapId];
         s.side = Side.Buy;
@@ -281,7 +303,7 @@ contract Conversion is ReentrancyGuard {
         s.token = token;
         s.amount = amount;
         s.sats = sats;
-        s.jobId = _openJob(swapId, confirmations, CLOSE, msg.value);
+        s.jobId = _openJob(swapId, confirmations, CLOSE, fees);
         emit Bought(swapId, s.jobId, msg.sender, token, amount, sats);
     }
 
@@ -458,7 +480,8 @@ contract Conversion is ReentrancyGuard {
     function _openJob(uint256 swapId, uint16 confirmations, uint16 claimKind, uint256 fees) private returns (uint256) {
         (uint256 escrow, , ) = _escrow(confirmations);
         // The user receives the fees back if the operator fails (D62).
-        return protocol.openJob{value: fees}(tagOf(swapId), escrow, ESCROW_FEE_BPS, confirmations, claimKind, msg.sender);
+        uint256 value = coin == address(0) ? fees : 0;
+        return protocol.openJob{value: value}(tagOf(swapId), escrow, ESCROW_FEE_BPS, confirmations, claimKind, msg.sender, fees);
     }
 
     /// @dev Passes on the application's share of a slashed job's escrow.
@@ -466,18 +489,33 @@ contract Conversion is ReentrancyGuard {
         if (compensated[swapId]) return;
         compensated[swapId] = true;
         if (protocol.credit(address(this)) != 0) {
-            uint256 before = address(this).balance;
+            uint256 before = _coinBalance();
             protocol.withdrawCredit();
-            compensation += address(this).balance - before;
+            compensation += _coinBalance() - before;
         }
         uint256 share = (protocol.getJob(s.jobId).escrow * protocol.APPLICATION_SHARE_BPS()) / protocol.BPS();
         if (share > compensation) share = compensation;
         compensation -= share;
-        _send(address(0), s.user, share);
+        _send(coin, s.user, share);
     }
 
     function _linked(iPoWProtocol.BlockRef memory low, iPoWProtocol.BlockRef memory high, uint32 prevEpochTime) private view returns (bool) {
         return lightClient.isAncestor(low.hash, low.height, low.epochTime, high.hash, high.height, high.epochTime, prevEpochTime);
+    }
+
+    /// @dev The job's fees: sent with the call for a native coin, taken
+    /// from the caller for a token coin (D138).
+    function _takeFees(uint256 fees) private {
+        if (coin == address(0)) {
+            if (msg.value != fees) revert InvalidAmount();
+        } else {
+            if (msg.value != 0) revert InvalidAmount();
+            IERC20(coin).safeTransferFrom(msg.sender, address(this), fees);
+        }
+    }
+
+    function _coinBalance() private view returns (uint256) {
+        return coin == address(0) ? address(this).balance : IERC20(coin).balanceOf(address(this));
     }
 
     /// @dev Takes a token, and returns what arrived: a token that takes a

@@ -137,8 +137,8 @@ pub mod ipow_vault {
 
     // Settings and real Bitcoin (D108, D116, D118)
 
-    pub fn initialize(ctx: Context<Initialize>, ethereum_vault: [u8; 20], deposit: u64, min_certifying_escrow: u64) -> Result<()> {
-        initialize::handler(ctx, ethereum_vault, deposit, min_certifying_escrow)
+    pub fn initialize(ctx: Context<Initialize>, peer: u8, peer_vault: [u8; 20], deposit: u64, min_certifying_escrow: u64) -> Result<()> {
+        initialize::handler(ctx, peer, peer_vault, deposit, min_certifying_escrow)
     }
 
     pub fn record_real_from_job(ctx: Context<RecordRealFromJob>, job_id: u64) -> Result<()> {

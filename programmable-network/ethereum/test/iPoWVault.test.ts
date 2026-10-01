@@ -122,11 +122,24 @@ const key = (home: number, asset: number | bigint) => (BigInt(home) << 32n) | Bi
 const ETH_KEY = key(ETHEREUM, 0);
 const SOL_KEY = key(SOLANA, 0);
 
+/** The factories that make a vault's parts, deployed once. */
+let factories: [string, string] | undefined;
+
+/** A vault for the pair (`here`, `peer`). */
+async function deployVault(protocol: string, here: number, peer: number) {
+  if (!factories) {
+    const h = await ethers.deployContract("VaultHomeFactory");
+    const r = await ethers.deployContract("VaultReceiptsFactory");
+    factories = [await h.getAddress(), await r.getAddress()];
+  }
+  return ethers.deployContract("iPoWVaultNative", [protocol, here, peer, PEER_VAULT, DEPOSIT, MIN_CERTIFYING_ESCROW, ...factories]);
+}
+
 async function deploy() {
   const lightClient = await ethers.deployContract("iPoWLightClientHarness", [0]);
   await lightClient.setLimits(targetFromBits(EASY), targetFromBits(EASY));
   const protocol = await ethers.deployContract("iPoWProtocolHarness", [await lightClient.getAddress()]);
-  const vault = await ethers.deployContract("iPoWVault", [await protocol.getAddress(), PEER_VAULT, DEPOSIT, MIN_CERTIFYING_ESCROW]);
+  const vault = await deployVault(await protocol.getAddress(), ETHEREUM, SOLANA);
   const home = await ethers.getContractAt("VaultHome", await vault.home());
   const receipts = await ethers.getContractAt("VaultReceipts", await vault.receipts());
   const [, user, operator, guardian, stranger] = await ethers.getSigners();
@@ -137,7 +150,7 @@ async function deploy() {
   await chain.start(now);
 
   // The operator's protocol bond and chain head, for checkpoint jobs.
-  await protocol.connect(operator).lockBond({ value: 3n * ETH });
+  await protocol.connect(operator).lockBond(3n * ETH, { value: 3n * ETH });
   const first = tx([{ txidLE: ethers.id("funding"), vout: 0 }], [
     { value: 546n, script: COIN_SCRIPT },
     { value: 0n, script: opReturn(await protocol.chainHeadCommitment(operator.address)) },
@@ -157,7 +170,7 @@ type Ctx = Awaited<ReturnType<typeof deploy>>;
  */
 async function checkpoint(ctx: Ctx): Promise<Ref> {
   const { protocol, vault, chain, operator, stranger } = ctx;
-  await vault.connect(stranger).openCheckpoint(6, { value: FEES, gasLimit: GAS });
+  await vault.connect(stranger).openCheckpoint(6, FEES, { value: FEES, gasLimit: GAS });
   const jobId = await protocol.jobCount();
   await protocol.connect(operator).bid(jobId, await protocol.minimumBidOf(jobId));
   await mineAt((await latestTime()) + 61);
@@ -251,7 +264,7 @@ async function ready(ctx: Ctx, bond: bigint, write: (pair: PairChain) => Promise
   const real = await checkpoint(ctx);
   await register(ctx, pair, real, who);
   await ctx.vault.connect(who).addBond(ETH_KEY, bond, { value: bond * GWEI });
-  await ctx.vault.connect(who).addDeposits({ value: 10n * DEPOSIT });
+  await ctx.vault.connect(who).addDeposits(10n * DEPOSIT, { value: 10n * DEPOSIT });
   return { pair, real };
 }
 
@@ -349,13 +362,35 @@ describe("iPoWVault: real Bitcoin (D108)", function () {
     await expect(submit(ctx, forged, fork, stranger)).to.be.revertedWithCustomError(vault, "NotReal");
   });
 
-  it("names both networks' operators and vaults in a registration, as section 11.3 writes it", async function () {
-    const { vault, operator } = await deploy();
-    const expected = ethers.sha256(
-      ethers.concat([ethers.toUtf8Bytes("iPoW pair"), await vault.getAddress(), operator.address, PEER_VAULT, PEER_OPERATOR])
-    );
-    expect(await vault.pairCommitment(operator.address, PEER_OPERATOR)).to.equal(expected);
+  it("names both networks, their vaults and operators in a registration, the lower number first (section 11.3, D133)", async function () {
+    const { vault, protocol, operator } = await deploy();
+    const pad = (a: string) => ethers.zeroPadValue(a, 32);
+    const side = (net: number, v: string, op: string) => ethers.concat([ethers.toBeHex(net, 1), v, op]);
+    const ours = side(ETHEREUM, pad(await vault.getAddress()), pad(operator.address));
+    const theirs = side(SOLANA, PEER_VAULT, PEER_OPERATOR);
+    expect(await vault.pairCommitment(operator.address, PEER_OPERATOR)).to.equal(ethers.sha256(ethers.concat([ethers.toUtf8Bytes("iPoW pair"), ours, theirs])));
     expect(await vault.messagePayload("0x05")).to.equal(ethers.sha256(ethers.concat([ethers.toUtf8Bytes("iPoW vault"), "0x05"])));
+    expect([await vault.here(), await vault.peer()]).to.deep.equal([BigInt(ETHEREUM), BigInt(SOLANA)]);
+
+    // A vault on Base (3) paired with Ethereum (1): Ethereum's side first.
+    const base = await deployVault(await protocol.getAddress(), 3, ETHEREUM);
+    const baseSide = side(3, pad(await base.getAddress()), pad(operator.address));
+    const ethSide = side(ETHEREUM, PEER_VAULT, PEER_OPERATOR);
+    expect(await base.pairCommitment(operator.address, PEER_OPERATOR)).to.equal(ethers.sha256(ethers.concat([ethers.toUtf8Bytes("iPoW pair"), ethSide, baseSide])));
+    // Its parts know the pair too.
+    const home = await ethers.getContractAt("VaultHome", await base.home());
+    expect([await home.here(), await home.peer()]).to.deep.equal([3n, BigInt(ETHEREUM)]);
+    // Its peer is an EVM network: a lock's recipient is an address there,
+    // not a 32-byte key, whose receipt could never be issued.
+    const { user } = await deploy();
+    await expect(home.connect(user).lock(0, RECIPIENT, E, 0, 0, { value: ETH })).to.be.revertedWithCustomError(home, "ZeroAddress");
+    await home.connect(user).lock(0, pad(user.address), E, 0, 0, { value: ETH });
+
+    // A pair needs two different networks.
+    const factory = await ethers.getContractFactory("iPoWVaultNative");
+    for (const [a, b] of [[1, 1], [0, 2], [1, 0]]) {
+      await expect(deployVault(await protocol.getAddress(), a, b)).to.be.revertedWithCustomError(factory, "BadNetworks");
+    }
   });
 
   it("records a block below a real block as real", async function () {
@@ -465,7 +500,8 @@ describe("iPoWVault: judging records about Ethereum (D109)", function () {
     expect(await vault.credit(operator.address, ETH_KEY)).to.equal(0n);
   });
 
-  it("treats a batch that does not parse, or names an unknown network, as false", async function () {
+  // Network 3 (Base) exists, but is not in this vault's pair: false too.
+  it("treats a batch that does not parse, or names a network outside the pair, as false", async function () {
     for (const batch of ["0x0901", "0x03" + "03" + "00".repeat(8), rec.lock(ETHEREUM, 0, 1n, 1n, RECIPIENT).slice(0, 40)]) {
       const ctx = await deploy();
       const { pair, real } = await ready(ctx, E, async (p) => {
@@ -714,7 +750,7 @@ describe("iPoWVault: claims from Solana (D110, D111, D129)", function () {
     });
     await submit(ctx, pair.pending[1], real); // claim 2
     await submit(ctx, pair.pending[2], real); // claim 3, opened before 2 is refused
-    await expect(vault.connect(guardian).object(2n, { value: 1n })).to.be.revertedWithCustomError(vault, "WrongDeposit");
+    await expect(vault.connect(guardian).object(2n, { value: 1n })).to.be.revertedWithCustomError(vault, "WrongValue");
     await vault.connect(guardian).object(2n, { value: DEPOSIT });
     await expect(vault.connect(guardian).object(2n, { value: DEPOSIT })).to.be.revertedWithCustomError(vault, "AlreadyHeld");
     await accept(ctx, 2n);
@@ -1187,7 +1223,7 @@ describe("iPoWVault: review cases", function () {
     // Mallory's own application opens a cheap job, and her operator proves it.
     await protocol.connect(stranger).registerApplication([]);
     const escrow = ETH / 100n;
-    await protocol.connect(stranger).openJob(ethers.id("cheap"), escrow, 50, 6, 0, stranger.address, { value: FEES, gasLimit: GAS });
+    await protocol.connect(stranger).openJob(ethers.id("cheap"), escrow, 50, 6, 0, stranger.address, FEES, { value: FEES, gasLimit: GAS });
     const jobId = await protocol.jobCount();
     await protocol.connect(operator).bid(jobId, await protocol.minimumBidOf(jobId));
     await mineAt((await latestTime()) + 61);
@@ -1205,18 +1241,18 @@ describe("iPoWVault: review cases", function () {
     await mineAt(Number((await protocol.getDuty(jobId)).lockEnd) + 1);
     await expect(vault.recordRealFromJob(jobId)).to.be.revertedWithCustomError(vault, "EscrowTooLow");
     // A checkpoint through the vault asks the minimum.
-    await vault.connect(stranger).openCheckpoint(6, { value: FEES, gasLimit: GAS });
+    await vault.connect(stranger).openCheckpoint(6, FEES, { value: FEES, gasLimit: GAS });
     expect((await protocol.getJob(await protocol.jobCount())).escrow).to.equal(MIN_CERTIFYING_ESCROW);
   });
 
   it("certifies no expired or slashed job, and takes the application's share into the backing", async function () {
     const ctx = await deploy();
     const { vault, home, protocol, operator, stranger, guardian } = ctx;
-    await vault.connect(stranger).openCheckpoint(6, { value: FEES, gasLimit: GAS });
+    await vault.connect(stranger).openCheckpoint(6, FEES, { value: FEES, gasLimit: GAS });
     await mineAt((await latestTime()) + HOUR);
     await expect(vault.recordRealFromJob(1n)).to.be.revertedWithCustomError(vault, "NotCertified");
 
-    await vault.connect(stranger).openCheckpoint(6, { value: FEES, gasLimit: GAS });
+    await vault.connect(stranger).openCheckpoint(6, FEES, { value: FEES, gasLimit: GAS });
     await protocol.connect(operator).bid(2n, await protocol.minimumBidOf(2n));
     await mineAt((await latestTime()) + 61);
     await mineAt(Number(await protocol.deadlineOf(2n)) + 1);

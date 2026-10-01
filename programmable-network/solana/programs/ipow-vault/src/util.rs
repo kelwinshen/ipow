@@ -26,10 +26,21 @@ pub fn sha256(parts: &[&[u8]]) -> [u8; 32] {
     h.finalize().into()
 }
 
-/// What a registration carries in its `OP_RETURN` (D106): the same bytes as
-/// `pairCommitment` on Ethereum.
-pub fn pair_commitment(ethereum_vault: &[u8; 20], peer_operator: &[u8; 20], operator: &Pubkey) -> [u8; 32] {
-    sha256(&[b"iPoW pair", ethereum_vault, peer_operator, crate::ID.as_ref(), operator.as_ref()])
+/// What a registration carries in its `OP_RETURN` (D106, D133): the same
+/// bytes as `pairCommitment` on the peer. Each side is its network's number,
+/// its vault and its operator in 32 bytes, the lower number first; this
+/// side's vault is the pair's configuration.
+pub fn pair_commitment(peer: u8, peer_vault: &[u8; 20], peer_operator: &[u8; 20], config: &Pubkey, operator: &Pubkey) -> [u8; 32] {
+    let pad = |a: &[u8; 20]| {
+        let mut out = [0u8; 32];
+        out[12..].copy_from_slice(a);
+        out
+    };
+    let (theirs_vault, theirs_op) = (pad(peer_vault), pad(peer_operator));
+    let mine: [&[u8]; 3] = [&[SOLANA], config.as_ref(), operator.as_ref()];
+    let theirs: [&[u8]; 3] = [&[peer], &theirs_vault, &theirs_op];
+    let (a, b) = if SOLANA < peer { (mine, theirs) } else { (theirs, mine) };
+    sha256(&[b"iPoW pair", a[0], a[1], a[2], b[0], b[1], b[2]])
 }
 
 /// What a message carries in its `OP_RETURN` (D107).
@@ -80,6 +91,7 @@ pub fn create_pda<'info>(
 /// account, created if needed.
 pub fn credit_to<'info>(
     account: &AccountInfo<'info>,
+    config: &Pubkey,
     owner: &Pubkey,
     home: u8,
     asset: u32,
@@ -91,13 +103,13 @@ pub fn credit_to<'info>(
         return Ok(());
     }
     let a = asset.to_le_bytes();
-    let (address, bump) = Pubkey::find_program_address(&[CREDIT_SEED, owner.as_ref(), &[home], &a], &crate::ID);
+    let (address, bump) = Pubkey::find_program_address(&[CREDIT_SEED, config.as_ref(), owner.as_ref(), &[home], &a], &crate::ID);
     require_keys_eq!(account.key(), address, VaultError::WrongAccount);
     let mut record = if account.owner == &crate::ID && !account.data_is_empty() {
         let data = account.try_borrow_data()?;
         Credit::try_deserialize(&mut &data[..])?
     } else {
-        create_pda(account, payer, system_program, 8 + Credit::INIT_SPACE, &[CREDIT_SEED, owner.as_ref(), &[home], &a, &[bump]])?;
+        create_pda(account, payer, system_program, 8 + Credit::INIT_SPACE, &[CREDIT_SEED, config.as_ref(), owner.as_ref(), &[home], &a, &[bump]])?;
         Credit { owner: *owner, home, asset, amount: 0, bump }
     };
     record.amount = record.amount.checked_add(amount).ok_or(VaultError::Overflow)?;
@@ -123,6 +135,7 @@ pub fn pay_lamports(config: &AccountInfo, to: &AccountInfo, amount: u64) -> Resu
 /// The receipt here of an asset of Ethereum, and the vault's account of it.
 pub struct Receipt<'a, 'info> {
     pub config: &'a AccountInfo<'info>,
+    pub config_peer: u8,
     pub config_bump: u8,
     pub mint: &'a AccountInfo<'info>,
     pub holding: &'a AccountInfo<'info>,
@@ -130,8 +143,8 @@ pub struct Receipt<'a, 'info> {
 }
 
 impl<'a, 'info> Receipt<'a, 'info> {
-    fn seeds(&self) -> [&[u8]; 2] {
-        [CONFIG_SEED, std::slice::from_ref(&self.config_bump)]
+    fn seeds(&self) -> [&[u8]; 3] {
+        [CONFIG_SEED, std::slice::from_ref(&self.config_peer), std::slice::from_ref(&self.config_bump)]
     }
 
     pub fn burn_held(&self, amount: u64) -> Result<()> {
@@ -188,6 +201,7 @@ pub fn pay_home<'info>(
     a: &HomeAsset,
     amount: u64,
     config: &AccountInfo<'info>,
+    config_peer: u8,
     config_bump: u8,
     to: &AccountInfo<'info>,
     tokens: Option<&AccountInfo<'info>>,
@@ -208,7 +222,7 @@ pub fn pay_home<'info>(
     );
     require_keys_eq!(mint.key(), a.mint, VaultError::WrongAccount);
     require_keys_eq!(program.key(), a.token_program, VaultError::WrongAccount);
-    let seeds: &[&[u8]] = &[CONFIG_SEED, &[config_bump]];
+    let seeds: &[&[u8]] = &[CONFIG_SEED, &[config_peer], &[config_bump]];
     token_interface::transfer_checked(
         CpiContext::new_with_signer(
             program.key(),
@@ -293,6 +307,7 @@ pub fn request_record(network: u8, asset: u32, id: u64, amount: u64, to: &[u8; 3
 
 /// A LOCK record of a lock on Ethereum, read: its number, asset, amount,
 /// recipient here, fee, fast fee and time.
+/// A lock of an asset of the pair's peer, as a LOCK record states it.
 pub struct EthLock {
     pub id: u64,
     pub asset: u32,
@@ -304,8 +319,9 @@ pub struct EthLock {
 }
 
 impl EthLock {
-    pub fn read(record: &[u8]) -> Result<EthLock> {
-        require!(record.len() == LOCK_LEN && record[0] == LOCK && record[1] == ETHEREUM, VaultError::WrongRecord);
+    /// A LOCK record of the pair's peer `peer`.
+    pub fn read(record: &[u8], peer: u8) -> Result<EthLock> {
+        require!(record.len() == LOCK_LEN && record[0] == LOCK && record[1] == peer, VaultError::WrongRecord);
         Ok(EthLock {
             asset: u32_at(record, 2),
             id: u64_at(record, 6),
@@ -334,9 +350,9 @@ impl EthLock {
     }
 }
 
-/// The LOCK record of lock `lock_id` on Ethereum among a claim's records,
-/// and its bytes.
-pub fn find_eth_lock(records: &[u8], lock_id: u64) -> Option<(EthLock, Vec<u8>)> {
+/// The LOCK record of lock `lock_id` on the peer `peer` among a claim's
+/// records, and its bytes.
+pub fn find_eth_lock(records: &[u8], lock_id: u64, peer: u8) -> Option<(EthLock, Vec<u8>)> {
     let mut o = 0;
     while o < records.len() {
         let len = record_len(records[o]);
@@ -344,17 +360,17 @@ pub fn find_eth_lock(records: &[u8], lock_id: u64) -> Option<(EthLock, Vec<u8>)>
             return None;
         }
         let r = &records[o..o + len];
-        if r[0] == LOCK && r[1] == ETHEREUM && u64_at(r, 6) == lock_id {
-            return EthLock::read(r).ok().map(|l| (l, r.to_vec()));
+        if r[0] == LOCK && r[1] == peer && u64_at(r, 6) == lock_id {
+            return EthLock::read(r, peer).ok().map(|l| (l, r.to_vec()));
         }
         o += len;
     }
     None
 }
 
-/// The LOCK record an attest stated.
-pub fn stated_record(f: &crate::state::FastLock) -> Vec<u8> {
-    lock_record(ETHEREUM, f.asset, f.lock_id, f.amount, &f.recipient.to_bytes(), f.fee, f.fast_fee, f.locked_at)
+/// The LOCK record an attest stated, of a lock on the peer `peer`.
+pub fn stated_record(f: &crate::state::FastLock, peer: u8) -> Vec<u8> {
+    lock_record(peer, f.asset, f.lock_id, f.amount, &f.recipient.to_bytes(), f.fee, f.fast_fee, f.locked_at)
 }
 
 /// The owner of a token account of either token program.

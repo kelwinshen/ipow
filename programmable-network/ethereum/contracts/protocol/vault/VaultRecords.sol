@@ -6,10 +6,17 @@ pragma solidity ^0.8.20;
 /// section 11.9 of docs/design/ipow-protocol.md writes them (D131). Numbers
 /// are big-endian; amounts and fees in the receipt's smallest unit.
 library VaultRecords {
-    /// @notice The networks of the pair, as records name them.
-    uint8 internal constant ETHEREUM = 1;
+    /// @notice Solana's number (D133): the one network whose addresses are
+    /// 32 bytes; an EVM network's are 20, in the last 20 of 32.
     uint8 internal constant SOLANA = 2;
 
+    /// @notice Whether `a` can be an address on network `net`: non-zero,
+    /// and on an EVM network an address in the last 20 bytes. Anything else
+    /// could never be paid or issued to there.
+    function addressOn(bytes32 a, uint8 net) internal pure returns (bool) {
+        if (a == bytes32(0)) return false;
+        return net == SOLANA || uint256(a) >> 160 == 0;
+    }
     uint8 internal constant LOCK = 1;
     uint8 internal constant REQUEST = 2;
     uint8 internal constant CANCEL = 3;

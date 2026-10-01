@@ -137,7 +137,7 @@ pub async fn open_job(app: &DynProvider, protocol: Address) {
     let p = IPoWProtocol::new(protocol, app);
     p.registerApplication(vec![]).send().await.unwrap().get_receipt().await.unwrap();
     let user: Address = PrivateKeySigner::from_bytes(&FixedBytes::from([7u8; 32])).unwrap().address();
-    p.openJob(FixedBytes::from([1u8; 32]), U256::from(ETH), 50, 6, 0, user)
+    p.openJob(FixedBytes::from([1u8; 32]), U256::from(ETH), 50, 6, 0, user, U256::from(ETH / 10))
         .value(U256::from(ETH / 10))
         .gas(1_000_000)
         .send()
@@ -172,21 +172,54 @@ impl EvmWorld {
         p[12..].copy_from_slice(protocol.as_slice());
         let mut max_sats = [0u8; 32];
         max_sats[24..].copy_from_slice(&10_000_000u64.to_be_bytes());
-        let conversion = deploy_with(&app, include_str!("../tests/Conversion.bin"), &[p, max_sats]).await;
+        let conversion = deploy_with(&app, include_str!("../tests/Conversion.bin"), &[p, max_sats, [0u8; 32]]).await;
         let user = provider(&net.url, &net.keys[4]);
         EvmWorld { net, apps: [app, other], protocol, operator, guardian, conversion, user }
     }
 }
 
 impl EvmWorld {
-    /// Deploys the protocol's vault (section 11), naming the Solana vault
-    /// program, with its deposit and least certifying escrow in wei.
-    pub async fn deploy_vault(&self, solana_vault: [u8; 32], deposit: u128, min_certifying_escrow: u128) -> Address {
-        let mut p = [0u8; 32];
-        p[12..].copy_from_slice(self.protocol.as_slice());
+    /// Deploys the protocol's vault (section 11) for the pair of networks
+    /// `here` and `peer` (D132), naming the vault there (for Solana, the
+    /// pair's configuration account), with its deposit and least certifying
+    /// escrow in wei. Its parts' factories are deployed with it.
+    pub async fn deploy_vault(&self, here: u8, peer: u8, peer_vault: [u8; 32], deposit: u128, min_certifying_escrow: u128) -> Address {
+        let word = |a: Address| {
+            let mut w = [0u8; 32];
+            w[12..].copy_from_slice(a.as_slice());
+            w
+        };
+        let home = deploy_with(&self.apps[0], include_str!("../tests/VaultHomeFactory.bin"), &[]).await;
+        let receipts = deploy_with(&self.apps[0], include_str!("../tests/VaultReceiptsFactory.bin"), &[]).await;
+        let n = |v: u8| U256::from(v).to_be_bytes::<32>();
         let d: [u8; 32] = U256::from(deposit).to_be_bytes();
         let m: [u8; 32] = U256::from(min_certifying_escrow).to_be_bytes();
-        deploy_with(&self.apps[0], include_str!("../tests/iPoWVault.bin"), &[p, solana_vault, d, m]).await
+        deploy_with(
+            &self.apps[0],
+            include_str!("../tests/iPoWVaultNative.bin"),
+            &[word(self.protocol), n(here), n(peer), peer_vault, d, m, word(home), word(receipts)],
+        )
+        .await
+    }
+
+    /// Two vaults of one pair of EVM networks, `a` and `b` (D132), here on
+    /// one chain. Each names the other at deployment, so the second's address
+    /// is predicted from the deployer's nonce: `deploy_vault` sends three
+    /// transactions (two factories, then the vault).
+    pub async fn deploy_evm_pair(&self, a: u8, b: u8, deposit: u128, min_certifying_escrow: u128) -> (Address, Address) {
+        use alloy::providers::Provider;
+        let deployer = self.net.keys[1].parse::<PrivateKeySigner>().unwrap().address();
+        let nonce = self.apps[0].get_transaction_count(deployer).await.unwrap();
+        let predicted = deployer.create(nonce + 5);
+        let word = |x: Address| {
+            let mut w = [0u8; 32];
+            w[12..].copy_from_slice(x.as_slice());
+            w
+        };
+        let first = self.deploy_vault(a, b, word(predicted), deposit, min_certifying_escrow).await;
+        let second = self.deploy_vault(b, a, word(first), deposit, min_certifying_escrow).await;
+        assert_eq!(second, predicted, "the second vault is where the first expects it");
+        (first, second)
     }
 
     /// The vault as the node of account `key` (0 the operator, 2 the
@@ -194,7 +227,7 @@ impl EvmWorld {
     pub async fn vault_node(&self, vault: Address, key: usize) -> (std::sync::Arc<crate::vault::EvmVault>, std::sync::Arc<EvmNetwork>) {
         let lc = IPoWProtocol::new(self.protocol, &self.apps[0]).lightClient().call().await.unwrap();
         let net = std::sync::Arc::new(EvmNetwork::connect("hardhat", &self.net.url, &self.net.keys[key], &lc.to_string(), &self.protocol.to_string()).unwrap());
-        (std::sync::Arc::new(crate::vault::EvmVault::new(net.clone(), &vault.to_string()).unwrap()), net)
+        (std::sync::Arc::new(crate::vault::EvmVault::connect(net.clone(), &vault.to_string()).await.unwrap()), net)
     }
 
     /// The balance of `who`, in wei.
@@ -306,7 +339,7 @@ impl World for EvmWorld {
 
     async fn user_sell(&self, amount: Amount, sats: u64, script: &[u8]) {
         let c = crate::contracts::Conversion::new(self.conversion, &self.user);
-        c.sell(Address::ZERO, U256::from(amount), sats, Bytes::copy_from_slice(script), 6)
+        c.sell(Address::ZERO, U256::from(amount), sats, Bytes::copy_from_slice(script), 6, U256::from(ETH / 10))
             .value(U256::from(amount + ETH / 10))
             .gas(2_000_000)
             .send()
@@ -319,6 +352,6 @@ impl World for EvmWorld {
 
     async fn user_buy(&self, amount: Amount, sats: u64) {
         let c = crate::contracts::Conversion::new(self.conversion, &self.user);
-        c.buy(Address::ZERO, U256::from(amount), sats, 6).value(U256::from(ETH / 10)).gas(2_000_000).send().await.unwrap().get_receipt().await.unwrap();
+        c.buy(Address::ZERO, U256::from(amount), sats, 6, U256::from(ETH / 10)).value(U256::from(ETH / 10)).gas(2_000_000).send().await.unwrap().get_receipt().await.unwrap();
     }
 }

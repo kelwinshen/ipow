@@ -23,9 +23,9 @@ pub fn handler(ctx: Context<AddDeposits>, amount: u64) -> Result<()> {
 
 #[derive(Accounts)]
 pub struct AddDeposits<'info> {
-    #[account(mut, seeds = [CHAIN_SEED, operator.key().as_ref()], bump = chain.bump)]
+    #[account(mut, seeds = [CHAIN_SEED, config.key().as_ref(), operator.key().as_ref()], bump = chain.bump)]
     pub chain: Account<'info, Chain>,
-    #[account(mut, seeds = [CONFIG_SEED], bump = config.bump)]
+    #[account(mut, seeds = [CONFIG_SEED, &[config.peer]], bump = config.bump)]
     pub config: Account<'info, Config>,
     #[account(mut)]
     pub operator: Signer<'info>,

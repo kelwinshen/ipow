@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 
 use crate::constants::*;
 use crate::errors::VaultError;
-use crate::state::Message;
+use crate::state::{Config, Message};
 use crate::util::now;
 
 /// Closes a published batch `MESSAGE_KEPT` after its message was processed,
@@ -15,10 +15,12 @@ pub fn handler(ctx: Context<CloseMessage>) -> Result<()> {
 
 #[derive(Accounts)]
 pub struct CloseMessage<'info> {
+    #[account(seeds = [CONFIG_SEED, &[config.peer]], bump = config.bump)]
+    pub config: Box<Account<'info, Config>>,
     #[account(
         mut,
         close = payer,
-        seeds = [MESSAGE_SEED, message.operator.as_ref(), &message.index.to_le_bytes()],
+        seeds = [MESSAGE_SEED, config.key().as_ref(), message.operator.as_ref(), &message.index.to_le_bytes()],
         bump = message.bump,
     )]
     pub message: Account<'info, Message>,

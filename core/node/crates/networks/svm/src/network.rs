@@ -82,6 +82,9 @@ pub struct SvmNetwork {
     /// Lookup tables this node made and has not closed yet. `None` until
     /// read from the network, after a start.
     tables: tokio::sync::Mutex<Option<Vec<Pubkey>>>,
+    /// The upload buffer is one per key (`["buffer", key]`), shared by every
+    /// vault pair on this network: one upload at a time.
+    buffer: tokio::sync::Mutex<()>,
 }
 
 /// Slots after deactivation before a lookup table is closed. Solana allows
@@ -90,12 +93,17 @@ pub struct SvmNetwork {
 const TABLE_COOLDOWN: u64 = 600;
 
 impl SvmNetwork {
+    /// Held while this key's upload buffer is in use (see `buffer`).
+    pub async fn buffer_lock(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        self.buffer.lock().await
+    }
+
     /// `light_client` and `protocol` must be the programs this adapter was
     /// built for: their ids are in the programs' own code.
     pub fn connect(name: &str, chain: Arc<dyn Chain>, key: Keypair, light_client: &str, protocol: &str) -> anyhow::Result<Self> {
         anyhow::ensure!(light_client == lc::ID.to_string(), "the light client is {}, this node is built for {}", light_client, lc::ID);
         anyhow::ensure!(protocol == pr::ID.to_string(), "the protocol is {}, this node is built for {}", protocol, pr::ID);
-        Ok(SvmNetwork { name: name.to_string(), chain, key, tables: tokio::sync::Mutex::new(None) })
+        Ok(SvmNetwork { name: name.to_string(), chain, key, tables: tokio::sync::Mutex::new(None), buffer: tokio::sync::Mutex::new(()) })
     }
 
     pub fn pubkey(&self) -> Pubkey {
