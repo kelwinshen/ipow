@@ -6,7 +6,6 @@
 
 use anchor_lang;
 use anchor_lang::solana_program::instruction::{AccountMeta, Instruction};
-use anchor_lang::AccountDeserialize;
 use anchor_litesvm::{AnchorContext, AnchorLiteSVM, TestHelpers};
 use anchor_spl::token_2022::spl_token_2022 as t22;
 use solana_keypair::Keypair;
@@ -35,6 +34,9 @@ fn beta_pda(basket: &Pubkey) -> Pubkey {
 }
 fn owed_pda(basket: &Pubkey, user: &Pubkey, i: u8) -> Pubkey {
     bk(&[b"owed", basket.as_ref(), user.as_ref(), &[i]])
+}
+fn fees_pda(basket: &Pubkey, receiver: &Pubkey) -> Pubkey {
+    bk(&[b"fees", basket.as_ref(), receiver.as_ref()])
 }
 fn ata(owner: &Pubkey, mint: &Pubkey, program: &Pubkey) -> Pubkey {
     anchor_spl::associated_token::get_associated_token_address_with_program_id(owner, mint, program)
@@ -159,6 +161,7 @@ impl World {
             beta_basket::client::accounts::CreateBasket {
                 basket,
                 beta: beta_pda(&basket),
+                fees: fees_pda(&basket, &creator.pubkey()),
                 creator: creator.pubkey(),
                 token_program: TOKEN,
                 system_program: SYSTEM,
@@ -195,7 +198,7 @@ impl World {
         a
     }
 
-    /// The five accounts of each part, as the user sees them.
+    /// The four accounts of each part, as the user sees them.
     fn part_metas(&self, basket: &Pubkey) -> Vec<AccountMeta> {
         let b = self.basket(basket);
         let user = self.user.pubkey();
@@ -204,10 +207,50 @@ impl World {
             out.push(AccountMeta::new_readonly(p.mint, false));
             out.push(AccountMeta::new(ata(basket, &p.mint, &p.token_program), false));
             out.push(AccountMeta::new(ata(&user, &p.mint, &p.token_program), false));
-            out.push(AccountMeta::new(ata(&b.fee_to, &p.mint, &p.token_program), false));
             out.push(AccountMeta::new_readonly(p.token_program, false));
         }
         out
+    }
+
+    /// The fee receiver's record of fees; none once the fee goes to the
+    /// basket itself.
+    fn fees_of(&self, basket: &Pubkey) -> Option<Pubkey> {
+        let to = self.basket(basket).fee_to;
+        (to != *basket).then(|| fees_pda(basket, &to))
+    }
+
+    /// The fees `receiver` has set aside in a basket, by part.
+    fn fees(&self, basket: &Pubkey, receiver: &Pubkey) -> [u64; 8] {
+        let f: beta_basket::accounts::Fees = self.ctx.get_account(&fees_pda(basket, receiver)).unwrap();
+        f.amounts
+    }
+
+    /// What the basket holds of a part for its holders: its account, less
+    /// what is set aside.
+    fn for_holders(&self, basket: &Pubkey, i: usize) -> u64 {
+        let p = self.basket(basket).parts[i];
+        self.tokens(&ata(basket, &p.mint, &p.token_program)) - p.owed
+    }
+
+    fn set_fee_to(&mut self, basket: &Pubkey, from: &Keypair, to: Pubkey) -> Result<(), String> {
+        let new_fees = (to != *basket).then(|| fees_pda(basket, &to));
+        let ix = self.ix(
+            beta_basket::client::accounts::SetFeeTo { basket: *basket, new_fees, fee_to: from.pubkey(), system_program: SYSTEM },
+            beta_basket::client::args::SetFeeTo { fee_to: to },
+        );
+        self.send(ix, &[from])
+    }
+
+    /// `receiver` collects its fees of part `index` into token account `to`.
+    fn collect_fees(&mut self, basket: &Pubkey, receiver: &Keypair, index: u8, to: Pubkey) -> Result<(), String> {
+        let mut ix = self.ix(
+            beta_basket::client::accounts::CollectFees { basket: *basket, fees: fees_pda(basket, &receiver.pubkey()), receiver: receiver.pubkey() },
+            beta_basket::client::args::CollectFees { index },
+        );
+        let mut metas = self.part_metas(basket)[4 * index as usize..4 * index as usize + 4].to_vec();
+        metas[2] = AccountMeta::new(to, false);
+        ix.accounts.extend(metas);
+        self.send(ix, &[receiver])
     }
 
     fn mint(&mut self, basket: &Pubkey, amount: u64) -> Result<(), String> {
@@ -216,6 +259,7 @@ impl World {
         let mut ix = self.ix(
             beta_basket::client::accounts::Mint {
                 basket: *basket,
+                fees: self.fees_of(basket),
                 beta: beta_pda(basket),
                 user_beta,
                 user: user.pubkey(),
@@ -236,6 +280,7 @@ impl World {
         let mut ix = self.ix(
             beta_basket::client::accounts::Burn {
                 basket: *basket,
+                fees: self.fees_of(basket),
                 beta: beta_pda(basket),
                 user_beta,
                 user: user.pubkey(),
@@ -256,11 +301,11 @@ impl World {
     fn collect_owed(&mut self, basket: &Pubkey, index: u8) -> Result<(), String> {
         let user = self.user.insecure_clone();
         let mut ix = self.ix(
-            beta_basket::client::accounts::CollectOwed { basket: *basket, owed: owed_pda(basket, &user.pubkey(), index), user: user.pubkey() },
+            beta_basket::client::accounts::CollectOwed { basket: *basket, owed: owed_pda(basket, &user.pubkey(), index), fees: self.fees_of(basket), user: user.pubkey() },
             beta_basket::client::args::CollectOwed { index },
         );
         let metas = self.part_metas(basket);
-        ix.accounts.extend(metas[5 * index as usize..5 * index as usize + 5].iter().cloned());
+        ix.accounts.extend(metas[4 * index as usize..4 * index as usize + 4].iter().cloned());
         self.send(ix, &[&user])
     }
 }
@@ -271,22 +316,30 @@ fn mints_and_burns_a_basket_of_two_parts_with_the_creators_fee() {
     // 1 BETA = 1 SOL + 0.5 vETH; 0.3% on mint, 0.2% on burn.
     let basket = w.create(1, vec![(w.wsol, ONE), (w.veth, ONE / 2)], 30, 20).unwrap();
     let creator = w.creator.pubkey();
-    let (wsol, veth) = (w.wsol, w.veth);
+    let wsol = w.wsol;
 
     w.mint(&basket, 2 * ONE).unwrap();
     assert_eq!(w.tokens(&ata(&w.user.pubkey(), &beta_pda(&basket), &TOKEN)), 2 * ONE);
-    // The basket holds 2 SOL and 1 vETH; the fee is 0.3% of each on top.
-    assert_eq!(w.held(&basket, &wsol), 2 * ONE);
-    assert_eq!(w.held(&basket, &veth), ONE);
-    assert_eq!(w.tokens(&ata(&creator, &wsol, &TOKEN)), 2 * ONE * 3 / 1000);
-    assert_eq!(w.tokens(&ata(&creator, &veth, &TOKEN)), ONE * 3 / 1000);
+    // The holders have 2 SOL and 1 vETH; the fee is 0.3% of each on top,
+    // set aside in the basket for the creator.
+    assert_eq!(w.for_holders(&basket, 0), 2 * ONE);
+    assert_eq!(w.for_holders(&basket, 1), ONE);
+    assert_eq!(w.held(&basket, &wsol), 2 * ONE + 2 * ONE * 3 / 1000);
+    assert_eq!(w.fees(&basket, &creator)[..2], [2 * ONE * 3 / 1000, ONE * 3 / 1000]);
     assert_eq!(w.user_has(&wsol), 10 * ONE - 2 * ONE - 2 * ONE * 3 / 1000);
 
-    // Burning 1 BETA gives half of what the basket holds, less 0.2%.
+    // Burning 1 BETA gives half of what the holders have, less 0.2%.
     w.burn(&basket, ONE, 0).unwrap();
-    assert_eq!(w.held(&basket, &wsol), ONE);
-    assert_eq!(w.held(&basket, &veth), ONE / 2);
-    assert_eq!(w.tokens(&ata(&creator, &wsol, &TOKEN)), 2 * ONE * 3 / 1000 + ONE * 2 / 1000);
+    assert_eq!(w.for_holders(&basket, 0), ONE);
+    assert_eq!(w.for_holders(&basket, 1), ONE / 2);
+    assert_eq!(w.fees(&basket, &creator)[0], 2 * ONE * 3 / 1000 + ONE * 2 / 1000);
+    // The creator collects its fees.
+    let c = w.creator.insecure_clone();
+    let before = w.tokens(&ata(&creator, &wsol, &TOKEN));
+    w.collect_fees(&basket, &c, 0, ata(&creator, &wsol, &TOKEN)).unwrap();
+    assert_eq!(w.tokens(&ata(&creator, &wsol, &TOKEN)), before + 2 * ONE * 3 / 1000 + ONE * 2 / 1000);
+    expect_err(w.collect_fees(&basket, &c, 0, ata(&creator, &wsol, &TOKEN)), "NothingOwed");
+    assert_eq!(w.for_holders(&basket, 0), ONE);
     // Plain tokens: no issuer powers recorded.
     assert!(w.basket(&basket).parts.iter().all(|p| p.powers == 0 && p.token_program == TOKEN));
 }
@@ -360,12 +413,11 @@ fn defers_a_frozen_part_and_pays_the_others() {
     let thaw = t22::instruction::thaw_account(&TOKEN, &held, &frz, &creator.pubkey(), &[]).unwrap();
     w.send(thaw, &[&creator]).unwrap();
     let before = w.user_has(&frz);
-    let fees = w.tokens(&ata(&creator.pubkey(), &frz, &TOKEN));
     w.collect_owed(&basket, 1).unwrap();
     // The burn fee is taken when collected: deferring never avoids it.
     assert_eq!(w.user_has(&frz), before + 1_000_000 - 1_000);
-    assert_eq!(w.tokens(&ata(&creator.pubkey(), &frz, &TOKEN)), fees + 1_000);
-    assert_eq!(w.basket(&basket).parts[1].owed, 0);
+    assert_eq!(w.fees(&basket, &creator.pubkey())[1], 1_000);
+    assert_eq!(w.basket(&basket).parts[1].owed, 1_000);
     // The record is closed: its rent went back.
     assert!(w.ctx.svm.get_account(&owed_pda(&basket, &w.user.pubkey(), 1)).is_none_or(|a| a.lamports == 0));
     assert!(w.collect_owed(&basket, 1).is_err());
@@ -373,7 +425,8 @@ fn defers_a_frozen_part_and_pays_the_others() {
     let before = w.user_has(&frz);
     w.burn(&basket, ONE, 0).unwrap();
     assert_eq!(w.user_has(&frz) - before, 1_000_000 - 1_000);
-    assert_eq!(w.held(&basket, &frz), 0);
+    assert_eq!(w.for_holders(&basket, 1), 0);
+    assert_eq!(w.held(&basket, &frz), 2_000);
 }
 
 /// The issuer moves half of the basket's tokens out (a permanent delegate).
@@ -415,16 +468,53 @@ fn only_the_fee_receiver_hands_the_fee_on() {
     let basket = w.create(1, vec![(wsol, ONE)], 10, 10).unwrap();
     let other = Keypair::new();
     w.ctx.svm.airdrop(&other.pubkey(), SOL).unwrap();
-    let ix = w.ix(beta_basket::client::accounts::SetFeeTo { basket, fee_to: other.pubkey() }, beta_basket::client::args::SetFeeTo { fee_to: other.pubkey() });
-    assert!(w.send(ix, &[&other]).is_err());
+    assert!(w.set_fee_to(&basket, &other, other.pubkey()).is_err());
     let creator = w.creator.insecure_clone();
-    let ix = w.ix(beta_basket::client::accounts::SetFeeTo { basket, fee_to: creator.pubkey() }, beta_basket::client::args::SetFeeTo { fee_to: other.pubkey() });
-    w.send(ix, &[&creator]).unwrap();
+    w.mint(&basket, ONE).unwrap();
+    w.set_fee_to(&basket, &creator, other.pubkey()).unwrap();
     assert_eq!(w.basket(&basket).fee_to, other.pubkey());
+    w.mint(&basket, ONE).unwrap();
+    // Each receiver keeps what it earned.
+    assert_eq!(w.fees(&basket, &creator.pubkey())[0], ONE / 1000);
+    assert_eq!(w.fees(&basket, &other.pubkey())[0], ONE / 1000);
     let ix = anchor_spl::associated_token::spl_associated_token_account::instruction::create_associated_token_account_idempotent(&creator.pubkey(), &other.pubkey(), &wsol, &TOKEN);
     w.send(ix, &[&creator]).unwrap();
-    w.mint(&basket, ONE).unwrap();
+    w.collect_fees(&basket, &other, 0, ata(&other.pubkey(), &wsol, &TOKEN)).unwrap();
     assert_eq!(w.tokens(&ata(&other.pubkey(), &wsol, &TOKEN)), ONE / 1000);
+    w.collect_fees(&basket, &creator, 0, ata(&creator.pubkey(), &wsol, &TOKEN)).unwrap();
+    // Handed to the basket itself: later fees back BETA, and nobody can hand
+    // it on again.
+    w.set_fee_to(&basket, &other, basket).unwrap();
+    w.mint(&basket, ONE).unwrap();
+    assert_eq!(w.for_holders(&basket, 0), 3 * ONE + ONE / 1000);
+    assert!(w.set_fee_to(&basket, &other, other.pubkey()).is_err());
+}
+
+/// The issuer freezes the fee receiver's account: mints, burns and
+/// collections of what is owed go on, the fees set aside; the receiver
+/// collects into another account.
+#[test]
+fn a_frozen_fee_account_stops_no_holder() {
+    let mut w = World::new();
+    let creator = w.creator.insecure_clone();
+    let frz = litesvm_token::CreateMint::new(&mut w.ctx.svm, &creator).decimals(6).freeze_authority(&creator.pubkey()).send().unwrap();
+    w.programs.insert(frz, TOKEN);
+    w.fund(&frz, 10_000_000);
+    let basket = w.create(1, vec![(frz, 1_000_000)], 100, 100).unwrap();
+    let mine = ata(&creator.pubkey(), &frz, &TOKEN);
+    let freeze = t22::instruction::freeze_account(&TOKEN, &mine, &frz, &creator.pubkey(), &[]).unwrap();
+    w.send(freeze, &[&creator]).unwrap();
+    w.mint(&basket, 3 * ONE).unwrap();
+    w.burn(&basket, ONE, 0).unwrap();
+    w.burn(&basket, ONE, 0b1).unwrap();
+    w.collect_owed(&basket, 0).unwrap();
+    // 1% of 3, of 1 and of the 1 collected.
+    assert_eq!(w.fees(&basket, &creator.pubkey())[0], 30_000 + 10_000 + 10_000);
+    // Not into its frozen account; into another of its own.
+    assert!(w.collect_fees(&basket, &creator, 0, mine).is_err());
+    let user = w.user.pubkey();
+    w.collect_fees(&basket, &creator, 0, ata(&user, &frz, &TOKEN)).unwrap();
+    assert_eq!(w.for_holders(&basket, 0), 1_000_000);
 }
 
 /// Eight parts, one per network, in one mint and one burn.
@@ -458,34 +548,40 @@ fn rounds_the_fee_up() {
     // 1 BETA holds 50 units; 1% of 50 is 0.5, paid as 1.
     let basket = w.create(1, vec![(veth, 50)], 100, 100).unwrap();
     w.mint(&basket, ONE).unwrap();
-    assert_eq!(w.tokens(&ata(&w.creator.pubkey(), &veth, &TOKEN)), 1);
+    assert_eq!(w.fees(&basket, &w.creator.pubkey())[0], 1);
 }
 
-/// With no fee, the fee receiver's account is not needed.
+/// With no fee, the fee receiver's record is not needed; with one, it is.
 #[test]
-fn needs_no_fee_account_without_a_fee() {
+fn needs_the_fees_record_only_with_a_fee() {
     let mut w = World::new();
     let wsol = w.wsol;
-    let basket = w.create(1, vec![(wsol, ONE)], 0, 0).unwrap();
     let user = w.user.insecure_clone();
-    let user_beta = w.user_beta(&basket);
-    let mut ix = w.ix(
-        beta_basket::client::accounts::Mint {
-            basket,
-            beta: beta_pda(&basket),
-            user_beta,
-            user: user.pubkey(),
-            token_program: TOKEN,
-            associated_token_program: ATA,
-            system_program: SYSTEM,
-        },
-        beta_basket::client::args::Mint { amount: ONE },
-    );
-    let mut metas = w.part_metas(&basket);
-    metas[3] = AccountMeta::new(Pubkey::new_unique(), false);
-    ix.accounts.extend(metas);
-    w.send(ix, &[&user]).unwrap();
-    assert_eq!(w.held(&basket, &wsol), ONE);
+    for (id, bps) in [(1u64, 0u16), (2, 10)] {
+        let basket = w.create(id, vec![(wsol, ONE)], bps, 0).unwrap();
+        let user_beta = w.user_beta(&basket);
+        let mut ix = w.ix(
+            beta_basket::client::accounts::Mint {
+                basket,
+                fees: None,
+                beta: beta_pda(&basket),
+                user_beta,
+                user: user.pubkey(),
+                token_program: TOKEN,
+                associated_token_program: ATA,
+                system_program: SYSTEM,
+            },
+            beta_basket::client::args::Mint { amount: ONE },
+        );
+        ix.accounts.extend(w.part_metas(&basket));
+        let r = w.send(ix, &[&user]);
+        if bps == 0 {
+            r.unwrap();
+            assert_eq!(w.held(&basket, &wsol), ONE);
+        } else {
+            expect_err(r, "NoFeesRecord");
+        }
+    }
 }
 
 /// A burn needs the burner's own BETA, at most what it holds, and its own
@@ -503,7 +599,7 @@ fn refuses_bad_accounts_and_burns() {
     let user_beta = w.user_beta(&basket);
     // The creator's account of the part, for the user's.
     let mut ix = w.ix(
-        beta_basket::client::accounts::Burn { basket, beta: beta_pda(&basket), user_beta, user: user.pubkey(), token_program: TOKEN, system_program: SYSTEM },
+        beta_basket::client::accounts::Burn { basket, fees: w.fees_of(&basket), beta: beta_pda(&basket), user_beta, user: user.pubkey(), token_program: TOKEN, system_program: SYSTEM },
         beta_basket::client::args::Burn { amount: ONE, defer: 0 },
     );
     let mut metas = w.part_metas(&basket);
@@ -514,6 +610,7 @@ fn refuses_bad_accounts_and_burns() {
     let mut ix = w.ix(
         beta_basket::client::accounts::Mint {
             basket,
+            fees: w.fees_of(&basket),
             beta: beta_pda(&basket),
             user_beta,
             user: user.pubkey(),
@@ -527,7 +624,6 @@ fn refuses_bad_accounts_and_burns() {
         AccountMeta::new_readonly(veth, false),
         AccountMeta::new(ata(&basket, &veth, &TOKEN), false),
         AccountMeta::new(ata(&user.pubkey(), &veth, &TOKEN), false),
-        AccountMeta::new(ata(&w.creator.pubkey(), &veth, &TOKEN), false),
         AccountMeta::new_readonly(TOKEN, false),
     ]);
     expect_err(w.send(ix, &[&user]), "WrongAccount");
@@ -553,4 +649,100 @@ fn stops_minting_while_a_part_is_empty() {
     let before = w.user_has(&wsol);
     w.burn(&basket, ONE, 0).unwrap();
     assert_eq!(w.user_has(&wsol), before + ONE);
+}
+
+/// A fee always reaches the current receiver's record: a mint, a burn or a
+/// collection cannot name another receiver's record, nor skip it.
+#[test]
+fn takes_the_fee_only_into_the_current_receivers_record() {
+    let mut w = World::new();
+    let wsol = w.wsol;
+    let creator = w.creator.insecure_clone();
+    let basket = w.create(1, vec![(wsol, ONE)], 10, 10).unwrap();
+    let other = Keypair::new();
+    w.ctx.svm.airdrop(&other.pubkey(), SOL).unwrap();
+    w.mint(&basket, 2 * ONE).unwrap();
+    w.burn(&basket, ONE / 2, 0b1).unwrap();
+    w.set_fee_to(&basket, &creator, other.pubkey()).unwrap();
+    let user = w.user.insecure_clone();
+    let user_beta = w.user_beta(&basket);
+    let old = Some(fees_pda(&basket, &creator.pubkey()));
+    for fees in [old, None] {
+        let mut ix = w.ix(
+            beta_basket::client::accounts::Mint {
+                basket,
+                fees,
+                beta: beta_pda(&basket),
+                user_beta,
+                user: user.pubkey(),
+                token_program: TOKEN,
+                associated_token_program: ATA,
+                system_program: SYSTEM,
+            },
+            beta_basket::client::args::Mint { amount: ONE },
+        );
+        ix.accounts.extend(w.part_metas(&basket));
+        assert!(w.send(ix, &[&user]).is_err());
+        let mut ix = w.ix(
+            beta_basket::client::accounts::Burn { basket, fees, beta: beta_pda(&basket), user_beta, user: user.pubkey(), token_program: TOKEN, system_program: SYSTEM },
+            beta_basket::client::args::Burn { amount: ONE / 2, defer: 0 },
+        );
+        ix.accounts.extend(w.part_metas(&basket));
+        assert!(w.send(ix, &[&user]).is_err());
+        let mut ix = w.ix(
+            beta_basket::client::accounts::CollectOwed { basket, owed: owed_pda(&basket, &user.pubkey(), 0), fees, user: user.pubkey() },
+            beta_basket::client::args::CollectOwed { index: 0 },
+        );
+        ix.accounts.extend(w.part_metas(&basket));
+        assert!(w.send(ix, &[&user]).is_err());
+    }
+    // With the right record, all three go through, into the new receiver's.
+    let before = w.fees(&basket, &creator.pubkey());
+    w.mint(&basket, ONE).unwrap();
+    w.burn(&basket, ONE / 2, 0).unwrap();
+    w.collect_owed(&basket, 0).unwrap();
+    assert_eq!(w.fees(&basket, &creator.pubkey()), before);
+    assert!(w.fees(&basket, &other.pubkey())[0] > 0);
+}
+
+/// Handing the fee on: never to nobody or the program; back to an earlier
+/// receiver, whose record keeps what it earned; to an address someone sent
+/// lamports to first.
+#[test]
+fn hands_the_fee_on_to_any_receiver_that_can_collect() {
+    let mut w = World::new();
+    let wsol = w.wsol;
+    let creator = w.creator.insecure_clone();
+    let basket = w.create(1, vec![(wsol, ONE)], 10, 0).unwrap();
+    w.mint(&basket, ONE).unwrap();
+    expect_err(w.set_fee_to(&basket, &creator, Pubkey::default()), "WrongAccount");
+    expect_err(w.set_fee_to(&basket, &creator, beta_basket::ID), "WrongAccount");
+    let other = Keypair::new();
+    w.ctx.svm.airdrop(&other.pubkey(), SOL).unwrap();
+    // Someone sends lamports to the new record's address first.
+    w.ctx.svm.airdrop(&fees_pda(&basket, &other.pubkey()), 1_000_000).unwrap();
+    w.set_fee_to(&basket, &creator, other.pubkey()).unwrap();
+    w.mint(&basket, ONE).unwrap();
+    // To itself, and back to the creator: each record keeps its fees.
+    w.set_fee_to(&basket, &other, other.pubkey()).unwrap();
+    w.set_fee_to(&basket, &other, creator.pubkey()).unwrap();
+    w.mint(&basket, ONE).unwrap();
+    assert_eq!(w.fees(&basket, &creator.pubkey())[0], 2 * ONE / 1000);
+    assert_eq!(w.fees(&basket, &other.pubkey())[0], ONE / 1000);
+    // A collection names the basket's own account of the part.
+    let mut ix = w.ix(
+        beta_basket::client::accounts::CollectFees { basket, fees: fees_pda(&basket, &creator.pubkey()), receiver: creator.pubkey() },
+        beta_basket::client::args::CollectFees { index: 0 },
+    );
+    ix.accounts.extend([
+        AccountMeta::new_readonly(wsol, false),
+        AccountMeta::new(ata(&creator.pubkey(), &wsol, &TOKEN), false),
+        AccountMeta::new(ata(&creator.pubkey(), &wsol, &TOKEN), false),
+        AccountMeta::new_readonly(TOKEN, false),
+    ]);
+    expect_err(w.send(ix, &[&creator]), "WrongAccount");
+    // Into an account of another token: refused.
+    let veth = w.veth;
+    expect_err(w.collect_fees(&basket, &creator, 0, ata(&creator.pubkey(), &veth, &TOKEN)), "WrongAccount");
+    w.collect_fees(&basket, &creator, 0, ata(&creator.pubkey(), &wsol, &TOKEN)).unwrap();
 }

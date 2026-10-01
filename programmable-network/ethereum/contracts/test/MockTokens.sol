@@ -40,3 +40,35 @@ contract FeeOnTransferToken is ERC20 {
         super._update(from, to, value - fee);
     }
 }
+
+/// @notice A token whose issuer can freeze an account and seize tokens from
+/// any, as a regulated token's issuer can, for BETA's tests.
+contract IssuerToken is ERC20 {
+    address public immutable issuer;
+    mapping(address => bool) public frozen;
+
+    error Frozen();
+
+    constructor() ERC20("Issuer token", "ISS") {
+        issuer = msg.sender;
+    }
+
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
+
+    function setFrozen(address who, bool value) external {
+        require(msg.sender == issuer);
+        frozen[who] = value;
+    }
+
+    function seize(address from, uint256 amount) external {
+        require(msg.sender == issuer);
+        _burn(from, amount);
+    }
+
+    function _update(address from, address to, uint256 value) internal override {
+        if (frozen[from] || frozen[to]) revert Frozen();
+        super._update(from, to, value);
+    }
+}

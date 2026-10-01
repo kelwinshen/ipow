@@ -58,6 +58,36 @@
           }
         },
         {
+          "name": "fees",
+          "docs": [
+            "The fee receiver's record; needed when a fee is set aside."
+          ],
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  101,
+                  101,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "basket"
+              },
+              {
+                "kind": "account",
+                "path": "basket.fee_to",
+                "account": "Basket"
+              }
+            ]
+          }
+        },
+        {
           "name": "beta",
           "writable": true,
           "pda": {
@@ -108,12 +138,96 @@
       ]
     },
     {
+      "name": "collect_fees",
+      "docs": [
+        "Pays the caller, a receiver of the basket's fees now or before, its",
+        "fees of part `index`, to any account of the part (the third of its",
+        "`PER_PART` accounts, the remaining accounts)."
+      ],
+      "discriminator": [
+        164,
+        152,
+        207,
+        99,
+        30,
+        186,
+        19,
+        182
+      ],
+      "accounts": [
+        {
+          "name": "basket",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  97,
+                  115,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "basket.creator",
+                "account": "Basket"
+              },
+              {
+                "kind": "account",
+                "path": "basket.id",
+                "account": "Basket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "fees",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  101,
+                  101,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "basket"
+              },
+              {
+                "kind": "account",
+                "path": "receiver"
+              }
+            ]
+          }
+        },
+        {
+          "name": "receiver",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "index",
+          "type": "u8"
+        }
+      ]
+    },
+    {
       "name": "collect_owed",
       "docs": [
         "Pays the caller what it is owed of part `index`, less the creator's",
-        "burn fee, taken here rather than when the part was deferred, and",
-        "closes the record, its rent back to the caller. The remaining",
-        "accounts are that part's `PER_PART` accounts."
+        "burn fee, taken here rather than when the part was deferred and set",
+        "aside for its receiver, and closes the record, its rent back to the",
+        "caller. The remaining accounts are that part's `PER_PART` accounts."
       ],
       "discriminator": [
         65,
@@ -158,6 +272,36 @@
         {
           "name": "owed",
           "writable": true
+        },
+        {
+          "name": "fees",
+          "docs": [
+            "The fee receiver's record; needed when a fee is set aside."
+          ],
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  101,
+                  101,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "basket"
+              },
+              {
+                "kind": "account",
+                "path": "basket.fee_to",
+                "account": "Basket"
+              }
+            ]
+          }
         },
         {
           "name": "user",
@@ -239,6 +383,34 @@
           }
         },
         {
+          "name": "fees",
+          "docs": [
+            "The creator's record of fees: it receives them first."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  101,
+                  101,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "basket"
+              },
+              {
+                "kind": "account",
+                "path": "creator"
+              }
+            ]
+          }
+        },
+        {
           "name": "creator",
           "writable": true,
           "signer": true
@@ -284,8 +456,8 @@
         "deposits each part's amount per BETA; after that, each part in",
         "proportion to what the basket holds per BETA, rounded up, so new",
         "holders never pay for a past loss. The creator's fee, a share of",
-        "each part, is paid on top. The remaining accounts are `PER_PART` per",
-        "part."
+        "each part, is paid on top and set aside in the basket for its",
+        "receiver. The remaining accounts are `PER_PART` per part."
       ],
       "discriminator": [
         51,
@@ -300,6 +472,7 @@
       "accounts": [
         {
           "name": "basket",
+          "writable": true,
           "pda": {
             "seeds": [
               {
@@ -321,6 +494,36 @@
               {
                 "kind": "account",
                 "path": "basket.id",
+                "account": "Basket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "fees",
+          "docs": [
+            "The fee receiver's record; needed when a fee is set aside."
+          ],
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  101,
+                  101,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "basket"
+              },
+              {
+                "kind": "account",
+                "path": "basket.fee_to",
                 "account": "Basket"
               }
             ]
@@ -379,9 +582,10 @@
     {
       "name": "set_fee_to",
       "docs": [
-        "Hands the fee to another address. Only the one receiving it may.",
-        "Handing it to the basket itself sends every later fee into the",
-        "backing, for good: the basket can never sign to hand it on."
+        "Hands the fee to another address. Only the one receiving it may; it",
+        "opens the new receiver's record of fees, paying its rent, and keeps",
+        "what it earned in its own. Records are never closed. Handing it to the basket itself sends every later fee into",
+        "the backing, for good: the basket can never sign to hand it on."
       ],
       "discriminator": [
         28,
@@ -424,11 +628,25 @@
           }
         },
         {
+          "name": "new_fees",
+          "docs": [
+            "The new receiver's record of fees, opened if needed; none when the fee",
+            "is handed to the basket itself."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
           "name": "fee_to",
+          "writable": true,
           "signer": true,
           "relations": [
             "basket"
           ]
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
         }
       ],
       "args": [
@@ -451,6 +669,19 @@
         243,
         218,
         248
+      ]
+    },
+    {
+      "name": "Fees",
+      "discriminator": [
+        151,
+        157,
+        50,
+        115,
+        130,
+        72,
+        179,
+        36
       ]
     },
     {
@@ -514,6 +745,11 @@
       "code": 6009,
       "name": "PartChanged",
       "msg": "A part's token no longer has the rules recorded for it"
+    },
+    {
+      "code": 6010,
+      "name": "NoFeesRecord",
+      "msg": "The fee receiver's record of fees is needed"
     }
   ],
   "types": [
@@ -565,6 +801,32 @@
           },
           {
             "name": "beta_bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Fees",
+      "docs": [
+        "The fees a receiver has earned in a basket and not collected, by part.",
+        "Fees are set aside in the basket, not sent: an issuer that freezes the",
+        "receiver's account then stops nothing but that receiver's collection."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "amounts",
+            "type": {
+              "array": [
+                "u64",
+                8
+              ]
+            }
+          },
+          {
+            "name": "bump",
             "type": "u8"
           }
         ]
@@ -628,7 +890,8 @@
           {
             "name": "owed",
             "docs": [
-              "Set aside for burners who deferred this part, not yet collected."
+              "Set aside, not yet collected: what burners who deferred this part",
+              "are owed, and the fees of its receivers."
             ],
             "type": "u64"
           }

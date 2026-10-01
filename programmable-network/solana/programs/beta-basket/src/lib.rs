@@ -5,7 +5,9 @@
 //!
 //! Anyone creates a basket, with no approval, and sets a creator fee on
 //! mint and on burn, each at most 1%, fixed at creation and paid as a share
-//! of each part. The creator may hand the fee to another address, never
+//! of each part. Fees are set aside in the basket and collected by their
+//! receiver, so nobody but a holder can stop a holder's mint, burn or
+//! collection. The creator may hand the fee to another address, never
 //! change the basket or the fee.
 //!
 //! A part may be a token whose issuer controls it (E3): one that can be
@@ -39,6 +41,7 @@ pub const ONE: u128 = 1_000_000_000;
 pub const BASKET_SEED: &[u8] = b"basket";
 pub const BETA_SEED: &[u8] = b"beta";
 pub const OWED_SEED: &[u8] = b"owed";
+pub const FEES_SEED: &[u8] = b"fees";
 
 /// A part's issuer powers, recorded when the basket is created.
 pub const CAN_FREEZE: u8 = 1;
@@ -59,9 +62,8 @@ pub const CAN_CLOSE: u8 = 16;
 pub const CAN_RESCALE: u8 = 32;
 
 /// Accounts per part in a mint or a burn: its mint, the basket's account of
-/// it, the user's account of it, the fee receiver's account of it, and its
-/// token program.
-pub const PER_PART: usize = 5;
+/// it, the user's account of it, and its token program.
+pub const PER_PART: usize = 4;
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug, InitSpace)]
 pub struct Part {
@@ -75,7 +77,8 @@ pub struct Part {
     /// Its issuer's powers: `CAN_FREEZE`, `CAN_PAUSE`, `CAN_MOVE`,
     /// `ALLOWED_ONLY`.
     pub powers: u8,
-    /// Set aside for burners who deferred this part, not yet collected.
+    /// Set aside, not yet collected: what burners who deferred this part
+    /// are owed, and the fees of its receivers.
     pub owed: u64,
 }
 
@@ -93,6 +96,16 @@ pub struct Basket {
     pub beta: Pubkey,
     pub bump: u8,
     pub beta_bump: u8,
+}
+
+/// The fees a receiver has earned in a basket and not collected, by part.
+/// Fees are set aside in the basket, not sent: an issuer that freezes the
+/// receiver's account then stops nothing but that receiver's collection.
+#[account]
+#[derive(InitSpace)]
+pub struct Fees {
+    pub amounts: [u64; MAX_PARTS],
+    pub bump: u8,
 }
 
 /// A part owed to a holder who deferred it in a burn.
@@ -122,6 +135,8 @@ pub enum BasketError {
     PartEmpty,
     #[msg("A part's token no longer has the rules recorded for it")]
     PartChanged,
+    #[msg("The fee receiver's record of fees is needed")]
+    NoFeesRecord,
 }
 
 fn mul_div(a: u64, b: u64, c: u128, up: bool) -> Result<u64> {
@@ -190,23 +205,21 @@ fn powers_of(mint: &AccountInfo) -> Result<(u8, u8)> {
     Ok((m.base.decimals, powers))
 }
 
-/// The five accounts of each part, in the order of the basket's parts.
+/// The four accounts of each part, in the order of the basket's parts.
 struct PartAccounts<'a, 'info> {
     mint: &'a AccountInfo<'info>,
     held: &'a AccountInfo<'info>,
     user: &'a AccountInfo<'info>,
-    fee: &'a AccountInfo<'info>,
     program: &'a AccountInfo<'info>,
 }
 
 /// Checks each part's accounts. The user's account is checked unless the
-/// part is `skip_user`; the fee receiver's only when a fee is paid on it.
+/// part is `skip_user`.
 fn part_accounts<'a, 'info>(
     basket: &Basket,
     basket_key: &Pubkey,
     remaining: &'a [AccountInfo<'info>],
     user: &Pubkey,
-    fee_bps: u16,
     skip_user: u8,
 ) -> Result<Vec<PartAccounts<'a, 'info>>> {
     require!(remaining.len() >= PER_PART * basket.parts.len(), BasketError::WrongAccount);
@@ -214,34 +227,17 @@ fn part_accounts<'a, 'info>(
     for (i, part) in basket.parts.iter().enumerate() {
         let a = &remaining[PER_PART * i..PER_PART * i + PER_PART];
         require_keys_eq!(a[0].key(), part.mint, BasketError::WrongAccount);
-        require_keys_eq!(a[4].key(), part.token_program, BasketError::WrongAccount);
+        require_keys_eq!(a[3].key(), part.token_program, BasketError::WrongAccount);
         require_keys_eq!(
             a[1].key(),
             get_associated_token_address_with_program_id(basket_key, &part.mint, &part.token_program),
             BasketError::WrongAccount
         );
-        let deferred = skip_user & (1 << i) != 0;
-        let mut checks = vec![];
-        if !deferred {
-            checks.push((&a[2], user));
-            if fee_bps > 0 {
-                checks.push((&a[3], &basket.fee_to));
-            }
+        if skip_user & (1 << i) == 0 {
+            let t = read_account(&a[2], &part.token_program)?;
+            require!(t.mint == part.mint && t.owner == *user, BasketError::WrongAccount);
         }
-        for (account, owner) in checks {
-            let t = read_account(account, &part.token_program)?;
-            require!(t.mint == part.mint && t.owner == *owner, BasketError::WrongAccount);
-        }
-        if !deferred && fee_bps > 0 {
-            // The fee receiver's own account, not any account it happens to
-            // own: fees never land where nobody can reach them.
-            require_keys_eq!(
-                a[3].key(),
-                get_associated_token_address_with_program_id(&basket.fee_to, &part.mint, &part.token_program),
-                BasketError::WrongAccount
-            );
-        }
-        out.push(PartAccounts { mint: &a[0], held: &a[1], user: &a[2], fee: &a[3], program: &a[4] });
+        out.push(PartAccounts { mint: &a[0], held: &a[1], user: &a[2], program: &a[3] });
     }
     Ok(out)
 }
@@ -277,6 +273,28 @@ fn move_part<'info>(part: &Part, acc: &PartAccounts<'_, 'info>, from: &AccountIn
     token_interface::transfer_checked(ctx, value, part.decimals)
 }
 
+/// The `PER_PART` accounts of one part, checked but for the third, which
+/// the caller checks.
+fn part_one<'a, 'info>(part: &Part, basket_key: &Pubkey, r: &'a [AccountInfo<'info>]) -> Result<PartAccounts<'a, 'info>> {
+    require!(r.len() == PER_PART, BasketError::WrongAccount);
+    require_keys_eq!(r[0].key(), part.mint, BasketError::WrongAccount);
+    require_keys_eq!(r[3].key(), part.token_program, BasketError::WrongAccount);
+    require_keys_eq!(r[1].key(), get_associated_token_address_with_program_id(basket_key, &part.mint, &part.token_program), BasketError::WrongAccount);
+    Ok(PartAccounts { mint: &r[0], held: &r[1], user: &r[2], program: &r[3] })
+}
+
+/// Sets a fee aside in the basket for its receiver, in the receiver's record.
+/// Handed to the basket itself, it is not set aside: it backs BETA.
+fn set_fee_aside(basket: &mut Basket, basket_key: &Pubkey, fees: &mut Option<Account<Fees>>, i: usize, fee: u64) -> Result<()> {
+    if fee == 0 || basket.fee_to == *basket_key {
+        return Ok(());
+    }
+    let record = fees.as_mut().ok_or(error!(BasketError::NoFeesRecord))?;
+    record.amounts[i] = record.amounts[i].checked_add(fee).ok_or(error!(BasketError::Overflow))?;
+    basket.parts[i].owed = basket.parts[i].owed.checked_add(fee).ok_or(error!(BasketError::Overflow))?;
+    Ok(())
+}
+
 #[program]
 pub mod beta_basket {
     use super::*;
@@ -306,6 +324,7 @@ pub mod beta_basket {
         b.beta = ctx.accounts.beta.key();
         b.bump = ctx.bumps.basket;
         b.beta_bump = ctx.bumps.beta;
+        ctx.accounts.fees.bump = ctx.bumps.fees;
         Ok(())
     }
 
@@ -313,10 +332,11 @@ pub mod beta_basket {
     /// deposits each part's amount per BETA; after that, each part in
     /// proportion to what the basket holds per BETA, rounded up, so new
     /// holders never pay for a past loss. The creator's fee, a share of
-    /// each part, is paid on top. The remaining accounts are `PER_PART` per
-    /// part.
+    /// each part, is paid on top and set aside in the basket for its
+    /// receiver. The remaining accounts are `PER_PART` per part.
     pub fn mint<'info>(ctx: Context<'info, MintBeta<'info>>, amount: u64) -> Result<()> {
         require!(amount > 0, BasketError::ZeroAmount);
+        let mut fees_set = vec![];
         let a = &ctx.accounts;
         let user = a.user.key();
         let basket_key = a.basket.key();
@@ -324,7 +344,7 @@ pub mod beta_basket {
         // A whole number of BETA first: a dust first mint would set the
         // basket's mix for every later minter.
         require!(supply > 0 || amount as u128 % ONE == 0, BasketError::FirstMintNotWhole);
-        let accounts = part_accounts(&a.basket, &basket_key, ctx.remaining_accounts, &user, a.basket.mint_fee_bps, 0)?;
+        let accounts = part_accounts(&a.basket, &basket_key, ctx.remaining_accounts, &user, 0)?;
         for (part, acc) in a.basket.parts.iter().zip(accounts) {
             associated_token::create_idempotent(CpiContext::new(
                 a.associated_token_program.key(),
@@ -350,8 +370,13 @@ pub mod beta_basket {
             };
             let fee = fee_of(need, a.basket.mint_fee_bps);
             let who = a.user.to_account_info();
-            move_part(part, &acc, acc.user, acc.held, &who, None, need)?;
-            move_part(part, &acc, acc.user, acc.fee, &who, None, fee)?;
+            let total = need.checked_add(fee).ok_or(error!(BasketError::Overflow))?;
+            move_part(part, &acc, acc.user, acc.held, &who, None, total)?;
+            fees_set.push(fee);
+        }
+        let a = &mut *ctx.accounts;
+        for (i, fee) in fees_set.into_iter().enumerate() {
+            set_fee_aside(&mut a.basket, &basket_key, &mut a.fees, i, fee)?;
         }
         let b = &a.basket;
         let id = b.id.to_le_bytes();
@@ -382,7 +407,7 @@ pub mod beta_basket {
         require!(n >= 8 || defer >> n == 0, BasketError::WrongAccount);
         let fee_bps = ctx.accounts.basket.burn_fee_bps;
         let remaining = ctx.remaining_accounts;
-        let accounts = part_accounts(&ctx.accounts.basket, &basket_key, remaining, &user, fee_bps, defer)?;
+        let accounts = part_accounts(&ctx.accounts.basket, &basket_key, remaining, &user, defer)?;
         let mut outs = vec![];
         for (part, acc) in ctx.accounts.basket.parts.iter().zip(&accounts) {
             outs.push(mul_div(amount, held(part, acc.held)?, supply as u128, false)?);
@@ -425,16 +450,17 @@ pub mod beta_basket {
             } else {
                 let fee = fee_of(out, fee_bps);
                 move_part(&part, acc, acc.held, acc.user, &basket_info, Some(seeds), out - fee)?;
-                move_part(&part, acc, acc.held, acc.fee, &basket_info, Some(seeds), fee)?;
+                let a = &mut *ctx.accounts;
+                set_fee_aside(&mut a.basket, &basket_key, &mut a.fees, i, fee)?;
             }
         }
         Ok(())
     }
 
     /// Pays the caller what it is owed of part `index`, less the creator's
-    /// burn fee, taken here rather than when the part was deferred, and
-    /// closes the record, its rent back to the caller. The remaining
-    /// accounts are that part's `PER_PART` accounts.
+    /// burn fee, taken here rather than when the part was deferred and set
+    /// aside for its receiver, and closes the record, its rent back to the
+    /// caller. The remaining accounts are that part's `PER_PART` accounts.
     pub fn collect_owed<'info>(ctx: Context<'info, CollectOwed<'info>>, index: u8) -> Result<()> {
         let i = index as usize;
         let user = ctx.accounts.user.key();
@@ -442,36 +468,63 @@ pub mod beta_basket {
         let part = *ctx.accounts.basket.parts.get(i).ok_or(error!(BasketError::WrongAccount))?;
         let owed = ctx.accounts.owed.amount;
         require!(owed > 0, BasketError::NothingOwed);
-        let r = ctx.remaining_accounts;
-        require!(r.len() == PER_PART, BasketError::WrongAccount);
-        require_keys_eq!(r[0].key(), part.mint, BasketError::WrongAccount);
-        require_keys_eq!(r[4].key(), part.token_program, BasketError::WrongAccount);
-        require_keys_eq!(r[1].key(), get_associated_token_address_with_program_id(&basket_key, &part.mint, &part.token_program), BasketError::WrongAccount);
-        let t = read_account(&r[2], &part.token_program)?;
+        let acc = part_one(&part, &basket_key, ctx.remaining_accounts)?;
+        let t = read_account(acc.user, &part.token_program)?;
         require!(t.mint == part.mint && t.owner == user, BasketError::WrongAccount);
-        let fee_bps = ctx.accounts.basket.burn_fee_bps;
-        let fee = fee_of(owed, fee_bps);
-        if fee > 0 {
-            require_keys_eq!(
-                r[3].key(),
-                get_associated_token_address_with_program_id(&ctx.accounts.basket.fee_to, &part.mint, &part.token_program),
-                BasketError::WrongAccount
-            );
-        }
-        let acc = PartAccounts { mint: &r[0], held: &r[1], user: &r[2], fee: &r[3], program: &r[4] };
+        let fee = fee_of(owed, ctx.accounts.basket.burn_fee_bps);
         ctx.accounts.owed.amount = 0;
         ctx.accounts.basket.parts[i].owed = part.owed.checked_sub(owed).ok_or(error!(BasketError::Overflow))?;
+        let a = &mut *ctx.accounts;
+        set_fee_aside(&mut a.basket, &basket_key, &mut a.fees, i, fee)?;
+        let (creator, id, bump) = (a.basket.creator, a.basket.id.to_le_bytes(), a.basket.bump);
+        let seeds: &[&[u8]] = &[BASKET_SEED, creator.as_ref(), &id, &[bump]];
+        let basket_info = a.basket.to_account_info();
+        move_part(&part, &acc, acc.held, acc.user, &basket_info, Some(seeds), owed - fee)
+    }
+
+    /// Pays the caller, a receiver of the basket's fees now or before, its
+    /// fees of part `index`, to any account of the part (the third of its
+    /// `PER_PART` accounts, the remaining accounts).
+    pub fn collect_fees<'info>(ctx: Context<'info, CollectFees<'info>>, index: u8) -> Result<()> {
+        let i = index as usize;
+        let basket_key = ctx.accounts.basket.key();
+        let part = *ctx.accounts.basket.parts.get(i).ok_or(error!(BasketError::WrongAccount))?;
+        let amount = ctx.accounts.fees.amounts[i];
+        require!(amount > 0, BasketError::NothingOwed);
+        let acc = part_one(&part, &basket_key, ctx.remaining_accounts)?;
+        let t = read_account(acc.user, &part.token_program)?;
+        require!(t.mint == part.mint, BasketError::WrongAccount);
+        ctx.accounts.fees.amounts[i] = 0;
+        ctx.accounts.basket.parts[i].owed = part.owed.checked_sub(amount).ok_or(error!(BasketError::Overflow))?;
         let (creator, id, bump) = (ctx.accounts.basket.creator, ctx.accounts.basket.id.to_le_bytes(), ctx.accounts.basket.bump);
         let seeds: &[&[u8]] = &[BASKET_SEED, creator.as_ref(), &id, &[bump]];
         let basket_info = ctx.accounts.basket.to_account_info();
-        move_part(&part, &acc, acc.held, acc.user, &basket_info, Some(seeds), owed - fee)?;
-        move_part(&part, &acc, acc.held, acc.fee, &basket_info, Some(seeds), fee)
+        move_part(&part, &acc, acc.held, acc.user, &basket_info, Some(seeds), amount)
     }
 
-    /// Hands the fee to another address. Only the one receiving it may.
-    /// Handing it to the basket itself sends every later fee into the
-    /// backing, for good: the basket can never sign to hand it on.
+    /// Hands the fee to another address. Only the one receiving it may; it
+    /// opens the new receiver's record of fees, paying its rent, and keeps
+    /// what it earned in its own. Records are never closed. Handing it to the basket itself sends every later fee into
+    /// the backing, for good: the basket can never sign to hand it on.
     pub fn set_fee_to(ctx: Context<SetFeeTo>, fee_to: Pubkey) -> Result<()> {
+        let basket_key = ctx.accounts.basket.key();
+        // Fees for these could never be collected: nobody signs for them.
+        require!(fee_to != Pubkey::default() && fee_to != crate::ID, BasketError::WrongAccount);
+        if fee_to != basket_key {
+            let record = ctx.accounts.new_fees.as_ref().ok_or(error!(BasketError::NoFeesRecord))?;
+            let (address, bump) = Pubkey::find_program_address(&[FEES_SEED, basket_key.as_ref(), fee_to.as_ref()], &crate::ID);
+            require_keys_eq!(record.key(), address, BasketError::WrongAccount);
+            if record.owner != &crate::ID || record.data_is_empty() {
+                create_pda(
+                    record,
+                    &ctx.accounts.fee_to.to_account_info(),
+                    &ctx.accounts.system_program.to_account_info(),
+                    8 + Fees::INIT_SPACE,
+                    &[FEES_SEED, basket_key.as_ref(), fee_to.as_ref(), &[bump]],
+                )?;
+                Fees { amounts: [0; MAX_PARTS], bump }.try_serialize(&mut &mut record.try_borrow_mut_data()?[..])?;
+            }
+        }
         ctx.accounts.basket.fee_to = fee_to;
         Ok(())
     }
@@ -484,6 +537,9 @@ pub struct CreateBasket<'info> {
     pub basket: Account<'info, Basket>,
     #[account(init, payer = creator, seeds = [BETA_SEED, basket.key().as_ref()], bump, mint::decimals = BETA_DECIMALS, mint::authority = basket)]
     pub beta: Account<'info, Mint>,
+    /// The creator's record of fees: it receives them first.
+    #[account(init, payer = creator, space = 8 + Fees::INIT_SPACE, seeds = [FEES_SEED, basket.key().as_ref(), creator.key().as_ref()], bump)]
+    pub fees: Account<'info, Fees>,
     #[account(mut)]
     pub creator: Signer<'info>,
     pub token_program: Program<'info, Token>,
@@ -492,8 +548,11 @@ pub struct CreateBasket<'info> {
 
 #[derive(Accounts)]
 pub struct MintBeta<'info> {
-    #[account(seeds = [BASKET_SEED, basket.creator.as_ref(), &basket.id.to_le_bytes()], bump = basket.bump)]
+    #[account(mut, seeds = [BASKET_SEED, basket.creator.as_ref(), &basket.id.to_le_bytes()], bump = basket.bump)]
     pub basket: Account<'info, Basket>,
+    /// The fee receiver's record; needed when a fee is set aside.
+    #[account(mut, seeds = [FEES_SEED, basket.key().as_ref(), basket.fee_to.as_ref()], bump = fees.bump)]
+    pub fees: Option<Account<'info, Fees>>,
     #[account(mut, seeds = [BETA_SEED, basket.key().as_ref()], bump = basket.beta_bump)]
     pub beta: Account<'info, Mint>,
     #[account(mut, token::mint = beta, token::authority = user)]
@@ -509,6 +568,9 @@ pub struct MintBeta<'info> {
 pub struct BurnBeta<'info> {
     #[account(mut, seeds = [BASKET_SEED, basket.creator.as_ref(), &basket.id.to_le_bytes()], bump = basket.bump)]
     pub basket: Account<'info, Basket>,
+    /// The fee receiver's record; needed when a fee is set aside.
+    #[account(mut, seeds = [FEES_SEED, basket.key().as_ref(), basket.fee_to.as_ref()], bump = fees.bump)]
+    pub fees: Option<Account<'info, Fees>>,
     #[account(mut, seeds = [BETA_SEED, basket.key().as_ref()], bump = basket.beta_bump)]
     pub beta: Account<'info, Mint>,
     #[account(mut, token::mint = beta, token::authority = user)]
@@ -526,13 +588,32 @@ pub struct CollectOwed<'info> {
     pub basket: Account<'info, Basket>,
     #[account(mut, close = user, seeds = [OWED_SEED, basket.key().as_ref(), user.key().as_ref(), &[index]], bump = owed.bump)]
     pub owed: Account<'info, Owed>,
+    /// The fee receiver's record; needed when a fee is set aside.
+    #[account(mut, seeds = [FEES_SEED, basket.key().as_ref(), basket.fee_to.as_ref()], bump = fees.bump)]
+    pub fees: Option<Account<'info, Fees>>,
     #[account(mut)]
     pub user: Signer<'info>,
+}
+
+#[derive(Accounts)]
+pub struct CollectFees<'info> {
+    #[account(mut, seeds = [BASKET_SEED, basket.creator.as_ref(), &basket.id.to_le_bytes()], bump = basket.bump)]
+    pub basket: Account<'info, Basket>,
+    #[account(mut, seeds = [FEES_SEED, basket.key().as_ref(), receiver.key().as_ref()], bump = fees.bump)]
+    pub fees: Account<'info, Fees>,
+    pub receiver: Signer<'info>,
 }
 
 #[derive(Accounts)]
 pub struct SetFeeTo<'info> {
     #[account(mut, seeds = [BASKET_SEED, basket.creator.as_ref(), &basket.id.to_le_bytes()], bump = basket.bump, has_one = fee_to)]
     pub basket: Account<'info, Basket>,
+    /// The new receiver's record of fees, opened if needed; none when the fee
+    /// is handed to the basket itself.
+    /// CHECK: checked and created in the handler.
+    #[account(mut)]
+    pub new_fees: Option<UncheckedAccount<'info>>,
+    #[account(mut)]
     pub fee_to: Signer<'info>,
+    pub system_program: Program<'info, System>,
 }
