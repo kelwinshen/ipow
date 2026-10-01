@@ -32,4 +32,9 @@ pub enum VaultError {
     AlreadyDone,
     NotRefused,
     NotInOrder,
+    UnknownAsset,
+    BadMint,
+    TooManyAssets,
+    AlreadyPaid,
+    Underfunded,
 }

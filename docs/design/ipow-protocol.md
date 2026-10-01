@@ -951,7 +951,7 @@ application shows the user an earlier cut-off than block 25.
 
 ## 11. Vault and receipts
 
-Decided by the owner on 2026-10-01 (D104 to D126). The design and the
+Decided by the owner on 2026-10-01 (D104 to D131). The design and the
 discussion behind it are in
 [`../drafts/ipow-vault-claims.md`](../drafts/ipow-vault-claims.md).
 
@@ -975,7 +975,7 @@ one honest guardian watches**, and is never called trustless (D105).
 |---|---|
 | Vault | A contract, or program, of the protocol on each network, deployed with it, with no owner and no key (D59). It is separate from the protocol contract because that contract is at Ethereum's size limit (D104) |
 | Receipt | A token on one network for an asset locked in the vault on its home network. vETH on Solana has 9 decimals, so a lock of ETH is a whole number of gwei |
-| Record | A fact written by a vault: LOCK, REQUEST, CANCEL, BOND or EXIT (section 11.5) |
+| Record | A fact written by a vault: LOCK, REQUEST, CANCEL, BOND, ASSET or EXIT (sections 11.5, 11.9) |
 | Batch | The records an operator carries in one message. One statement: if any record is false, the whole message is false (D114) |
 | Pair chain | One per operator and pair of networks, beside its chain heads (D106) |
 | Vault bond | What an operator locks in the vault, in the asset it vouches for, beside its protocol bond (D110, D117). Apart from it, the operator keeps deposit money in the vault, in the network's coin, for the flat deposits of its claims, so that a deposit never changes what a BOND record states |
@@ -996,8 +996,8 @@ one honest guardian watches**, and is never called trustless (D105).
 
 | Part | Rule |
 |---|---|
-| Where | In the vault, in the asset it vouches for: ETH on Ethereum for records about ETH locks, vETH on Solana for records about vETH burns (D110, D117) |
-| BOND | A BOND record states a chain's bond on one network, once per network. The vault holding it checks it against the free bond and keeps it locked; the other network counts it after 7 days of objections. Until then no claim of the chain that moves value opens there (D110) |
+| Where | In the vault, in the asset it vouches for, one bond per asset (D110, D117, D129): on an asset's home network in the asset (ETH on Ethereum for ETH locks), on the other network in its receipt (vETH on Solana for vETH burns) |
+| BOND | A BOND record states a chain's bond in one asset on one network, once per asset and network. The vault holding it checks it against the free bond and keeps it locked; the other network counts it after 7 days of objections. Until then no claim of the chain that moves value opens there (D110) |
 | 125% | On the acting network, the open claims of a chain, every batch still in its 7 days, are at most 80% of the bond stated for them (D110) |
 | Slash | A false record proven where its fact lives slashes the whole bond there: 80% backs the receipt lied about, 20% goes to whoever submitted the message. When the operator submitted it, the 20% backs the receipt too (D109). A vETH bond is slashed by burning its 80%: fewer receipts for the same ETH |
 | Leaving | An EXIT message ends the chain. The bond on a network becomes free once that vault has processed every message before EXIT and every claim of the chain there has ended (D112) |
@@ -1009,7 +1009,7 @@ one honest guardian watches**, and is never called trustless (D105).
 | LOCK (Ethereum: lock #99, amount, Solana recipient, fee) | The lock exists with exactly this record, returned or not: Solana issues nothing for a lock it marked never usable, so an honest message that arrives after a return is not a lie. True: the first message carrying it earns its fee. False: slash | Issues the receipt, once per lock, never for a lock it marked never usable |
 | REQUEST (Solana: burn #7, amount, Ethereum address, fee) | The burn exists with exactly this record. True: the first message earns its fee. False: slash | Pays the asset, once per request number, from any accepted claim that carries it. Solana writes no request to address zero, so Ethereum slashes one |
 | CANCEL (Solana: lock #99) | Solana marked lock #99 never usable, at the request of its recipient. Solana gives up only a lock it learned from a LOCK record in an accepted claim: a claim not yet decided may carry a false LOCK record, which could otherwise give up any lock, so a CANCEL of a lock that does not exist on Ethereum is false and slashed there | Returns the lock to its owner, with its fee if no message earned it; the fee can then never be earned |
-| BOND (a network, an amount) | The bond is locked there. False: slash. A later BOND of a chain for the same network is true when it states the same amount, and changes nothing; another amount is false | Counts the first one carried in a claim that opened; a BOND in a message whose claim could not open can be carried again. A later one is not acted on, and is judged where its fact lives |
+| BOND (a network, an asset, an amount) | The bond is locked there. False: slash. A later BOND of a chain for the same asset and network is true when it states the same amount, and changes nothing; another amount is false | Counts the first one carried in a claim that opened; a BOND in a message whose claim could not open can be carried again. A later one is not acted on, and is judged where its fact lives |
 | EXIT | Ends the chain on both networks | Ends the chain |
 
 A lock and a burn also carry a fast fee the user sets, for an attester
@@ -1030,16 +1030,9 @@ Ethereum could give the number another lock, and the record would then
 be false.
 
 A batch is its records one after another. Numbers are big-endian, and
-amounts and fees are in gwei (9 decimals). A batch that does not parse
-is false: its hash is what the operator wrote.
-
-| Record | Bytes |
-|---|---|
-| LOCK | `01` ‖ lock number (8) ‖ amount (8) ‖ Solana recipient (32) ‖ fee (8) ‖ fast fee (8) ‖ time of the lock (8) |
-| REQUEST | `02` ‖ request number (8) ‖ amount (8) ‖ Ethereum address (20) ‖ fee (8) ‖ fast fee (8) ‖ time of the burn (8) |
-| CANCEL | `03` ‖ lock number (8) |
-| BOND | `04` ‖ network, 1 for Ethereum and 2 for Solana (1) ‖ amount (8) |
-| EXIT | `05`, and nothing after it |
+amounts and fees are in the receipt's smallest unit (gwei for ETH). A
+batch that does not parse is false: its hash is what the operator wrote.
+The bytes of each record are in section 11.9.
 
 ### 11.6 The objection window
 
@@ -1118,8 +1111,56 @@ only speed, and the squatter loses its vETH.
 ### 11.8 First version
 
 ETH locked on Ethereum, vETH on Solana, native coins only, batching, the
-slow paths, then the fast paths. Tokens, with a bond in each token, and
-more networks (stage 7) later (D117).
+slow paths, then the fast paths. Then assets in both directions, tokens
+included, with a bond in each (section 11.9); more networks in stage 7
+(D117).
+
+### 11.9 Assets in both directions
+
+Decided by the owner on 2026-10-01 (D127 to D131). Built in both vaults on
+2026-10-01; the node does not use it yet (see Build status). Its record
+layout replaces the bytes of section 11.5.
+
+Each network is the **home** of its own assets and holds receipts of the
+other's (D127):
+
+| Locked on | Asset | Receipt on the other network |
+|---|---|---|
+| Ethereum | ETH, and any ERC-20 token | vETH, and a receipt per token, on Solana |
+| Solana | SOL, and any SPL token | vSOL, and a receipt per token, on Ethereum |
+
+An application such as BETA lives on every network and mints from the
+parts there, native or receipts. To move it to another network, a user
+burns it for its parts, the parts cross, and it is minted there; it never
+crosses itself.
+
+| Part | Rule |
+|---|---|
+| An asset | Anyone registers a token in its home vault, once; it gets the next number there, the network's coin being 0 (D128). The vault has no list and nobody approves a token |
+| Its receipt | Made on the other network by an accepted claim carrying the asset's ASSET record, which its home judges: 7 days once per asset. On Ethereum each receipt is its own ERC-20 contract, made by the vault |
+| Units | A receipt has the token's decimals, at most 9; amounts in records are in the receipt's smallest unit, and a lock is a whole number of them. A token with 18 decimals counts in units of 10^9 of its own, as ETH counts in gwei |
+| What arrived | A home vault counts what it received, not what was sent: a token that takes a fee on transfer locks less |
+| Issuer powers | Some tokens let their issuer freeze or seize them (USDC can block an address). If an issuer freezes the vault, every receipt of that token loses its backing. A vault cannot see that power on Ethereum, so the receipt's holders carry the issuer's risk. On Solana the same token rules as BETA apply: a token with a transfer fee, a transfer hook, confidential transfers, that cannot be moved, is refused; so is one with an extension not known yet, as BETA does |
+| Bonds | A chain keeps a bond per asset on each network: in the asset on its home, in its receipt on the other (D129). A record about an asset is covered by the chain's bond in that asset on the network that holds the fact: its claims on the acting network are at most 80% of it, counted there after a BOND claim |
+| Slash | A false record proven on a network slashes every bond of the chain there, in every asset. Each bond's 80% backs that asset's receipts, its 20% goes to whoever submitted the message: a liar loses everything, and every receipt stays covered in its own asset |
+| Fees | A lock's or burn's fee and fast fee are in the asset moved; a fast path's collateral is 1.25 times the amount in the receipt. Claim deposits stay in the network's coin (D130) |
+| Fast paths | As section 11.7, in both directions: a lock on either network is attested on the other with receipts as collateral; a burn on either network is paid at once on the asset's home |
+| Limits | At most 32 LOCK, REQUEST, CANCEL and ASSET records in a message, on both networks together (D119, as amended): Solana reads an account for most of them, and a transaction holds at most 64. A message acts on at most 10 LOCK records on Solana. A chain keeps bonds in at most 8 assets, and a claim moves at most 8: with more, no claim opens and its records can be carried again. On Solana the assets a chain's claims move count toward its 8 too, since its place in each is kept with its bonds; on Ethereum only bonded assets count |
+| Settling | A slash takes every bond of the chain at once and credits the submitter's 20% (on Solana it records who submitted). The backing share is then moved into each asset's backing, or burned for a receipt, by anyone, asset by asset: a token that will not move cannot keep a chain from being slashed. On Solana an operator takes the fee it earned with its own call, and the submitter's 20% is credited when the asset is settled, so that a message names no account per asset |
+
+Records name the asset by its home network and number (D131). Lock
+numbers are counted by each home vault, burn numbers by each receipt
+network's vault. Addresses are 32 bytes; an Ethereum address is the last
+20 of them, the first 12 being zero.
+
+| Record | Bytes | Judged on |
+|---|---|---|
+| LOCK | `01` ‖ home network (1) ‖ asset (4) ‖ lock number (8) ‖ amount (8) ‖ recipient (32) ‖ fee (8) ‖ fast fee (8) ‖ time of the lock (8) | the home network |
+| REQUEST | `02` ‖ network of the burn (1) ‖ asset (4) ‖ burn number (8) ‖ amount (8) ‖ address paid (32) ‖ fee (8) ‖ fast fee (8) ‖ time of the burn (8) | the network of the burn |
+| CANCEL | `03` ‖ network that gave up (1) ‖ lock number (8) | the network that gave up |
+| BOND | `04` ‖ network holding it (1) ‖ home network of the asset (1) ‖ asset (4) ‖ amount (8) | the network holding it |
+| EXIT | `05`, and nothing after it | both |
+| ASSET | `06` ‖ home network (1) ‖ asset (4) ‖ token (32) ‖ decimals of the receipt (1) | the home network |
 
 ## Holes in the current code this proposal closes
 
@@ -1310,7 +1351,7 @@ the reading in the middle column until the owner says otherwise.
 | D116 | Anyone may open a job through the vault to make a real block | 11.3 |
 | D117 | The first version: ETH on Ethereum, vETH on Solana, native coins, batching, slow paths. The vault bond is in the vault, not in the protocol contract | 11.8 |
 | D118 | Only a job whose escrow is at least a minimum fixed at the vault's deployment certifies real blocks: 1 ETH on Ethereum and 1 SOL on Solana on mainnet. One unchallenged cheap job would otherwise expose every vault bond. The minimum does not stop a forger, whom faking the blocks costs far more in mining; it pays the guardian who proves a fake, 20% of it, which must clearly exceed what a challenge costs. Measured on 2026-10-01: about 1.5 million gas on Ethereum when the real headers are stored, about 4 million when the guardian stores some 25 itself, so 0.2 ETH is about 4 times the usual cost at 30 gwei; on Solana under 0.01 SOL. Owner, 2026-10-01 | 11.3 |
-| D119 | A vault message is false when its Bitcoin transaction is longer than 1,024 bytes, its batch longer than 2,048 bytes, or it carries more than 32 REQUEST and CANCEL records: every message that counts can be judged on every network. Solana takes a large message through a buffer. Owner, 2026-10-01 | 11.3 |
+| D119 | A vault message is false when its Bitcoin transaction is longer than 1,024 bytes, its batch longer than 2,048 bytes, or it carries more than 32 REQUEST and CANCEL records: every message that counts can be judged on every network. Solana takes a large message through a buffer. Owner, 2026-10-01. Amended with assets in both directions, owner, 2026-10-01: more than 32 LOCK, REQUEST, CANCEL and ASSET records on both networks together, since Solana reads an account for most and a transaction holds at most 64 | 11.3, 11.9 |
 | D120 | Each vault publishes the batch of every message it processes, so anyone can bring a message shown to one network only to the other: Ethereum in an event, Solana in an account per message kept 30 days, which anyone may then close, its rent back to whoever paid. A guardian holding a lie that waits for a real block opens a checkpoint job itself (D116). Owner, 2026-10-01 | 11.3 |
 | D121 | The flat deposit of V1: 0.03 ETH on Ethereum and 0.015 SOL on Solana on mainnet, 5 times one measured objection. Owner, 2026-10-01. Both this and D118 are set when a vault is deployed, not in its code: a test network's vaults are deployed with smaller amounts, so that testing needs little test ETH | 11.6 |
 | D122 | The fast fee is set by the user in the lock or burn, beside the operator's fee, and carried in the LOCK and REQUEST records; attesters take the best-paid first. A fast path mints new vETH at once; an attester never hands over its own vETH, which would only exchange what exists. Owner, 2026-10-01 | 11.5, 11.7 |
@@ -1318,6 +1359,11 @@ the reading in the middle column until the owner says otherwise.
 | D124 | An attester's share of the fast fee is the fee times the time left, from its attest to 8 days after the lock or burn, over 8 days; the user receives the rest. An attest made once the slow path is done, at least about 8.5 days after, earns nothing, so nobody takes a fast fee for no speed. The lock's and burn's times are in their records. Owner, 2026-10-01 | 11.5, 11.7 |
 | D125 | Only the attester links its attest, and only to a claim of its own chain: another operator could otherwise link its own claim, let it be refused, and burn the attest before a relink. Owner, 2026-10-01 | 11.7 |
 | D126 | Several attests of one lock or burn may be made; the earliest that stated the true record is repaid, the others count as wrong. On Solana a lock takes attests for 7 days from its first, settled in the order made. A wrong attest made first then blocks nothing, a later copy cannot take an honest attester's place, and no stream of wrong attests holds the receipt back. Owner, 2026-10-01 | 11.7 |
+| D127 | The vault works in both directions: each network is the home of its own assets and holds receipts of the other's, so an application such as BETA can live on every network. An application moves between networks by being burned for its parts, which cross, and minted again. Owner, 2026-10-01 | 11.9 |
+| D128 | Anyone registers a token in its home vault; nobody approves or lists tokens. The vault counts what it received, and a token's holders carry its issuer's risk. Owner, 2026-10-01 | 11.9 |
+| D129 | A chain keeps a bond per asset on each network; a record about an asset is covered by the bond in that asset where its fact lives, at 125%; a false record slashes every bond of the chain on that network. Owner, 2026-10-01 | 11.9 |
+| D130 | A lock's or burn's fees are in the asset moved; claim deposits stay in the network's coin. Owner, 2026-10-01 | 11.9 |
+| D131 | Records name their asset by its home network and number, and an ASSET record makes a token's receipt on the other network. The byte layout of section 11.9. Owner, 2026-10-01 | 11.9 |
 
 ## Build status
 
@@ -1329,6 +1375,6 @@ the reading in the middle column until the owner says otherwise.
 | 4. Solana | Built and tested on 2026-09-29: `programmable-network/solana/programs/ipow-light-client` and `programs/ipow-protocol`, with the same rules as Ethereum. Differences made by Solana: a walk of up to 100 blocks is done in steps of about 25 blocks and finishes only at the exact block it names; the protocol reads finished walks instead of walking; streaming takes up to 7 blocks per call and needs a compute limit above Solana's default; an account is created even when someone sent lamports to its address first; blocks can be closed after 8 weeks (D101); a competing-branch challenge needs no separate walk from the anchor, because the walk from the proof's block down to where the branches part already shows that block lies between them. Not built on Solana: the test harness that lowers the limit of 2,016 questions, so D92 is tested only on Ethereum. Not deployed |
 | 5. The operator service | Built and tested on 2026-09-29 as a new program, `core/node` (the old `core/operator` stays for the old contracts). One program runs any mix of the operator, guardian and attester roles on any number of networks, each role on each network as its own task. Adapters for Ethereum and Solana. When the operator holds jobs with the same tag on several networks, one Bitcoin transaction spends all their chain heads (sections 3 and 4.3); a network not ready within one Bitcoin block of the first sends its own. On Solana, a proof too large for one transaction (a transaction for several networks, or a block of more than 4,096 transactions) goes through an address lookup table, closed afterwards to take its rent back. Tested on a local Hardhat network and an in-process Solana with the contracts and programs of stages 1 to 4, against a Bitcoin held in memory; the explorer client read Bitcoin mainnet once. Not run against a live network |
 | 6. The applications | Conversion built and tested on 2026-09-29, on Ethereum (`contracts/apps/Conversion.sol`) and Solana (`programs/conversion`), and in the node's operator; design and the owner's decisions in [`../drafts/ipow-conversion-app.md`](../drafts/ipow-conversion-app.md). It asks the lowest escrow, since the application itself keeps the user's coin safe. BETA built and tested on Solana on 2026-10-01 as a basket of receipts (section 11): `programs/beta-basket`, design in [`../drafts/ipow-beta-app.md`](../drafts/ipow-beta-app.md). Not deployed |
-| 6b. The vault | Built and tested on 2026-10-01 on Ethereum (`contracts/protocol/iPoWVault.sol`, tests in `test/iPoWVault.test.ts`) and Solana (`programs/ipow-vault`, tests in `programs/ipow-vault/tests/test_vault.rs`). Differences made by Solana: the deposit, the minimum certifying escrow and the Ethereum vault's address are set once by the program's upgrade authority when it initializes the vault, as Ethereum's constructor sets them, and the authority is then removed (D59); the owner approves the amounts before deployment; a message acts on at most 10 LOCK records here; a transaction and batch too large for one Solana transaction with their proof are uploaded to a buffer first; a slash burns 80% of the vETH bond, which backs vETH as the ETH it stands for; the deposits of a claim with no winner, and what does not divide evenly among winners, stay in the vault, and the application's share of a slashed checkpoint job is not collected, since there is no ETH here to back; a processed message's block is not recorded as real, so a later message may need its own walk; a receipt is issued to a token account its recipient owns. The node's roles built and tested on 2026-10-01 in `core/node` (`crates/node/src/vault.rs`, tests in `crates/node/tests/vault_local.rs` on a local Hardhat network and an in-process Solana with one Bitcoin in memory): the operator registers its pair chain, keeps its bond and deposits, carries final locks, burns and give-ups in batches, submits each message to both vaults once a real block is above it, opens a checkpoint job when none is, and answers objections to its claims; the guardian checks every claim against the other network and objects to a false one. The guardian also brings a message an operator showed to one network only to the other, taking the published batch and checking it against the hash on Bitcoin; it does so only when one of the next 20 lagging messages is false on the network behind, judged as that vault would judge it, and then brings the messages up to that one, 5 a round. When no real block is above the lie, it opens a checkpoint job itself (D120). The fast paths (section 11.7, D122 to D126) built and tested on 2026-10-01: `lock` and `fastPay` on Ethereum, `make_request` with a fast fee, `attest_lock`, `link_fast`, `burn_fast` and `settle_fast` on Solana; the operator attests and pays at once with its `fast` settings, links and settles its attests, and the guardian burns and settles attests. Not tested end to end: a burn paid at once repaid by its claim, which needs a vETH bond counted on Ethereum; the contract's own tests cover it. Not deployed |
+| 6b. The vault | Built and tested on 2026-10-01 on Ethereum (`contracts/protocol/iPoWVault.sol`, tests in `test/iPoWVault.test.ts`) and Solana (`programs/ipow-vault`, tests in `programs/ipow-vault/tests/test_vault.rs`). Differences made by Solana: the deposit, the minimum certifying escrow and the Ethereum vault's address are set once by the program's upgrade authority when it initializes the vault, as Ethereum's constructor sets them, and the authority is then removed (D59); the owner approves the amounts before deployment; a message acts on at most 10 LOCK records here; a transaction and batch too large for one Solana transaction with their proof are uploaded to a buffer first; a slash burns 80% of the vETH bond, which backs vETH as the ETH it stands for; the deposits of a claim with no winner, and what does not divide evenly among winners, stay in the vault, and the application's share of a slashed checkpoint job is not collected, since there is no ETH here to back; a processed message's block is not recorded as real, so a later message may need its own walk; a receipt is issued to a token account its recipient owns. The node's roles built and tested on 2026-10-01 in `core/node` (`crates/node/src/vault.rs`, tests in `crates/node/tests/vault_local.rs` on a local Hardhat network and an in-process Solana with one Bitcoin in memory): the operator registers its pair chain, keeps its bond and deposits, carries final locks, burns and give-ups in batches, submits each message to both vaults once a real block is above it, opens a checkpoint job when none is, and answers objections to its claims; the guardian checks every claim against the other network and objects to a false one. The guardian also brings a message an operator showed to one network only to the other, taking the published batch and checking it against the hash on Bitcoin; it does so only when one of the next 20 lagging messages is false on the network behind, judged as that vault would judge it, and then brings the messages up to that one, 5 a round. When no real block is above the lie, it opens a checkpoint job itself (D120). The fast paths (section 11.7, D122 to D126) built and tested on 2026-10-01: `lock` and `fastPay` on Ethereum, `make_request` with a fast fee, `attest_lock`, `link_fast`, `burn_fast` and `settle_fast` on Solana; the operator attests and pays at once with its `fast` settings, links and settles its attests, and the guardian burns and settles attests. Not tested end to end: a burn paid at once repaid by its claim, which needs a vETH bond counted on Ethereum; the contract's own tests cover it. Assets in both directions (section 11.9) built and tested on 2026-10-01: on Ethereum the core `iPoWVault.sol` makes `vault/VaultHome.sol` (Ethereum's assets) and `vault/VaultReceipts.sol` (receipts of Solana's, each a `vault/VaultReceipt.sol`), tests in `test/iPoWVault.test.ts`; on Solana `programs/ipow-vault`, tests in `tests/test_vault.rs`. The node still speaks the earlier ETH-only layout and is to be updated. Not deployed |
 | 7. The other networks | Not built |
 | 8. Deployment | Not done |

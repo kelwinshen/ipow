@@ -2,27 +2,35 @@
 pragma solidity ^0.8.20;
 
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import {iPoWLightClient} from "./iPoWLightClient.sol";
 import {iPoWProtocol} from "./iPoWProtocol.sol";
 import {BitcoinTxLib} from "./BitcoinTxLib.sol";
+import {VaultRecords as R, IVaultCore} from "./vault/VaultRecords.sol";
+import {VaultHome} from "./vault/VaultHome.sol";
+import {VaultReceipts} from "./vault/VaultReceipts.sol";
+import {VaultReceipt} from "./vault/VaultReceipt.sol";
 
 /// @title iPoWVault
 /// @notice The protocol's vault on Ethereum, for the pair Ethereum and
 /// Solana. Spec: docs/design/ipow-protocol.md, section 11, decisions D104 to
-/// D126. It is part of the protocol, beside the protocol contract (D104).
+/// D131. It is part of the protocol, beside the protocol contract (D104).
 ///
-/// On Ethereum it holds ETH locked for vETH on Solana. It judges LOCK and
-/// BOND records about itself (D109), and acts on REQUEST, CANCEL and BOND
-/// records from Solana after 7 days of objections (D111). An attester may pay
-/// a burn's ETH at once and be repaid when its claim is accepted (D122).
+/// This core keeps the operators' pair chains and bonds, processes their
+/// messages, judges the records whose facts live on Ethereum (D109), and
+/// holds the records from Solana as claims for 7 days of objections (D111).
+/// Two parts it makes act on accepted claims: `home`, for the assets whose
+/// home is Ethereum, and `receipts`, for the receipts here of Solana's
+/// (section 11.9).
 ///
 /// There is no owner and no key, and nothing here can be changed after
-/// deployment (D59). The first version holds ETH only (D117).
-///
-/// Money is never pushed to an address. It is credited and the address
-/// withdraws it.
-contract iPoWVault is ReentrancyGuard {
+/// deployment (D59). Money is never pushed to an address. It is credited and
+/// the address withdraws it.
+contract iPoWVault is ReentrancyGuard, IVaultCore {
+    using SafeERC20 for IERC20;
+
     // ------------------------------------------------------------------
     // Rules
     // ------------------------------------------------------------------
@@ -30,66 +38,41 @@ contract iPoWVault is ReentrancyGuard {
     /// @notice D111: a claim is decided when the last objection or answer has
     /// stood for 7 days.
     uint256 public constant OBJECTION_WINDOW = 7 days;
-    /// @notice D110: a chain's open claims are at most 80% of its bond.
+    /// @notice D110, D129: a chain's open claims in an asset are at most 80% of
+    /// its bond in that asset.
     uint256 public constant COVER_BPS = 8000;
     /// @notice D109: 80% of a slash backs the receipt, 20% goes to whoever
     /// submitted the message.
     uint256 public constant BACKING_SHARE_BPS = 8000;
     uint256 public constant BPS = 10_000;
-    /// @notice Amounts in records are in gwei: vETH has 9 decimals.
-    uint256 public constant GWEI = 1e9;
 
-    /// @notice Section 11.3: a message is false when its Bitcoin transaction
-    /// or its batch is longer than these, or it carries more REQUEST and
-    /// CANCEL records than this, so that every message that counts can be
-    /// judged on every network.
+    /// @notice D119: a message is false when its Bitcoin transaction or batch
+    /// is longer than these, or it carries more LOCK, REQUEST, CANCEL and
+    /// ASSET records, on both networks together, than this: Solana reads an
+    /// account for most of them.
     uint256 public constant MAX_RAW_TX = 1024;
     uint256 public constant MAX_BATCH = 2048;
-    uint256 public constant MAX_HOME_RECORDS = 32;
-
-    /// @notice The networks of the pair, as records name them.
-    uint8 public constant ETHEREUM = 1;
-    uint8 public constant SOLANA = 2;
-
-    uint8 internal constant LOCK = 1;
-    uint8 internal constant REQUEST = 2;
-    uint8 internal constant CANCEL = 3;
-    uint8 internal constant BOND = 4;
-    uint8 internal constant EXIT = 5;
-    uint256 internal constant LOCK_LEN = 73;
-    uint256 internal constant REQUEST_LEN = 61;
-    /// @notice D124: an attester's share of a fast fee falls to nothing 8 days
-    /// after the lock or burn, about the slow path.
-    uint256 public constant FAST_FEE_DEADLINE = 8 days;
+    uint256 public constant MAX_RECORDS = 32;
+    /// @notice The assets a chain keeps bonds in, and a claim moves, at most
+    /// (section 11.9).
+    uint256 public constant MAX_ASSETS = 8;
 
     iPoWProtocol public immutable protocol;
     iPoWLightClient public immutable lightClient;
     /// @notice The vault program on Solana, as named in a registration.
     bytes32 public immutable peerVault;
-    /// @notice V1: the flat deposit to object or answer, and the operator's
-    /// deposit for a claim.
+    /// @notice D121: the flat deposit to object or answer, and the operator's
+    /// deposit for a claim, in wei.
     uint256 public immutable deposit;
     /// @notice D118: the least escrow of a job whose proof block counts as
-    /// real. A forger risks at least this much, and a guardian who catches it
-    /// earns 20% of it.
+    /// real.
     uint256 public immutable minCertifyingEscrow;
+    VaultHome public immutable home;
+    VaultReceipts public immutable receipts;
 
     // ------------------------------------------------------------------
     // Storage
     // ------------------------------------------------------------------
-
-    struct Lock {
-        address owner;
-        uint64 amount; // gwei
-        uint64 fee; // gwei
-        /// For the attester of the fast path, or the recipient (D122).
-        uint64 fastFee; // gwei
-        /// Its block's time, in the LOCK record (D124).
-        uint64 lockedAt;
-        bytes32 recipient; // on Solana
-        bool feePaid;
-        bool returned;
-    }
 
     struct Chain {
         bytes32 peerOperator; // the same operator on Solana
@@ -97,40 +80,42 @@ contract iPoWVault is ReentrancyGuard {
         uint32 coinVout;
         bool registered;
         bool exited;
-        /// A false record was proven here: the bond is gone (D109).
+        /// A false record was proven here: every bond is gone (D109).
         bool slashed;
         /// A claim of the chain was refused here: no other claim acts (D111).
         bool refused;
         uint64 messages;
-        /// What the operator holds in the vault, in wei.
-        uint256 bond;
-        /// The part of the bond its BOND message stated for Ethereum (D110).
-        uint256 stated;
-        /// Money for the flat deposits of its claims, apart from the bond, so
-        /// that a deposit never changes what a BOND record can state.
+        /// Wei for the flat deposits of its claims, apart from the bonds.
         uint256 deposits;
-        /// The vETH bond on Solana, counted once its BOND claim is official.
-        uint256 peerBond; // wei
-        /// A BOND record for Solana was carried: once per chain (D110).
-        bool peerBondCarried;
-        /// The value of the chain's open claims here, in wei.
-        uint256 openValue;
         uint32 openClaims;
         /// The block of the chain's last message here, where its
         /// `MessageBatch` event is: each names the block of the one before.
         uint64 lastMessageBlock;
     }
 
+    /// A chain's place in one asset (D129), in record units.
+    struct Position {
+        /// Held here: the asset itself when its home is Ethereum, its receipt
+        /// otherwise.
+        uint64 bond;
+        /// The part its BOND record stated.
+        uint64 stated;
+        /// Its bond in the asset on Solana, counted once its BOND claim is
+        /// official.
+        uint64 peerBond;
+        bool peerBondCarried;
+        /// Open claims here in the asset.
+        uint64 openValue;
+    }
+
     struct Claim {
         address operator;
         uint40 lastAt;
+        uint40 openedAt;
         /// An objection stands.
         bool held;
         bool decided;
         bool accepted;
-        uint256 value; // wei
-        /// A BOND for Solana carried in this claim, in wei, zero if none.
-        uint256 peerBond;
         /// Deposits put down on each side, the operator's among the answers.
         uint32 answers;
         uint32 objections;
@@ -140,78 +125,55 @@ contract iPoWVault is ReentrancyGuard {
         uint64 openedBlock;
     }
 
-    struct Request {
-        address to;
-        uint64 amount; // gwei
-        uint64 fastFee; // gwei
-        /// The burn's time on Solana (D124).
-        uint64 requestedAt;
-    }
-
-    /// A burn on Solana paid at once by an attester (section 11.7), under
-    /// the record it stated.
-    struct FastPay {
-        address attester;
-        uint64 paidAt;
-    }
-
-    uint256 public lockCount;
-    mapping(uint256 => Lock) private _locks;
     mapping(address => Chain) private _chains;
+    mapping(address => mapping(uint40 => Position)) private _positions;
+    mapping(address => uint40[]) private _assetsOf;
+
     uint256 public claimCount;
     mapping(uint256 => Claim) private _claims;
-    /// @dev Claim => request number on Solana => the request it carries.
-    /// Several claims may carry the same request; it is paid once.
-    mapping(uint256 => mapping(uint64 => Request)) private _requests;
-    mapping(uint64 => bool) public requestPaid;
-    /// @dev Request => hash of the record stated => its payment. Several
-    /// may be made; only the true record's is repaid (D126).
-    mapping(uint64 => mapping(bytes32 => FastPay)) private _fastPays;
-    /// @dev Claim => lock => whether the claim carries a CANCEL of it.
-    mapping(uint256 => mapping(uint64 => bool)) public cancels;
-    /// @dev Claim => address => deposits it put down on each side.
+    /// @dev Claim => the assets it moves, and in each, its value and a BOND it
+    /// carries.
+    mapping(uint256 => uint40[]) private _claimAssets;
+    mapping(uint256 => mapping(uint40 => uint64)) private _claimValue;
+    mapping(uint256 => mapping(uint40 => uint64)) private _claimPeerBond;
+    /// @notice Claim => the hashes of the records it acts on.
+    mapping(uint256 => mapping(bytes32 => bool)) public carries;
     mapping(uint256 => mapping(address => uint32)) public answersOf;
     mapping(uint256 => mapping(address => uint32)) public objectionsOf;
 
-    /// @notice The ETH that backs vETH: the locks not returned, less what was
-    /// paid out, plus the backing share of slashes.
-    uint256 public reserve;
     /// @notice Blocks known to be on real Bitcoin (D108), by light client id.
     mapping(bytes32 => bool) public isReal;
     uint256 public checkpointCount;
-    mapping(address => uint256) public credit;
+    /// @notice The backing share of a slashed bond not yet settled, by
+    /// operator and asset, in record units.
+    mapping(address => mapping(uint40 => uint64)) public slashBacking;
+    /// @notice What each address can withdraw, by asset, in its native units:
+    /// wei or token units for an asset of Ethereum, receipts for Solana's.
+    mapping(address => mapping(uint40 => uint256)) public credit;
 
     // ------------------------------------------------------------------
     // Events and errors
     // ------------------------------------------------------------------
 
-    event Locked(uint256 indexed lockId, address indexed owner, uint64 amount, uint64 fee, uint64 fastFee, uint64 lockedAt, bytes32 recipient);
     event ChainRegistered(address indexed operator, bytes32 peerOperator, bytes32 coinTxid, uint32 coinVout);
-    event BondChanged(address indexed operator, uint256 bond);
+    event BondChanged(address indexed operator, uint40 indexed asset, uint64 bond);
     event RealBlock(bytes32 indexed id);
     event MessageProcessed(address indexed operator, uint64 index, bytes32 txid, bool truthful, uint256 claimId);
     /// @notice Every message's batch, so that anyone can bring the message to
-    /// the other vault (D107). `prevBlock` is the block of the chain's
+    /// the other vault (D107, D120). `prevBlock` is the block of the chain's
     /// message before it, zero for the first.
     event MessageBatch(address indexed operator, uint64 indexed index, uint64 prevBlock, bytes batch);
-    event Slashed(address indexed operator, uint256 amount, address submitter);
-    event FeeEarned(uint256 indexed lockId, address indexed operator, uint256 amount);
-    event ClaimOpened(uint256 indexed claimId, address indexed operator, uint256 value);
-    /// @notice The batch whose acting records a claim carries, for guardians
-    /// to check against the other network.
+    event Slashed(address indexed operator, address submitter);
+    event ClaimOpened(uint256 indexed claimId, address indexed operator);
+    /// @notice The batch whose acting records a claim carries.
     event ClaimBatch(uint256 indexed claimId, bytes batch);
     event Objected(uint256 indexed claimId, address indexed by);
     event Answered(uint256 indexed claimId, address indexed by);
     event ClaimDecided(uint256 indexed claimId, bool accepted);
-    event RequestPaid(uint64 indexed requestId, uint256 indexed claimId, address to, uint256 amount);
-    event FastPaid(uint64 indexed requestId, address indexed attester, address to, uint256 amount);
     event DepositsChanged(address indexed operator, uint256 deposits);
-    event LockReturned(uint256 indexed lockId, address owner, uint256 amount);
-    event CreditWithdrawn(address indexed to, uint256 amount);
+    event CreditWithdrawn(address indexed to, uint40 indexed asset, uint256 amount);
 
     error ZeroAmount();
-    error NotGwei();
-    error TooLarge();
     error ChainExists();
     error NoChain();
     error NotReal();
@@ -229,16 +191,13 @@ contract iPoWVault is ReentrancyGuard {
     error WindowOver();
     error WindowNotOver();
     error AlreadyDecided();
-    error NotAccepted();
-    error AlreadyDone();
-    error Underfunded();
-    error UnknownLock();
-    error TransferFailed();
     error NotDecided();
     error NothingToCollect();
-    error NoCancel();
     error EscrowTooLow();
-    error AlreadyPaid();
+    error TooManyAssets();
+    error UnknownAsset();
+    error WrongValue();
+    error TransferFailed();
 
     constructor(iPoWProtocol protocol_, bytes32 peerVault_, uint256 deposit_, uint256 minCertifyingEscrow_) {
         if (deposit_ == 0 || minCertifyingEscrow_ == 0) revert ZeroAmount();
@@ -247,6 +206,8 @@ contract iPoWVault is ReentrancyGuard {
         lightClient = protocol_.lightClient();
         peerVault = peerVault_;
         deposit = deposit_;
+        home = new VaultHome(this);
+        receipts = new VaultReceipts(this);
         // D116: the vault opens checkpoint jobs, as an application does.
         protocol_.registerApplication(new uint32[](0));
     }
@@ -255,41 +216,42 @@ contract iPoWVault is ReentrancyGuard {
     // Reading
     // ------------------------------------------------------------------
 
-    function getLock(uint256 lockId) external view returns (Lock memory) {
-        return _locks[lockId];
-    }
-
     function getChain(address operator) external view returns (Chain memory) {
         return _chains[operator];
+    }
+
+    function getPosition(address operator, uint40 asset) external view returns (Position memory) {
+        return _positions[operator][asset];
+    }
+
+    function assetsOf(address operator) external view returns (uint40[] memory) {
+        return _assetsOf[operator];
     }
 
     function getClaim(uint256 claimId) external view returns (Claim memory) {
         return _claims[claimId];
     }
 
-    function getRequest(uint256 claimId, uint64 requestId) external view returns (Request memory) {
-        return _requests[claimId][requestId];
+    /// @notice What claim `claimId` moves in `asset`, and the BOND it carries.
+    function claimAsset(uint256 claimId, uint40 asset) external view returns (uint64 value, uint64 peerBond) {
+        return (_claimValue[claimId][asset], _claimPeerBond[claimId][asset]);
     }
 
-    /// @notice The payment made at once of burn `requestId` under the record
-    /// it stated, if any.
-    function getFastPay(uint64 requestId, address to, uint64 amount, uint64 fastFee, uint64 requestedAt)
-        external
-        view
-        returns (FastPay memory)
-    {
-        return _fastPays[requestId][_stated(to, amount, fastFee, requestedAt)];
+    /// @inheritdoc IVaultCore
+    function claimAccepted(uint256 claimId) external view returns (bool) {
+        return _claims[claimId].accepted;
     }
 
-    /// @notice D124: an attester's share of `fastFee`, attesting at `at` a
-    /// lock or burn made at `madeAt`: the fee times the time left to 8 days
-    /// after it, over 8 days.
-    function fastShare(uint64 fastFee, uint64 madeAt, uint64 at) public pure returns (uint64) {
-        uint256 end = uint256(madeAt) + FAST_FEE_DEADLINE;
-        if (at >= end) return 0;
-        uint256 left = end - at;
-        if (left > FAST_FEE_DEADLINE) left = FAST_FEE_DEADLINE;
-        return uint64((uint256(fastFee) * left) / FAST_FEE_DEADLINE);
+    /// @inheritdoc IVaultCore
+    function claimInfo(uint256 claimId) external view returns (address, uint64, bool, bool) {
+        Claim storage cl = _claims[claimId];
+        return (cl.operator, cl.openedAt, cl.decided, cl.accepted);
+    }
+
+    /// @inheritdoc IVaultCore
+    function operatorActive(address operator) external view returns (bool) {
+        Chain storage c = _chains[operator];
+        return c.registered && !c.refused && !c.slashed && !c.exited;
     }
 
     /// @notice What a registration carries in its `OP_RETURN` (D106).
@@ -302,69 +264,12 @@ contract iPoWVault is ReentrancyGuard {
         return sha256(abi.encodePacked("iPoW vault", batch));
     }
 
-    /// @notice The part of an operator's bond it may withdraw.
-    function freeBond(address operator) public view returns (uint256) {
+    /// @notice The part of an operator's bond in `asset` it may withdraw.
+    function freeBond(address operator, uint40 asset) public view returns (uint64) {
         Chain storage c = _chains[operator];
-        if (c.exited && c.openClaims == 0) return c.bond;
-        return c.bond - c.stated;
-    }
-
-    // ------------------------------------------------------------------
-    // Locks (section 11.5)
-    // ------------------------------------------------------------------
-
-    /// @notice Locks ETH for vETH on Solana. `msg.value` is the amount, the
-    /// fee and the fast fee; the fee goes to the first operator whose message
-    /// carrying the lock is judged true (D113). The fast fee is minted in
-    /// vETH on Solana, to the attester who issued the receipt at once, or to
-    /// the recipient (D122); until then it backs vETH. All are whole gwei.
-    function lock(bytes32 recipient, uint256 fee, uint256 fastFee) external payable returns (uint256 lockId) {
-        if (msg.value <= fee + fastFee) revert ZeroAmount();
-        uint256 amount = msg.value - fee - fastFee;
-        if (amount % GWEI != 0 || fee % GWEI != 0 || fastFee % GWEI != 0) revert NotGwei();
-        if (amount / GWEI > type(uint64).max || fee / GWEI > type(uint64).max || fastFee / GWEI > type(uint64).max) {
-            revert TooLarge();
-        }
-        lockId = ++lockCount;
-        _locks[lockId] = Lock({
-            owner: msg.sender,
-            amount: uint64(amount / GWEI),
-            fee: uint64(fee / GWEI),
-            fastFee: uint64(fastFee / GWEI),
-            lockedAt: uint64(block.timestamp),
-            recipient: recipient,
-            feePaid: false,
-            returned: false
-        });
-        reserve += amount + fastFee;
-        emit Locked(
-            lockId,
-            msg.sender,
-            uint64(amount / GWEI),
-            uint64(fee / GWEI),
-            uint64(fastFee / GWEI),
-            uint64(block.timestamp),
-            recipient
-        );
-    }
-
-    /// @notice Pays a burn on Solana at once, from the sender's own ETH:
-    /// `msg.value` is its amount, sent to `to` (section 11.7). The sender
-    /// states the burn's record. When a claim carrying the same REQUEST
-    /// record is accepted, the vault pays the sender the amount and its
-    /// share of the fast fee (D124). Stated wrongly, the sender's ETH is
-    /// lost: it checks the burn on Solana first. Anyone may call; each
-    /// record stated once, so nobody blocks the true one (D126).
-    function fastPay(uint64 requestId, address to, uint64 fastFee, uint64 requestedAt) external payable nonReentrant {
-        if (to == address(0) || msg.value == 0) revert ZeroAmount();
-        if (msg.value % GWEI != 0) revert NotGwei();
-        if (msg.value / GWEI > type(uint64).max) revert TooLarge();
-        FastPay storage f = _fastPays[requestId][_stated(to, uint64(msg.value / GWEI), fastFee, requestedAt)];
-        if (requestPaid[requestId] || f.attester != address(0)) revert AlreadyPaid();
-        f.attester = msg.sender;
-        f.paidAt = uint64(block.timestamp);
-        emit FastPaid(requestId, msg.sender, to, msg.value);
-        _send(to, msg.value);
+        Position storage p = _positions[operator][asset];
+        if (c.exited && c.openClaims == 0) return p.bond;
+        return p.bond - p.stated;
     }
 
     // ------------------------------------------------------------------
@@ -407,8 +312,16 @@ contract iPoWVault is ReentrancyGuard {
         jobId = protocol.openJob{value: msg.value}(tag, escrow, protocol.DEFAULT_ESCROW_FEE_BPS(), confirmations, 0, msg.sender);
     }
 
+    /// @notice Takes what the protocol owes the vault, the application's share
+    /// of a slashed checkpoint job, into the backing of vETH. Anyone may call.
+    function collectProtocolCredit() external nonReentrant {
+        uint256 before = address(this).balance;
+        protocol.withdrawCredit();
+        _toBacking(address(this).balance - before);
+    }
+
     // ------------------------------------------------------------------
-    // Pair chain and bond (D106, D107, D110)
+    // Pair chain, bonds and deposits (D106, D107, D110, D129)
     // ------------------------------------------------------------------
 
     struct BitcoinTx {
@@ -443,12 +356,45 @@ contract iPoWVault is ReentrancyGuard {
         emit ChainRegistered(msg.sender, peerOperator, c.coinTxid, coinIndex);
     }
 
-    function addBond() external payable {
+    /// @notice Adds to the caller's bond in `asset`, in record units: ETH sent
+    /// with the call, a token or a receipt taken from the caller. A token
+    /// that takes a fee on transfer counts what arrived.
+    function addBond(uint40 asset, uint64 amount) external payable nonReentrant {
         Chain storage c = _chains[msg.sender];
         if (!c.registered) revert NoChain();
         if (c.slashed) revert ChainEnded();
-        c.bond += msg.value;
-        emit BondChanged(msg.sender, c.bond);
+        if (amount == 0) revert ZeroAmount();
+        Position storage p = _position(msg.sender, asset);
+        uint32 number = R.assetOf(asset);
+        if (R.homeOf(asset) == R.ETHEREUM) {
+            VaultHome.Asset memory a = home.getAsset(number);
+            if (a.token == address(0)) {
+                if (msg.value != uint256(amount) * a.unit) revert WrongValue();
+            } else {
+                if (msg.value != 0) revert WrongValue();
+                IERC20 t = IERC20(a.token);
+                uint256 before = t.balanceOf(address(this));
+                t.safeTransferFrom(msg.sender, address(this), uint256(amount) * a.unit);
+                amount = uint64((t.balanceOf(address(this)) - before) / a.unit);
+            }
+        } else {
+            if (msg.value != 0) revert WrongValue();
+            receipts.take(number, msg.sender, amount);
+        }
+        p.bond += amount;
+        emit BondChanged(msg.sender, asset, p.bond);
+    }
+
+    /// @notice Withdraws free bond in `asset`: all of it once the chain has
+    /// exited and every claim of it here has ended (D112).
+    function withdrawBond(uint40 asset, uint64 amount) external nonReentrant {
+        if (amount == 0) revert ZeroAmount();
+        if (amount > freeBond(msg.sender, asset)) revert BondNotFree();
+        Position storage p = _positions[msg.sender][asset];
+        p.bond -= amount;
+        if (p.stated > p.bond) p.stated = p.bond;
+        emit BondChanged(msg.sender, asset, p.bond);
+        _payNative(msg.sender, asset, _native(asset, amount));
     }
 
     /// @notice Adds money for the flat deposits of the caller's claims.
@@ -459,25 +405,11 @@ contract iPoWVault is ReentrancyGuard {
         emit DepositsChanged(msg.sender, c.deposits);
     }
 
-    /// @notice Withdraws deposit money not put down in a claim.
     function withdrawDeposits(uint256 amount) external nonReentrant {
         Chain storage c = _chains[msg.sender];
-        if (amount == 0) revert ZeroAmount();
-        if (amount > c.deposits) revert BondNotFree();
+        if (amount == 0 || amount > c.deposits) revert ZeroAmount();
         c.deposits -= amount;
         emit DepositsChanged(msg.sender, c.deposits);
-        _send(msg.sender, amount);
-    }
-
-    /// @notice Withdraws free bond: all of it once the chain has exited and
-    /// every claim of it here has ended (D112).
-    function withdrawBond(uint256 amount) external nonReentrant {
-        if (amount == 0) revert ZeroAmount();
-        if (amount > freeBond(msg.sender)) revert BondNotFree();
-        Chain storage c = _chains[msg.sender];
-        c.bond -= amount;
-        if (c.stated > c.bond) c.stated = c.bond;
-        emit BondChanged(msg.sender, c.bond);
         _send(msg.sender, amount);
     }
 
@@ -554,9 +486,8 @@ contract iPoWVault is ReentrancyGuard {
     /// @notice Decides a claim whose last statement has stood for 7 days.
     /// Anyone may call. A claim of a chain that a proof here showed false, or
     /// that lost another claim here, is refused (D109, D111). Each winner
-    /// collects its own share afterwards, so no number of deposits can make
-    /// this too costly to run.
-    function decide(uint256 claimId) external {
+    /// collects its own share afterwards.
+    function decide(uint256 claimId) external nonReentrant {
         Claim storage cl = _claims[claimId];
         if (cl.operator == address(0)) revert NotOpen();
         if (cl.decided) revert AlreadyDecided();
@@ -566,24 +497,26 @@ contract iPoWVault is ReentrancyGuard {
         bool accepted = !cl.held && !c.slashed && !c.refused;
         cl.decided = true;
         cl.accepted = accepted;
-        c.openValue -= cl.value;
         c.openClaims -= 1;
-        if (accepted) {
-            if (cl.peerBond != 0) c.peerBond = cl.peerBond;
-        } else {
-            c.refused = true;
+        uint40[] storage keys = _claimAssets[claimId];
+        for (uint256 i; i < keys.length; i++) {
+            Position storage p = _positions[cl.operator][keys[i]];
+            p.openValue -= _claimValue[claimId][keys[i]];
+            uint64 peer = _claimPeerBond[claimId][keys[i]];
+            if (accepted && peer != 0) p.peerBond = peer;
         }
+        if (!accepted) c.refused = true;
         // D111: the losing side's deposits are shared by the winning side.
         // What does not divide evenly, or has nobody to go to, backs vETH.
         uint256 winners = accepted ? cl.answers : cl.objections;
         uint256 pot = (accepted ? cl.objections : cl.answers) * deposit;
-        if (winners == 0) {
-            reserve += pot;
-        } else {
+        uint256 rest = pot;
+        if (winners != 0) {
             uint256 share = pot / winners;
-            reserve += pot - share * winners;
+            rest = pot - share * winners;
             cl.payout = deposit + share;
         }
+        _toBacking(rest);
         emit ClaimDecided(claimId, accepted);
     }
 
@@ -601,75 +534,32 @@ contract iPoWVault is ReentrancyGuard {
             objectionsOf[claimId][msg.sender] = 0;
         }
         if (entries == 0) revert NothingToCollect();
-        _credit(msg.sender, entries * cl.payout);
+        credit[msg.sender][R.key(R.ETHEREUM, 0)] += entries * cl.payout;
     }
 
-    /// @notice Pays a request carried by an accepted claim, once, with its
-    /// fast fee: to the attester that paid it at once with the same record,
-    /// its amount and share of the fast fee, the rest to the request's
-    /// address; or else all to the address (section 11.7). Anyone may call.
-    function payRequest(uint256 claimId, uint64 requestId) external nonReentrant {
-        if (!_claims[claimId].accepted) revert NotAccepted();
-        Request storage r = _requests[claimId][requestId];
-        if (r.to == address(0)) revert NotAccepted();
-        if (requestPaid[requestId]) revert AlreadyDone();
-        uint256 amount = (uint256(r.amount) + r.fastFee) * GWEI;
-        if (amount > reserve) revert Underfunded();
-        requestPaid[requestId] = true;
-        reserve -= amount;
-        FastPay storage f = _fastPays[requestId][_stated(r.to, r.amount, r.fastFee, r.requestedAt)];
-        if (f.attester == address(0)) {
-            emit RequestPaid(requestId, claimId, r.to, amount);
-            _credit(r.to, amount);
-        } else {
-            uint256 share = uint256(fastShare(r.fastFee, r.requestedAt, f.paidAt)) * GWEI;
-            uint256 toAttester = uint256(r.amount) * GWEI + share;
-            emit RequestPaid(requestId, claimId, f.attester, toAttester);
-            _credit(f.attester, toAttester);
-            if (amount > toAttester) _credit(r.to, amount - toAttester);
-        }
-    }
-
-    /// @notice Returns a lock whose CANCEL an accepted claim carries, with
-    /// its fee if no message earned it. Anyone may call.
-    function returnLock(uint256 claimId, uint64 lockId) external nonReentrant {
-        if (!_claims[claimId].accepted) revert NotAccepted();
-        if (!cancels[claimId][lockId]) revert NoCancel();
-        Lock storage l = _locks[lockId];
-        if (l.returned) revert AlreadyDone();
-        uint256 amount = (uint256(l.amount) + l.fastFee) * GWEI;
-        if (amount > reserve) revert Underfunded();
-        l.returned = true;
-        reserve -= amount;
-        uint256 total = amount;
-        if (!l.feePaid) {
-            // The fee is settled: no later message can earn it.
-            l.feePaid = true;
-            total += uint256(l.fee) * GWEI;
-        }
-        emit LockReturned(lockId, l.owner, total);
-        _credit(l.owner, total);
-    }
-
-    /// @notice Takes what the protocol owes the vault, the application's share
-    /// of a slashed checkpoint job, into the backing of vETH. Anyone may call.
-    function collectProtocolCredit() external nonReentrant {
-        uint256 before = address(this).balance;
-        protocol.withdrawCredit();
-        reserve += address(this).balance - before;
-    }
-
-    function withdrawCredit() external nonReentrant {
-        uint256 amount = credit[msg.sender];
+    function withdrawCredit(uint40 asset) external nonReentrant {
+        uint256 amount = credit[msg.sender][asset];
         if (amount == 0) revert ZeroAmount();
-        credit[msg.sender] = 0;
-        emit CreditWithdrawn(msg.sender, amount);
-        _send(msg.sender, amount);
+        credit[msg.sender][asset] = 0;
+        emit CreditWithdrawn(msg.sender, asset, amount);
+        _payNative(msg.sender, asset, amount);
     }
 
     // ------------------------------------------------------------------
     // Inside
     // ------------------------------------------------------------------
+
+    /// @dev What one message asks here, gathered while judging it.
+    struct Plan {
+        uint40[] keys;
+        uint64[] values;
+        uint64[] peerBonds;
+        uint256 count;
+        /// More assets than a claim holds, or more than an asset counts: no
+        /// claim opens.
+        bool overflow;
+        bool acting;
+    }
 
     /// @dev Judges the records about Ethereum and gathers the others into one
     /// claim. A batch that does not parse is false: its hash is what the
@@ -678,159 +568,282 @@ contract iPoWVault is ReentrancyGuard {
         private
         returns (bool truthful, uint256 claimId)
     {
-        uint256 o;
-        uint256 home;
-        uint256 value;
-        uint256 peerBond;
-        bool stating;
-        bool acting;
+        Plan memory plan = Plan(new uint40[](MAX_ASSETS), new uint64[](MAX_ASSETS), new uint64[](MAX_ASSETS), 0, false, false);
         // First pass: judge, and measure the claim.
-        while (o < batch.length) {
-            uint8 kind = uint8(batch[o]);
-            if ((kind == REQUEST || kind == CANCEL) && ++home > MAX_HOME_RECORDS) return (false, 0);
-            if (kind == LOCK) {
-                if (o + LOCK_LEN > batch.length) return (false, 0);
-                uint64 lockId = _u64(batch, o + 1);
-                Lock storage l = _locks[lockId];
-                if (
-                    // Returned or not: Solana issues nothing for a lock it
-                    // marked never usable (section 11.5).
-                    l.owner == address(0) ||
-                    l.amount != _u64(batch, o + 9) ||
-                    l.recipient != bytes32(batch[o + 17:o + 49]) ||
-                    l.fee != _u64(batch, o + 49) ||
-                    l.fastFee != _u64(batch, o + 57) ||
-                    l.lockedAt != _u64(batch, o + 65)
-                ) return (false, 0);
-                o += LOCK_LEN;
-            } else if (kind == REQUEST) {
-                if (o + REQUEST_LEN > batch.length) return (false, 0);
-                // Solana writes no request to address zero.
-                if (bytes20(batch[o + 17:o + 37]) == bytes20(0)) return (false, 0);
-                value += (uint256(_u64(batch, o + 9)) + _u64(batch, o + 45)) * GWEI;
-                acting = true;
-                o += REQUEST_LEN;
-            } else if (kind == CANCEL) {
-                if (o + 9 > batch.length) return (false, 0);
-                // Solana gives up only a lock it learned from a true LOCK
-                // record, so a lock that does not exist here is a lie.
-                Lock storage l = _locks[_u64(batch, o + 1)];
-                if (l.owner == address(0)) return (false, 0);
-                value += (uint256(l.amount) + l.fastFee) * GWEI;
-                acting = true;
-                o += 9;
-            } else if (kind == BOND) {
-                if (o + 10 > batch.length) return (false, 0);
-                uint8 net = uint8(batch[o + 1]);
-                uint256 amount = uint256(_u64(batch, o + 2)) * GWEI;
-                if (net == ETHEREUM) {
-                    // D110: judged here. Once per chain, from the bond. The
-                    // same BOND again is true and changes nothing: it is
-                    // carried again when its claim could not open on Solana.
-                    if (stating || amount == 0) return (false, 0);
-                    if (c.stated != 0 ? amount != c.stated : amount > c.bond) return (false, 0);
-                    stating = true;
-                } else if (net == SOLANA) {
-                    // A fact of Solana, judged there (D109). Here the first
-                    // one carried in a claim counts, and a later one is not
-                    // acted on.
-                    if (!c.peerBondCarried && peerBond == 0 && amount != 0) {
-                        peerBond = amount;
-                        acting = true;
-                    }
-                } else {
-                    return (false, 0);
-                }
-                o += 10;
-            } else if (kind == EXIT) {
-                if (o + 1 != batch.length) return (false, 0);
-                o += 1;
-            } else {
-                return (false, 0);
-            }
-        }
-
+        if (!_judge(operator, batch, plan)) return (false, 0);
         // Second pass: nothing false was found. Apply.
-        o = 0;
-        if (acting) claimId = _openClaimFor(operator, c, value, peerBond);
+        if (plan.acting) claimId = _openClaimFor(operator, c, plan);
         if (claimId != 0) emit ClaimBatch(claimId, batch);
+        uint256 o;
         while (o < batch.length) {
             uint8 kind = uint8(batch[o]);
-            if (kind == LOCK) {
-                uint64 lockId = _u64(batch, o + 1);
-                Lock storage l = _locks[lockId];
-                // A slashed operator earns nothing; the fee waits for another.
-                if (!l.feePaid && !c.slashed) {
-                    l.feePaid = true;
-                    uint256 fee = uint256(l.fee) * GWEI;
-                    emit FeeEarned(lockId, operator, fee);
-                    if (fee != 0) _credit(operator, fee);
-                }
-                o += LOCK_LEN;
-            } else if (kind == REQUEST) {
-                if (claimId != 0) {
-                    _requests[claimId][_u64(batch, o + 1)] = Request({
-                        to: address(bytes20(batch[o + 17:o + 37])),
-                        amount: _u64(batch, o + 9),
-                        fastFee: _u64(batch, o + 45),
-                        requestedAt: _u64(batch, o + 53)
-                    });
-                }
-                o += REQUEST_LEN;
-            } else if (kind == CANCEL) {
-                if (claimId != 0) cancels[claimId][_u64(batch, o + 1)] = true;
-                o += 9;
-            } else if (kind == BOND) {
-                if (uint8(batch[o + 1]) == ETHEREUM) c.stated = uint256(_u64(batch, o + 2)) * GWEI;
-                // Only a claim that opened carries it: otherwise it can be
-                // carried again.
-                else if (claimId != 0 && peerBond != 0) c.peerBondCarried = true;
-                o += 10;
-            } else {
+            uint256 len = _len(kind);
+            bytes calldata r = batch[o:o + len];
+            o += len;
+            if (kind == R.EXIT) {
                 c.exited = true;
-                o += 1;
+                continue;
+            }
+            bool here = uint8(r[1]) == R.ETHEREUM;
+            if (kind == R.BOND) {
+                uint40 k = R.key(uint8(r[2]), R.u32(r, 3));
+                if (here) _positions[operator][k].stated = R.u64(r, 7);
+                // Only a claim that opened carries it: otherwise it can be
+                // carried again. A later one was not added to the claim.
+                else if (claimId != 0) {
+                    uint256 i = _find(plan, k);
+                    if (i < MAX_ASSETS && plan.peerBonds[i] != 0) _positions[operator][k].peerBondCarried = true;
+                }
+            } else if (here) {
+                // A slashed operator earns nothing; the fee waits for another.
+                if (!c.slashed && kind == R.LOCK) home.earnFee(R.u64(r, 6), operator);
+                if (!c.slashed && kind == R.REQUEST) receipts.earnFee(R.u64(r, 6), operator);
+            } else if (claimId != 0) {
+                carries[claimId][keccak256(r)] = true;
             }
         }
         return (true, claimId);
     }
 
+    function _len(uint8 kind) private pure returns (uint256) {
+        if (kind == R.LOCK) return R.LOCK_LEN;
+        if (kind == R.REQUEST) return R.REQUEST_LEN;
+        if (kind == R.CANCEL) return R.CANCEL_LEN;
+        if (kind == R.BOND) return R.BOND_LEN;
+        if (kind == R.ASSET) return R.ASSET_LEN;
+        if (kind == R.EXIT) return 1;
+        return 0;
+    }
+
+    /// @dev The first pass: false when a record here is not so, or the batch
+    /// does not parse.
+    function _judge(address operator, bytes calldata batch, Plan memory plan) private view returns (bool) {
+        uint256 o;
+        uint256 counted;
+        uint40[] memory stated = new uint40[](MAX_ASSETS);
+        uint256 statedCount;
+        while (o < batch.length) {
+            uint8 kind = uint8(batch[o]);
+            uint256 len = _len(kind);
+            if (len == 0 || o + len > batch.length) return false;
+            bytes calldata r = batch[o:o + len];
+            o += len;
+            if (kind == R.EXIT) {
+                if (o != batch.length) return false;
+                continue;
+            }
+            uint8 net = uint8(r[1]);
+            if (net != R.ETHEREUM && net != R.SOLANA) return false;
+            if (kind != R.BOND && ++counted > MAX_RECORDS) return false;
+            if (net == R.ETHEREUM) {
+                if (kind != R.BOND) {
+                    if (!_true(kind, r)) return false;
+                    continue;
+                }
+                // BOND, D110: once per chain and asset, from the bond. The same
+                // BOND again is true and changes nothing.
+                uint40 k = _bondKey(r);
+                if (k == 0) return false;
+                uint64 amount = R.u64(r, 7);
+                Position storage p = _positions[operator][k];
+                if (amount == 0 || (p.stated != 0 ? amount != p.stated : amount > p.bond)) return false;
+                for (uint256 i; i < statedCount; i++) if (stated[i] == k) return false;
+                if (statedCount == MAX_ASSETS) return false;
+                stated[statedCount++] = k;
+                continue;
+            }
+            // A record from Solana: acted on here. A BOND already counted
+            // is not acted on, so alone it opens no claim.
+            if (kind != R.BOND) plan.acting = true;
+            if (kind == R.LOCK) {
+                _add(plan, R.key(R.SOLANA, R.u32(r, 2)), uint256(R.u64(r, 14)) + R.u64(r, 62), 0);
+            } else if (kind == R.REQUEST) {
+                // Paid here, to a real Ethereum address, in a registered asset:
+                // Solana writes no other.
+                if (R.addressOf(R.b32(r, 22)) == address(0)) return false;
+                uint32 a = R.u32(r, 2);
+                if (a >= home.assetCount()) return false;
+                _add(plan, R.key(R.ETHEREUM, a), uint256(R.u64(r, 14)) + R.u64(r, 62), 0);
+            } else if (kind == R.CANCEL) {
+                // Solana gives up only a lock it learned from a true LOCK
+                // record, so a lock that does not exist here is a lie.
+                (uint32 a, uint64 value) = home.lockValue(R.u64(r, 2));
+                if (value == 0) return false;
+                _add(plan, R.key(R.ETHEREUM, a), value, 0);
+            } else if (kind == R.BOND) {
+                // A fact of Solana, judged there (D109). Here the first one
+                // carried in a claim counts.
+                uint40 k = _bondKey(r);
+                if (k == 0) return false;
+                uint64 amount = R.u64(r, 7);
+                if (!_positions[operator][k].peerBondCarried && amount != 0) {
+                    _add(plan, k, 0, amount);
+                    plan.acting = true;
+                }
+            }
+            // ASSET from Solana: acted on by making its receipt; no value.
+        }
+        return true;
+    }
+
+    /// @dev Whether a record whose fact lives on Ethereum, other than BOND, is
+    /// so.
+    function _true(uint8 kind, bytes calldata r) private view returns (bool) {
+        bytes32 h = keccak256(r);
+        if (kind == R.LOCK) return h == home.lockRecordHash(R.u64(r, 6));
+        if (kind == R.REQUEST) return h == receipts.burnRecordHash(R.u64(r, 6));
+        if (kind == R.CANCEL) return receipts.givenUp(R.u64(r, 2));
+        return h == home.assetRecordHash(R.u32(r, 2));
+    }
+
+    /// @dev The asset a BOND record names; zero when its home is neither
+    /// network.
+    function _bondKey(bytes calldata r) private pure returns (uint40) {
+        uint8 h = uint8(r[2]);
+        if (h != R.ETHEREUM && h != R.SOLANA) return 0;
+        return R.key(h, R.u32(r, 3));
+    }
+
+    function _find(Plan memory plan, uint40 k) private pure returns (uint256) {
+        for (uint256 i; i < plan.count; i++) if (plan.keys[i] == k) return i;
+        return MAX_ASSETS;
+    }
+
+    function _add(Plan memory plan, uint40 k, uint256 value, uint64 peerBond) private pure {
+        uint256 i = _find(plan, k);
+        if (i == MAX_ASSETS) {
+            if (plan.count == MAX_ASSETS) {
+                plan.overflow = true;
+                return;
+            }
+            i = plan.count++;
+            plan.keys[i] = k;
+        }
+        uint256 v = plan.values[i] + value;
+        if (v > type(uint64).max) {
+            plan.overflow = true;
+            return;
+        }
+        plan.values[i] = uint64(v);
+        if (peerBond != 0 && plan.peerBonds[i] == 0) plan.peerBonds[i] = peerBond;
+    }
+
     /// @dev The acting records of one message become one claim, unless the
-    /// chain was refused, its open claims would pass 80% of its bond on
-    /// Solana, or its deposit money cannot pay the deposit. Then nothing
-    /// acts, and the records can be carried again.
-    function _openClaimFor(address operator, Chain storage c, uint256 value, uint256 peerBond)
-        private
-        returns (uint256 claimId)
-    {
-        if (c.refused || c.slashed) return 0;
-        if (value != 0 && (c.openValue + value) * BPS > c.peerBond * COVER_BPS) return 0;
+    /// chain was refused, its open claims in an asset would pass 80% of its
+    /// bond there on Solana, it moves more assets than a claim holds, or its
+    /// deposit money cannot pay the deposit. Then nothing acts, and the
+    /// records can be carried again.
+    function _openClaimFor(address operator, Chain storage c, Plan memory plan) private returns (uint256 claimId) {
+        if (c.refused || c.slashed || plan.overflow) return 0;
         if (c.deposits < deposit) return 0;
+        for (uint256 i; i < plan.count; i++) {
+            if (plan.values[i] == 0) continue;
+            Position storage p = _positions[operator][plan.keys[i]];
+            if ((uint256(p.openValue) + plan.values[i]) * BPS > uint256(p.peerBond) * COVER_BPS) return 0;
+        }
         c.deposits -= deposit;
-        c.openValue += value;
         c.openClaims += 1;
         claimId = ++claimCount;
         Claim storage cl = _claims[claimId];
         cl.operator = operator;
         cl.lastAt = uint40(block.timestamp);
-        cl.value = value;
-        cl.peerBond = peerBond;
+        cl.openedAt = uint40(block.timestamp);
         cl.answers = 1;
         cl.openedBlock = uint64(block.number);
         answersOf[claimId][operator] = 1;
-        emit ClaimOpened(claimId, operator, value);
+        for (uint256 i; i < plan.count; i++) {
+            uint40 k = plan.keys[i];
+            _claimAssets[claimId].push(k);
+            _claimValue[claimId][k] = plan.values[i];
+            _claimPeerBond[claimId][k] = plan.peerBonds[i];
+            _positions[operator][k].openValue += plan.values[i];
+        }
+        emit ClaimOpened(claimId, operator);
     }
 
-    /// @dev D109: the whole bond. 80% backs vETH, 20% to the submitter, or to
-    /// the backing when the operator submitted its own false message.
+    /// @dev D109, D129: every bond of the chain here. 80% backs its asset's
+    /// receipts, 20% goes to the submitter, or to the backing when the
+    /// operator submitted its own false message.
     function _slash(address operator, Chain storage c) private {
-        uint256 amount = c.bond;
-        c.bond = 0;
-        c.stated = 0;
         c.slashed = true;
-        uint256 toSubmitter = msg.sender == operator ? 0 : (amount * (BPS - BACKING_SHARE_BPS)) / BPS;
-        reserve += amount - toSubmitter;
-        emit Slashed(operator, amount, msg.sender);
-        if (toSubmitter != 0) _credit(msg.sender, toSubmitter);
+        emit Slashed(operator, msg.sender);
+        uint40[] storage keys = _assetsOf[operator];
+        for (uint256 i; i < keys.length; i++) {
+            uint40 k = keys[i];
+            Position storage p = _positions[operator][k];
+            uint64 amount = p.bond;
+            if (amount == 0) continue;
+            p.bond = 0;
+            p.stated = 0;
+            uint64 toSubmitter = msg.sender == operator ? 0 : uint64((uint256(amount) * (BPS - BACKING_SHARE_BPS)) / BPS);
+            if (toSubmitter != 0) credit[msg.sender][k] += _native(k, toSubmitter);
+            // Settled per asset by `settleSlash`: a token that will not move
+            // cannot keep the slash from happening.
+            slashBacking[operator][k] += amount - toSubmitter;
+            emit BondChanged(operator, k, 0);
+        }
+    }
+
+    /// @notice Moves a slashed bond's backing share in `asset` into the
+    /// backing of its receipts (D109, D129): an asset of Ethereum joins the
+    /// reserve, counted as it arrived; a receipt bond is burned, fewer
+    /// receipts for the same asset. Anyone may call.
+    function settleSlash(address operator, uint40 asset) external nonReentrant {
+        uint64 backing = slashBacking[operator][asset];
+        if (backing == 0) revert NothingToCollect();
+        slashBacking[operator][asset] = 0;
+        uint32 number = R.assetOf(asset);
+        if (R.homeOf(asset) == R.ETHEREUM) {
+            VaultHome.Asset memory a = home.getAsset(number);
+            if (a.token == address(0)) {
+                _send(address(home), uint256(backing) * a.unit);
+                home.addBacking(number, backing);
+            } else {
+                IERC20 t = IERC20(a.token);
+                uint256 before = t.balanceOf(address(home));
+                t.safeTransfer(address(home), uint256(backing) * a.unit);
+                home.addBacking(number, (t.balanceOf(address(home)) - before) / a.unit);
+            }
+        } else {
+            VaultReceipt(address(receipts.receiptOf(number))).burn(backing);
+        }
+    }
+
+    /// @dev The chain's position in `asset`, made on first use.
+    function _position(address operator, uint40 asset) private returns (Position storage) {
+        uint8 h = R.homeOf(asset);
+        if (h != R.ETHEREUM && h != R.SOLANA) revert UnknownAsset();
+        uint40[] storage keys = _assetsOf[operator];
+        for (uint256 i; i < keys.length; i++) if (keys[i] == asset) return _positions[operator][asset];
+        if (keys.length == MAX_ASSETS) revert TooManyAssets();
+        if (h == R.SOLANA && address(receipts.receiptOf(R.assetOf(asset))) == address(0)) revert UnknownAsset();
+        keys.push(asset);
+        return _positions[operator][asset];
+    }
+
+    /// @dev Record units in an asset's native units.
+    function _native(uint40 asset, uint64 amount) private view returns (uint256) {
+        if (R.homeOf(asset) != R.ETHEREUM) return amount;
+        return uint256(amount) * home.getAsset(R.assetOf(asset)).unit;
+    }
+
+    function _payNative(address to, uint40 asset, uint256 amount) private {
+        if (amount == 0) return;
+        uint32 number = R.assetOf(asset);
+        if (R.homeOf(asset) == R.ETHEREUM) {
+            address token = home.getAsset(number).token;
+            if (token == address(0)) _send(to, amount);
+            else IERC20(token).safeTransfer(to, amount);
+        } else {
+            IERC20(address(receipts.receiptOf(number))).safeTransfer(to, amount);
+        }
+    }
+
+    /// @dev Wei into the backing of vETH: what the vault gains in ETH.
+    function _toBacking(uint256 amount) private {
+        if (amount == 0) return;
+        _send(address(home), amount);
+        home.addBacking(0, amount / 1e9);
     }
 
     function _openClaim(uint256 claimId) private view returns (Claim storage cl) {
@@ -873,25 +886,14 @@ contract iPoWVault is ReentrancyGuard {
         return lightClient.nodeId(b.hash, b.height, b.epochTime);
     }
 
-    function _stated(address to, uint64 amount, uint64 fastFee, uint64 requestedAt) private pure returns (bytes32) {
-        return keccak256(abi.encode(to, amount, fastFee, requestedAt));
-    }
-
-    function _u64(bytes calldata b, uint256 o) private pure returns (uint64) {
-        return uint64(bytes8(b[o:o + 8]));
-    }
-
-    function _credit(address to, uint256 amount) private {
-        credit[to] += amount;
-    }
-
     function _send(address to, uint256 amount) private {
+        if (amount == 0) return;
         (bool ok, ) = to.call{value: amount}("");
         if (!ok) revert TransferFailed();
     }
 
-    /// @dev Only the protocol sends ETH here, when the vault collects its
-    /// credit.
+    /// @dev Only the protocol sends ETH here unasked, when the vault collects
+    /// its credit.
     receive() external payable {
         if (msg.sender != address(protocol)) revert();
     }

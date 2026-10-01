@@ -3,7 +3,7 @@ use anchor_lang::prelude::*;
 use crate::constants::*;
 use crate::errors::VaultError;
 use crate::state::{Claim, FastLock};
-use crate::util::find_lock;
+use crate::util::stated_record;
 
 /// Links an attest to a claim of the attester's own chain carrying the same
 /// LOCK record, opened within 7 days of the attest: the attest then waits
@@ -16,8 +16,7 @@ pub fn handler(ctx: Context<LinkFast>, _claim_id: u64, _attest: u64) -> Result<(
     let claim = &ctx.accounts.claim;
     require!(!f.burned, VaultError::AlreadyDone);
     require_keys_eq!(claim.operator, f.attester, VaultError::WrongAccount);
-    let record = find_lock(&claim.records, f.lock_id).ok_or(VaultError::NotInClaim)?;
-    require!(record.stated_by(f), VaultError::WrongRecord);
+    require!(claim.carries(&stated_record(f)), VaultError::WrongRecord);
     require!(claim.opened_at <= f.attested_at + FAST_OPEN_WINDOW, VaultError::WindowOver);
     require!(!claim.decided || claim.accepted, VaultError::NotAccepted);
     if f.claim != 0 {
@@ -33,11 +32,11 @@ pub fn handler(ctx: Context<LinkFast>, _claim_id: u64, _attest: u64) -> Result<(
 #[instruction(claim_id: u64, attest: u64)]
 pub struct LinkFast<'info> {
     #[account(mut, seeds = [FAST_SEED, &attest.to_le_bytes()], bump = fast.bump)]
-    pub fast: Account<'info, FastLock>,
+    pub fast: Box<Account<'info, FastLock>>,
     #[account(seeds = [CLAIM_SEED, &claim_id.to_le_bytes()], bump = claim.bump)]
-    pub claim: Account<'info, Claim>,
+    pub claim: Box<Account<'info, Claim>>,
     /// The claim linked before, when there is one: it must be refused.
-    pub linked: Option<Account<'info, Claim>>,
+    pub linked: Option<Box<Account<'info, Claim>>>,
     #[account(address = fast.attester)]
     pub attester: Signer<'info>,
 }

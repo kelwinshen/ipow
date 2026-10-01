@@ -4,18 +4,19 @@ use anchor_spl::token::{Mint, Token, TokenAccount};
 use crate::constants::*;
 use crate::errors::VaultError;
 use crate::state::{Claim, Config, LockMark};
-use crate::util::{create_pda, find_lock, now, save, Veth};
+use crate::util::{create_pda, now, save, EthLock, Receipt};
 
-/// Issues the vETH of a lock carried by an accepted claim, to its recipient,
-/// with the fast fee nobody earned, once per lock, and never for a lock its
-/// recipient gave up (sections 11.5, 11.7). For a lock that was attested,
-/// only once every attest was settled, none stated the true record, and the
-/// lock takes no more attests (D126). Anyone may call.
-pub fn handler(ctx: Context<Issue>, _claim_id: u64, lock_id: u64) -> Result<()> {
+/// Issues the receipt of a lock on Ethereum carried by an accepted claim, to
+/// its recipient, with the fast fee nobody earned, once per lock, never for
+/// a lock its recipient gave up (section 11.5). For a lock that was
+/// attested, only once every attest was settled, none stated the true
+/// record, and the lock takes no more attests (D126). Anyone may call.
+pub fn handler(ctx: Context<Issue>, _claim_id: u64, lock_id: u64, asset: u32, record: Vec<u8>) -> Result<()> {
+    let l = EthLock::read(&record)?;
+    require!(l.id == lock_id && l.asset == asset, VaultError::WrongRecord);
     let claim = &ctx.accounts.claim;
-    require!(claim.accepted, VaultError::NotAccepted);
-    let record = find_lock(&claim.records, lock_id).ok_or(VaultError::NotInClaim)?;
-    require_keys_eq!(ctx.accounts.to.owner, record.recipient, VaultError::WrongAccount);
+    require!(claim.accepted && claim.carries(&record), VaultError::NotAccepted);
+    require_keys_eq!(ctx.accounts.to.owner, l.recipient, VaultError::WrongAccount);
     let (address, bump) = Pubkey::find_program_address(&[LOCK_SEED, &lock_id.to_le_bytes()], &crate::ID);
     let mark_info = ctx.accounts.mark.to_account_info();
     require_keys_eq!(mark_info.key(), address, VaultError::WrongAccount);
@@ -40,34 +41,33 @@ pub fn handler(ctx: Context<Issue>, _claim_id: u64, lock_id: u64) -> Result<()> 
     mark.issued = true;
     save(&mark_info, &mark)?;
     let a = &ctx.accounts;
-    let veth = Veth {
+    let receipt = Receipt {
         config: &a.config.to_account_info(),
         config_bump: a.config.bump,
         mint: &a.mint.to_account_info(),
         holding: &a.holding.to_account_info(),
         token_program: &a.token_program,
     };
-    veth.mint_to(&a.to.to_account_info(), record.value()?)
+    receipt.mint_to(&a.to.to_account_info(), l.value()?)
 }
 
 #[derive(Accounts)]
-#[instruction(claim_id: u64, lock_id: u64)]
+#[instruction(claim_id: u64, lock_id: u64, asset: u32)]
 pub struct Issue<'info> {
     #[account(seeds = [CLAIM_SEED, &claim_id.to_le_bytes()], bump = claim.bump)]
-    pub claim: Account<'info, Claim>,
+    pub claim: Box<Account<'info, Claim>>,
     /// CHECK: the lock's mark at ["lock", lock_id]; checked, and created if
     /// missing, in the handler.
     #[account(mut)]
     pub mark: UncheckedAccount<'info>,
     #[account(seeds = [CONFIG_SEED], bump = config.bump)]
-    pub config: Account<'info, Config>,
-    #[account(mut, seeds = [MINT_SEED], bump)]
-    pub mint: Account<'info, Mint>,
-    /// CHECK: the vault's vETH account; only its address is used here.
-    #[account(seeds = [HOLDING_SEED], bump)]
+    pub config: Box<Account<'info, Config>>,
+    #[account(mut, seeds = [RECEIPT_SEED, &asset.to_le_bytes()], bump)]
+    pub mint: Box<Account<'info, Mint>>,
+    /// CHECK: the vault's account of the receipt; only its address is used.
     pub holding: UncheckedAccount<'info>,
     #[account(mut, token::mint = mint)]
-    pub to: Account<'info, TokenAccount>,
+    pub to: Box<Account<'info, TokenAccount>>,
     #[account(mut)]
     pub payer: Signer<'info>,
     pub token_program: Program<'info, Token>,

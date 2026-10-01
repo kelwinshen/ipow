@@ -17,13 +17,17 @@ pub fn handler(ctx: Context<Decide>, _claim_id: u64) -> Result<()> {
     let accepted = !cl.held && !c.slashed && !c.refused;
     cl.decided = true;
     cl.accepted = accepted;
-    c.open_value -= cl.value;
     c.open_claims -= 1;
-    if accepted {
-        if cl.peer_bond != 0 {
-            c.peer_bond = cl.peer_bond;
+    for ca in cl.assets.iter() {
+        if let Some(i) = c.position(ca.home, ca.asset) {
+            let p = &mut c.positions[i];
+            p.open_value -= ca.value;
+            if accepted && ca.peer_bond != 0 {
+                p.peer_bond = ca.peer_bond;
+            }
         }
-    } else {
+    }
+    if !accepted {
         c.refused = true;
     }
     let (winners, losers) = if accepted { (cl.answers, cl.objections) } else { (cl.objections, cl.answers) };
@@ -38,9 +42,9 @@ pub fn handler(ctx: Context<Decide>, _claim_id: u64) -> Result<()> {
 #[instruction(claim_id: u64)]
 pub struct Decide<'info> {
     #[account(mut, seeds = [CLAIM_SEED, &claim_id.to_le_bytes()], bump = claim.bump)]
-    pub claim: Account<'info, Claim>,
+    pub claim: Box<Account<'info, Claim>>,
     #[account(mut, seeds = [CHAIN_SEED, claim.operator.as_ref()], bump = chain.bump)]
-    pub chain: Account<'info, Chain>,
+    pub chain: Box<Account<'info, Chain>>,
     #[account(seeds = [CONFIG_SEED], bump = config.bump)]
-    pub config: Account<'info, Config>,
+    pub config: Box<Account<'info, Config>>,
 }
