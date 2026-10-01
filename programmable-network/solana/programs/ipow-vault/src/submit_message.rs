@@ -5,7 +5,7 @@ use ipow_protocol::bitcoin_tx::read;
 
 use crate::constants::*;
 use crate::errors::VaultError;
-use crate::state::{Btc, Buffer, Chain, Claim, Config, LockMark, Real, Request, Stake};
+use crate::state::{Btc, Buffer, Chain, Claim, Config, LockMark, Message, Real, Request, Stake};
 use crate::util::{create_pda, credit_to, message_payload, require_real, save, u64_at, Veth};
 
 /// What a message asks once nothing false was found in it.
@@ -53,7 +53,21 @@ pub fn handler<'info>(
     let c = &mut ctx.accounts.chain;
     c.coin_txid = sha256d(&btc.raw_tx);
     c.coin_vout = input_index;
+    let index = c.messages;
     c.messages += 1;
+
+    // The batch is published in an account of its own: nobody can hide it
+    // from, or fake it for, whoever brings the message to the other network.
+    let (address, bump) = Pubkey::find_program_address(&[MESSAGE_SEED, operator.as_ref(), &index.to_le_bytes()], &crate::ID);
+    require_keys_eq!(ctx.accounts.message.key(), address, VaultError::WrongAccount);
+    create_pda(
+        &ctx.accounts.message,
+        &ctx.accounts.submitter.to_account_info(),
+        &ctx.accounts.system_program.to_account_info(),
+        Message::space(batch.len()),
+        &[MESSAGE_SEED, operator.as_ref(), &index.to_le_bytes(), &[bump]],
+    )?;
+    save(&ctx.accounts.message, &Message { operator, payer: ctx.accounts.submitter.key(), index, processed_at: crate::util::now()?, batch: batch.clone(), bump })?;
 
     // Section 11.3: too large to be judged everywhere is false.
     let plan = if btc.raw_tx.len() > MAX_RAW_TX || batch.len() > MAX_BATCH {
@@ -89,7 +103,10 @@ fn judge(batch: &[u8], c: &Chain, remaining: &[AccountInfo]) -> Result<Option<Pl
                 }
                 plan.locks.extend_from_slice(&batch[o..o + LOCK_LEN]);
                 // More than any lock can hold: false, as Ethereum finds it.
-                let Some(v) = plan.value.checked_add(u64_at(batch, o + 9)) else { return Ok(None) };
+                // The receipt and the fast fee are both minted here.
+                let Some(v) = plan.value.checked_add(u64_at(batch, o + 9)).and_then(|v| v.checked_add(u64_at(batch, o + 57))) else {
+                    return Ok(None);
+                };
                 plan.value = v;
                 o += LOCK_LEN;
             }
@@ -109,7 +126,9 @@ fn judge(batch: &[u8], c: &Chain, remaining: &[AccountInfo]) -> Result<Option<Pl
                     Request::try_deserialize(&mut &data[..])?
                 };
                 let to: [u8; 20] = batch[o + 17..o + 37].try_into().unwrap();
-                if r.amount != u64_at(batch, o + 9) || r.to != to || r.fee != u64_at(batch, o + 37) {
+                if r.amount != u64_at(batch, o + 9) || r.to != to || r.fee != u64_at(batch, o + 37) || r.fast_fee != u64_at(batch, o + 45)
+                    || r.requested_at != u64_at(batch, o + 53) as i64
+                {
                     return Ok(None);
                 }
                 plan.requests.push(next);
@@ -237,6 +256,7 @@ fn apply<'info>(ctx: Context<'info, SubmitMessage<'info>>, operator: Pubkey, p: 
                     answers: 1,
                     objections: 0,
                     payout: 0,
+                    opened_at: t,
                     records: p.locks,
                     bump,
                 },
@@ -306,6 +326,10 @@ pub struct SubmitMessage<'info> {
     pub walk: UncheckedAccount<'info>,
     /// CHECK: the message's block in the light client; read and checked.
     pub node: UncheckedAccount<'info>,
+    /// CHECK: the account publishing this message's batch; checked and
+    /// created in the handler.
+    #[account(mut)]
+    pub message: UncheckedAccount<'info>,
     /// CHECK: the claim this message would open, number `claim_count + 1`;
     /// checked and created only if it opens.
     #[account(mut)]

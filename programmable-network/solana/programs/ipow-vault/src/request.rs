@@ -7,8 +7,10 @@ use crate::state::{Config, Request};
 
 /// Burns vETH for ETH on Ethereum: request number `request_count + 1`. The
 /// fee, in vETH, goes to the first operator whose message carrying the
-/// request is judged true here (D113). Never to address zero.
-pub fn handler(ctx: Context<MakeRequest>, amount: u64, to: [u8; 20], fee: u64) -> Result<()> {
+/// request is judged true here (D113). The fast fee is burned with the
+/// amount and paid in ETH on Ethereum, to an attester who paid the amount
+/// at once, or to `to` (D122). Never to address zero.
+pub fn handler(ctx: Context<MakeRequest>, amount: u64, to: [u8; 20], fee: u64, fast_fee: u64) -> Result<()> {
     require!(amount > 0, VaultError::ZeroAmount);
     require!(to != [0u8; 20], VaultError::ZeroAddress);
     let a = &ctx.accounts;
@@ -17,7 +19,7 @@ pub fn handler(ctx: Context<MakeRequest>, amount: u64, to: [u8; 20], fee: u64) -
             a.token_program.key(),
             Burn { mint: a.mint.to_account_info(), from: a.from.to_account_info(), authority: a.user.to_account_info() },
         ),
-        amount,
+        amount.checked_add(fast_fee).ok_or(VaultError::Overflow)?,
     )?;
     if fee > 0 {
         token::transfer(
@@ -36,6 +38,8 @@ pub fn handler(ctx: Context<MakeRequest>, amount: u64, to: [u8; 20], fee: u64) -
     r.amount = amount;
     r.to = to;
     r.fee = fee;
+    r.fast_fee = fast_fee;
+    r.requested_at = crate::util::now()?;
     r.bump = ctx.bumps.request;
     Ok(())
 }

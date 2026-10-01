@@ -9,7 +9,9 @@ use crate::util::find_lock;
 /// issued for it, and a CANCEL record returns it to its owner there. The
 /// lock must be known here from a LOCK record naming the caller, in an
 /// accepted claim: a claim not yet decided may carry a false LOCK record,
-/// which could otherwise give up any lock (section 11.5).
+/// which could otherwise give up any lock (section 11.5). A lock whose
+/// receipt was issued, at once by an attester or after its claim, has its
+/// mark already and cannot be given up.
 pub fn handler(ctx: Context<GiveUp>, _claim_id: u64, lock_id: u64) -> Result<()> {
     require!(ctx.accounts.claim.accepted, VaultError::NotAccepted);
     let record = find_lock(&ctx.accounts.claim.records, lock_id).ok_or(VaultError::NotInClaim)?;
@@ -17,6 +19,10 @@ pub fn handler(ctx: Context<GiveUp>, _claim_id: u64, lock_id: u64) -> Result<()>
     let m = &mut ctx.accounts.mark;
     m.lock_id = lock_id;
     m.given_up = true;
+    m.attests = 0;
+    m.settled = 0;
+    m.first_at = 0;
+    m.last_attest = 0;
     m.bump = ctx.bumps.mark;
     Ok(())
 }

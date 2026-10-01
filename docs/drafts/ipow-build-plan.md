@@ -173,9 +173,10 @@ Tests: the stage 6 rows of the table above.
 1. Deploy to the test networks. Read every address and setting back
    from the network, including that no key can change the contracts
    (D59).
-   Before the vault (section 11): the owner approves the flat deposit
-   (V1, measured) and the minimum certifying escrow (D118) on each
-   network; the Ethereum vault is deployed first, and its address is
+   Before the vault (section 11): the mainnet amounts are approved
+   (D121 deposit: 0.03 ETH, 0.015 SOL; D118 minimum certifying escrow:
+   1 ETH, 1 SOL). Test networks are deployed with smaller amounts, chosen
+   at deployment, so that a test run needs little test ETH; the Ethereum vault is deployed first, and its address is
    given to the Solana vault's initialize, which only its upgrade
    authority can call; the authority is removed right after, and its
    removal read back from the network, as for every program (D59).

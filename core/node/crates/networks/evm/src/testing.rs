@@ -197,12 +197,17 @@ impl EvmWorld {
         (std::sync::Arc::new(crate::vault::EvmVault::new(net.clone(), &vault.to_string()).unwrap()), net)
     }
 
+    /// The balance of `who`, in wei.
+    pub async fn balance(&self, who: Address) -> u128 {
+        self.user.get_balance(who).await.unwrap().to::<u128>()
+    }
+
     /// The user locks `amount` wei for vETH to `recipient` on Solana, with
-    /// `fee` wei for the operator.
-    pub async fn user_lock(&self, vault: Address, recipient: [u8; 32], amount: u128, fee: u128) {
+    /// `fee` wei for the operator and `fast_fee` wei for an attester.
+    pub async fn user_lock(&self, vault: Address, recipient: [u8; 32], amount: u128, fee: u128, fast_fee: u128) {
         crate::contracts::IPoWVault::new(vault, &self.user)
-            .lock(FixedBytes(recipient), U256::from(fee))
-            .value(U256::from(amount + fee))
+            .lock(FixedBytes(recipient), U256::from(fee), U256::from(fast_fee))
+            .value(U256::from(amount + fee + fast_fee))
             .gas(1_000_000)
             .send()
             .await

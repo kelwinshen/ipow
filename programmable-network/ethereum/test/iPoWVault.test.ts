@@ -96,8 +96,10 @@ function tx(inputs: { txidLE: string; vout: number }[], outputs: { value: bigint
 // Records, as section 11.5 writes them. Amounts in gwei, big-endian.
 const u64 = (n: bigint) => ethers.toBeHex(n, 8);
 const rec = {
-  lock: (id: bigint, amount: bigint, recipient: string, fee: bigint) => ethers.concat(["0x01", u64(id), u64(amount), recipient, u64(fee)]),
-  request: (id: bigint, amount: bigint, to: string, fee: bigint) => ethers.concat(["0x02", u64(id), u64(amount), to, u64(fee)]),
+  lock: (id: bigint, amount: bigint, recipient: string, fee: bigint, fastFee = 0n, at = 0n) =>
+    ethers.concat(["0x01", u64(id), u64(amount), recipient, u64(fee), u64(fastFee), u64(at)]),
+  request: (id: bigint, amount: bigint, to: string, fee: bigint, fastFee = 0n, at = 0n) =>
+    ethers.concat(["0x02", u64(id), u64(amount), to, u64(fee), u64(fastFee), u64(at)]),
   cancel: (id: bigint) => ethers.concat(["0x03", u64(id)]),
   bond: (net: number, amount: bigint) => ethers.concat(["0x04", ethers.toBeHex(net, 1), u64(amount)]),
   exit: () => "0x05",
@@ -216,14 +218,14 @@ async function submit(ctx: Ctx, m: { tx: Tx; block: Ref; batch: string }, real: 
 describe("iPoWVault: locks", function () {
   it("locks whole gwei, and keeps the amount as backing", async function () {
     const { vault, user } = await deploy();
-    await vault.connect(user).lock(RECIPIENT, 10n * GWEI, { value: ETH + 10n * GWEI });
+    await vault.connect(user).lock(RECIPIENT, 10n * GWEI, 0, { value: ETH + 10n * GWEI });
     const l = await vault.getLock(1n);
     expect(l.amount).to.equal(ETH / GWEI);
     expect(l.fee).to.equal(10n);
     expect(l.recipient).to.equal(RECIPIENT);
     expect(await vault.reserve()).to.equal(ETH);
-    await expect(vault.connect(user).lock(RECIPIENT, 0, { value: ETH + 1n })).to.be.revertedWithCustomError(vault, "NotGwei");
-    await expect(vault.connect(user).lock(RECIPIENT, ETH, { value: ETH })).to.be.revertedWithCustomError(vault, "ZeroAmount");
+    await expect(vault.connect(user).lock(RECIPIENT, 0, 0, { value: ETH + 1n })).to.be.revertedWithCustomError(vault, "NotGwei");
+    await expect(vault.connect(user).lock(RECIPIENT, ETH, 0, { value: ETH })).to.be.revertedWithCustomError(vault, "ZeroAmount");
   });
 });
 
@@ -292,8 +294,8 @@ describe("iPoWVault: judging records about Ethereum (D109)", function () {
   it("pays the lock's fee for a true LOCK, once", async function () {
     const ctx = await deploy();
     const { vault, user, operator } = ctx;
-    await vault.connect(user).lock(RECIPIENT, 5n * GWEI, { value: ETH + 5n * GWEI });
-    const record = rec.lock(1n, ETH / GWEI, RECIPIENT, 5n);
+    await vault.connect(user).lock(RECIPIENT, 5n * GWEI, 0, { value: ETH + 5n * GWEI });
+    const record = rec.lock(1n, ETH / GWEI, RECIPIENT, 5n, 0n, (await vault.getLock(1n)).lockedAt);
     const { pair, real } = await ready(ctx, ETH, async (p) => {
       await p.write(record);
       await p.write(record);
@@ -307,7 +309,7 @@ describe("iPoWVault: judging records about Ethereum (D109)", function () {
   it("slashes the whole bond for a false LOCK: 80% backs vETH, 20% to the submitter", async function () {
     const ctx = await deploy();
     const { vault, user, operator, guardian } = ctx;
-    await vault.connect(user).lock(RECIPIENT, 0, { value: ETH });
+    await vault.connect(user).lock(RECIPIENT, 0, 0, { value: ETH });
     const { pair, real } = await ready(ctx, 5n * ETH, async (p) => {
       await p.write(rec.lock(1n, 2n * ETH / GWEI, RECIPIENT, 0n)); // wrong amount
     });
@@ -350,8 +352,12 @@ describe("iPoWVault: judging records about Ethereum (D109)", function () {
       await p.write(rec.bond(ETHEREUM, 1n));
     });
     await expect(submit(ctx, pair.pending[1], real)).to.be.revertedWithCustomError(vault, "WrongCoin");
-    await submit(ctx, pair.pending[0], real);
+    // Each message's batch is published, naming the block of the one before.
+    await expect(submit(ctx, pair.pending[0], real)).to.emit(vault, "MessageBatch").withArgs(ctx.operator.address, 0n, 0n, pair.pending[0].batch);
+    const first = BigInt((await ethers.provider.getBlock("latest"))!.number);
+    expect((await vault.getChain(ctx.operator.address)).lastMessageBlock).to.equal(first);
     await expect(submit(ctx, pair.pending[0], real)).to.be.revertedWithCustomError(vault, "WrongCoin");
+    await expect(submit(ctx, pair.pending[1], real)).to.emit(vault, "MessageBatch").withArgs(ctx.operator.address, 1n, first, pair.pending[1].batch);
   });
 
   it("keeps a stated BOND locked, and slashes a BOND above the bond", async function () {
@@ -378,7 +384,7 @@ describe("iPoWVault: judging records about Ethereum (D109)", function () {
 describe("iPoWVault: claims from Solana (D110, D111)", function () {
   /** Operator with a vETH bond of `peer` on Solana made official, and 1 ETH locked by the user. */
   async function withPeerBond(ctx: Ctx, peer: bigint, more: (p: PairChain) => Promise<void>) {
-    await ctx.vault.connect(ctx.user).lock(RECIPIENT, 0, { value: 2n * ETH });
+    await ctx.vault.connect(ctx.user).lock(RECIPIENT, 0, 0, { value: 2n * ETH });
     const r = await ready(ctx, ETH, async (p) => {
       await p.write(rec.bond(SOLANA, peer / GWEI));
       await more(p);
@@ -412,6 +418,112 @@ describe("iPoWVault: claims from Solana (D110, D111)", function () {
     await vault.connect(operator).collect(claimId);
     expect(await vault.credit(operator.address)).to.equal(DEPOSIT);
     await expect(vault.connect(operator).collect(claimId)).to.be.revertedWithCustomError(vault, "NothingToCollect");
+  });
+
+  it("repays an attester that paid a burn at once, with its share of the fast fee (D122, D124)", async function () {
+    const ctx = await deploy();
+    const { vault, stranger, guardian } = ctx;
+    // The burn was made on Solana a few days before the payment: the
+    // attester earns the part of the fast fee for the time left to 8 days,
+    // the user the rest.
+    // (Setting the bond up takes a week first.)
+    const burnedAt = BigInt(await latestTime()) + BigInt(WEEK - DAY);
+    const fastFee = 9_000_000n;
+    const { pair, real } = await withPeerBond(ctx, 5n * ETH, async (p) => {
+      await p.write(rec.request(7n, ETH / GWEI, stranger.address, 0n, fastFee, burnedAt));
+    });
+    const before = await ethers.provider.getBalance(stranger.address);
+    await expect(vault.connect(guardian).fastPay(7n, stranger.address, fastFee, burnedAt, { value: ETH }))
+      .to.emit(vault, "FastPaid")
+      .withArgs(7n, guardian.address, stranger.address, ETH);
+    const paidAt = BigInt(await latestTime());
+    expect(await ethers.provider.getBalance(stranger.address)).to.equal(before + ETH);
+    // The same record once only; another record may still be paid, and
+    // blocks nothing (D126).
+    await expect(vault.connect(guardian).fastPay(7n, stranger.address, fastFee, burnedAt, { value: ETH })).to.be.revertedWithCustomError(vault, "AlreadyPaid");
+    await vault.connect(guardian).fastPay(7n, guardian.address, 0n, 0n, { value: GWEI });
+    await expect(vault.connect(guardian).fastPay(8n, stranger.address, 0n, 0n, { value: 1n })).to.be.revertedWithCustomError(vault, "NotGwei");
+    expect((await vault.getFastPay(7n, stranger.address, ETH / GWEI, fastFee, burnedAt)).attester).to.equal(guardian.address);
+
+    await submit(ctx, pair.pending[1], real);
+    const claimId = await vault.claimCount();
+    expect((await vault.getClaim(claimId)).value).to.equal(ETH + fastFee * GWEI);
+    await mineAt((await latestTime()) + WEEK);
+    await vault.decide(claimId);
+    await vault.payRequest(claimId, 7n);
+    const share = await vault.fastShare(fastFee, burnedAt, paidAt);
+    expect(share).to.be.gt(0n);
+    expect(share).to.be.lt(fastFee);
+    expect(share).to.equal((fastFee * (BigInt(8 * DAY) - (paidAt - burnedAt))) / BigInt(8 * DAY));
+    expect(await vault.credit(guardian.address)).to.equal(ETH + share * GWEI);
+    expect(await vault.credit(stranger.address)).to.equal((fastFee - share) * GWEI);
+    await expect(vault.connect(guardian).fastPay(7n, stranger.address, 1n, burnedAt, { value: ETH })).to.be.revertedWithCustomError(vault, "AlreadyPaid");
+  });
+
+  it("gives a late attester no share of the fast fee (D124)", async function () {
+    const { vault } = await deploy();
+    expect(await vault.fastShare(900n, 1000n, 1000n)).to.equal(900n);
+    expect(await vault.fastShare(900n, 1000n, 500n)).to.equal(900n);
+    expect(await vault.fastShare(800n, 1000n, 1000n + BigInt(3 * DAY))).to.equal(500n);
+    expect(await vault.fastShare(900n, 1000n, 1000n + BigInt(8 * DAY))).to.equal(0n);
+    expect(await vault.fastShare(900n, 1000n, 1000n + BigInt(20 * DAY))).to.equal(0n);
+  });
+
+  it("pays the user when the attester stated the burn wrongly, or nobody attested", async function () {
+    const ctx = await deploy();
+    const { vault, stranger, guardian } = ctx;
+    const { pair, real } = await withPeerBond(ctx, 5n * ETH, async (p) => {
+      await p.write(rec.request(7n, ETH / GWEI, stranger.address, 0n, 3n, 100n));
+      await p.write(rec.request(8n, ETH / GWEI / 2n, stranger.address, 0n, 5n, 100n));
+    });
+    // Wrong fast fee: the attester's ETH is lost.
+    await vault.connect(guardian).fastPay(7n, stranger.address, 4n, 100n, { value: ETH });
+    for (const [i, id, total] of [[1, 7n, ETH + 3n * GWEI], [2, 8n, ETH / 2n + 5n * GWEI]] as const) {
+      await submit(ctx, pair.pending[i], real);
+      const claimId = await vault.claimCount();
+      await mineAt((await latestTime()) + WEEK);
+      await vault.decide(claimId);
+      const credit = await vault.credit(stranger.address);
+      await vault.payRequest(claimId, id);
+      expect(await vault.credit(stranger.address)).to.equal(credit + total);
+    }
+    expect(await vault.credit(guardian.address)).to.equal(0n);
+  });
+
+  it("judges a LOCK record by its fast fee and time too, and returns the fast fee with a cancelled lock", async function () {
+    const ctx = await deploy();
+    const { vault, user } = ctx;
+    await vault.connect(user).lock(RECIPIENT, 3n * GWEI, 4n * GWEI, { value: ETH + 7n * GWEI });
+    const l = await vault.getLock(1n);
+    expect(l.fastFee).to.equal(4n);
+    expect(l.lockedAt).to.equal(BigInt(await latestTime()));
+    expect(await vault.reserve()).to.equal(ETH + 4n * GWEI);
+    const { pair, real } = await withPeerBond(ctx, 5n * ETH, async (p) => {
+      await p.write(rec.cancel(1n));
+    });
+    await submit(ctx, pair.pending[1], real);
+    const claimId = await vault.claimCount();
+    // The claim's value is what the lock backs: amount and fast fee.
+    expect((await vault.getClaim(claimId)).value).to.equal(ETH + 4n * GWEI);
+    await mineAt((await latestTime()) + WEEK);
+    await vault.decide(claimId);
+    await vault.returnLock(claimId, 1n);
+    expect(await vault.credit(user.address)).to.equal(ETH + 7n * GWEI);
+
+    // A LOCK record with another fast fee, or another time, is false.
+    for (const [fast, shift] of [[5n, 0n], [4n, 1n]]) {
+      const ctx2 = await deploy();
+      await ctx2.vault.connect(ctx2.user).lock(RECIPIENT, 0, 4n * GWEI, { value: ETH + 4n * GWEI });
+      const at = (await ctx2.vault.getLock(1n)).lockedAt;
+      const r = await ready(ctx2, ETH, async (p) => {
+        await p.write(rec.lock(1n, ETH / GWEI, RECIPIENT, 0n, 4n, at));
+        await p.write(rec.lock(1n, ETH / GWEI, RECIPIENT, 0n, fast, at + shift));
+      });
+      await submit(ctx2, r.pair.pending[0], r.real);
+      expect((await ctx2.vault.getChain(ctx2.operator.address)).slashed).to.equal(false);
+      await submit(ctx2, r.pair.pending[1], r.real);
+      expect((await ctx2.vault.getChain(ctx2.operator.address)).slashed).to.equal(true);
+    }
   });
 
   it("opens no claim past 80% of the bond on Solana", async function () {
@@ -479,7 +591,7 @@ describe("iPoWVault: claims from Solana (D110, D111)", function () {
   it("returns a lock whose CANCEL was accepted, with its unearned fee", async function () {
     const ctx = await deploy();
     const { vault, user } = ctx;
-    await vault.connect(user).lock(RECIPIENT, 3n * GWEI, { value: ETH + 3n * GWEI });
+    await vault.connect(user).lock(RECIPIENT, 3n * GWEI, 0, { value: ETH + 3n * GWEI });
     const { pair, real } = await withPeerBond(ctx, 5n * ETH, async (p) => {
       await p.write(rec.cancel(1n));
     });
@@ -565,11 +677,11 @@ describe("iPoWVault: review cases", function () {
   it("never pays a lock's fee again after the lock was returned", async function () {
     const ctx = await deploy();
     const { vault, user, operator } = ctx;
-    await vault.connect(user).lock(RECIPIENT, 7n * GWEI, { value: ETH + 7n * GWEI });
+    await vault.connect(user).lock(RECIPIENT, 7n * GWEI, 0, { value: ETH + 7n * GWEI });
     const r = await ready(ctx, ETH, async (p) => {
       await p.write(rec.bond(SOLANA, (5n * ETH) / GWEI));
       await p.write(rec.cancel(1n));
-      await p.write(rec.lock(1n, ETH / GWEI, RECIPIENT, 7n));
+      await p.write(rec.lock(1n, ETH / GWEI, RECIPIENT, 7n, 0n, (await vault.getLock(1n)).lockedAt));
     });
     await submit(ctx, r.pair.pending[0], r.real);
     await mineAt((await latestTime()) + WEEK);
@@ -655,7 +767,7 @@ describe("iPoWVault: review cases", function () {
 
     // 33 CANCEL records: more than 32 records about Solana.
     const ctx2 = await deploy();
-    await ctx2.vault.connect(ctx2.user).lock(RECIPIENT, 0, { value: ETH });
+    await ctx2.vault.connect(ctx2.user).lock(RECIPIENT, 0, 0, { value: ETH });
     const r2 = await ready(ctx2, ETH, async (p) => {
       await p.write(ethers.concat(Array.from({ length: 33 }, () => rec.cancel(1n))));
     });
@@ -724,7 +836,7 @@ describe("iPoWVault: review cases", function () {
   it("collects once, only for the winning side, and pays a request number once across claims", async function () {
     const ctx = await deploy();
     const { vault, operator, guardian, user, stranger } = ctx;
-    await vault.connect(user).lock(RECIPIENT, 0, { value: 2n * ETH });
+    await vault.connect(user).lock(RECIPIENT, 0, 0, { value: 2n * ETH });
     const r = await ready(ctx, ETH, async (p) => {
       await p.write(rec.bond(SOLANA, (5n * ETH) / GWEI));
       await p.write(rec.request(7n, ETH / GWEI, stranger.address, 0n));
@@ -767,7 +879,7 @@ describe("iPoWVault: review cases", function () {
   it("pays a request carried by an honest chain while a false carrier's claim is open", async function () {
     const ctx = await deploy();
     const { vault, chain, operator, stranger, guardian, user } = ctx;
-    await vault.connect(user).lock(RECIPIENT, 0, { value: 2n * ETH });
+    await vault.connect(user).lock(RECIPIENT, 0, 0, { value: 2n * ETH });
     // Two operators: the honest one and Mallory (the stranger).
     const honest = await writeRegistration(ctx, operator);
     const mallory = await writeRegistration(ctx, stranger);
@@ -800,7 +912,7 @@ describe("iPoWVault: review cases", function () {
   it("refuses every other claim of a chain that lost one", async function () {
     const ctx = await deploy();
     const { vault, stranger, guardian } = ctx;
-    await vault.connect(ctx.user).lock(RECIPIENT, 0, { value: 2n * ETH });
+    await vault.connect(ctx.user).lock(RECIPIENT, 0, 0, { value: 2n * ETH });
     const r = await ready(ctx, ETH, async (p) => {
       await p.write(rec.bond(SOLANA, (5n * ETH) / GWEI));
       await p.write(rec.request(7n, 1n, stranger.address, 0n));
@@ -821,10 +933,10 @@ describe("iPoWVault: review cases", function () {
   it("pays no fee to a slashed operator; the fee waits for another", async function () {
     const ctx = await deploy();
     const { vault, user, operator } = ctx;
-    await vault.connect(user).lock(RECIPIENT, 4n * GWEI, { value: ETH + 4n * GWEI });
+    await vault.connect(user).lock(RECIPIENT, 4n * GWEI, 0, { value: ETH + 4n * GWEI });
     const r = await ready(ctx, ETH, async (p) => {
       await p.write(rec.lock(9n, 1n, RECIPIENT, 0n)); // false
-      await p.write(rec.lock(1n, ETH / GWEI, RECIPIENT, 4n)); // true
+      await p.write(rec.lock(1n, ETH / GWEI, RECIPIENT, 4n, 0n, (await vault.getLock(1n)).lockedAt)); // true
     });
     await submit(ctx, r.pair.pending[0], r.real);
     await expect(submit(ctx, r.pair.pending[1], r.real)).to.not.emit(vault, "FeeEarned");

@@ -267,6 +267,277 @@
       ]
     },
     {
+      "name": "attest_lock",
+      "discriminator": [
+        218,
+        231,
+        129,
+        253,
+        196,
+        75,
+        183,
+        8
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "chain",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  104,
+                  97,
+                  105,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "attester"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mark",
+          "docs": [
+            "the first attest, in the handler."
+          ],
+          "writable": true
+        },
+        {
+          "name": "fast",
+          "writable": true
+        },
+        {
+          "name": "mint",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  101,
+                  116,
+                  104
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "holding",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  108,
+                  100,
+                  105,
+                  110,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "from",
+          "writable": true
+        },
+        {
+          "name": "to",
+          "writable": true
+        },
+        {
+          "name": "attester",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "lock_id",
+          "type": "u64"
+        },
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "recipient",
+          "type": "pubkey"
+        },
+        {
+          "name": "fee",
+          "type": "u64"
+        },
+        {
+          "name": "fast_fee",
+          "type": "u64"
+        },
+        {
+          "name": "locked_at",
+          "type": "i64"
+        }
+      ]
+    },
+    {
+      "name": "burn_fast",
+      "discriminator": [
+        127,
+        181,
+        191,
+        246,
+        186,
+        199,
+        80,
+        208
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "fast",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  97,
+                  115,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "attest"
+              }
+            ]
+          }
+        },
+        {
+          "name": "linked",
+          "docs": [
+            "The claim linked to the attest, when there is one: it must be refused."
+          ],
+          "optional": true
+        },
+        {
+          "name": "mint",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  101,
+                  116,
+                  104
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "holding",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  108,
+                  100,
+                  105,
+                  110,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "caller_credit",
+          "writable": true
+        },
+        {
+          "name": "caller",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "attest",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "close_buffer",
       "discriminator": [
         46,
@@ -306,6 +577,56 @@
           "name": "owner",
           "writable": true,
           "signer": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "close_message",
+      "discriminator": [
+        53,
+        48,
+        100,
+        249,
+        207,
+        188,
+        96,
+        22
+      ],
+      "accounts": [
+        {
+          "name": "message",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  101,
+                  115,
+                  115,
+                  97,
+                  103,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "message.operator",
+                "account": "Message"
+              },
+              {
+                "kind": "account",
+                "path": "message.index",
+                "account": "Message"
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "writable": true
         }
       ],
       "args": []
@@ -707,24 +1028,10 @@
         },
         {
           "name": "mark",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  108,
-                  111,
-                  99,
-                  107
-                ]
-              },
-              {
-                "kind": "arg",
-                "path": "lock_id"
-              }
-            ]
-          }
+          "docs": [
+            "missing, in the handler."
+          ],
+          "writable": true
         },
         {
           "name": "config",
@@ -805,6 +1112,84 @@
         },
         {
           "name": "lock_id",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "link_fast",
+      "discriminator": [
+        97,
+        41,
+        9,
+        224,
+        111,
+        202,
+        45,
+        250
+      ],
+      "accounts": [
+        {
+          "name": "fast",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  97,
+                  115,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "attest"
+              }
+            ]
+          }
+        },
+        {
+          "name": "claim",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  108,
+                  97,
+                  105,
+                  109
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "claim_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "linked",
+          "docs": [
+            "The claim linked before, when there is one: it must be refused."
+          ],
+          "optional": true
+        },
+        {
+          "name": "attester",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "claim_id",
+          "type": "u64"
+        },
+        {
+          "name": "attest",
           "type": "u64"
         }
       ]
@@ -916,6 +1301,10 @@
         },
         {
           "name": "fee",
+          "type": "u64"
+        },
+        {
+          "name": "fast_fee",
           "type": "u64"
         }
       ]
@@ -1559,6 +1948,191 @@
       ]
     },
     {
+      "name": "settle_fast",
+      "discriminator": [
+        208,
+        168,
+        245,
+        136,
+        217,
+        70,
+        185,
+        62
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "claim",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  108,
+                  97,
+                  105,
+                  109
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "claim_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "fast",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  97,
+                  115,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "attest"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mark",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  111,
+                  99,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "fast.lock_id",
+                "account": "FastLock"
+              }
+            ]
+          }
+        },
+        {
+          "name": "attester",
+          "writable": true
+        },
+        {
+          "name": "mint",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  101,
+                  116,
+                  104
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "holding",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  108,
+                  100,
+                  105,
+                  110,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "prev",
+          "docs": [
+            "is one: it must be settled. Checked in the handler."
+          ],
+          "optional": true
+        },
+        {
+          "name": "to",
+          "docs": [
+            "The true record's recipient: for the rest of the fast fee, or its",
+            "receipt when no attest delivered it."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "attester_credit",
+          "writable": true
+        },
+        {
+          "name": "caller_credit",
+          "writable": true
+        },
+        {
+          "name": "caller",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "claim_id",
+          "type": "u64"
+        },
+        {
+          "name": "attest",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "submit_message",
       "discriminator": [
         92,
@@ -1645,6 +2219,13 @@
         },
         {
           "name": "node"
+        },
+        {
+          "name": "message",
+          "docs": [
+            "created in the handler."
+          ],
+          "writable": true
         },
         {
           "name": "claim",
@@ -2173,6 +2754,19 @@
       ]
     },
     {
+      "name": "FastLock",
+      "discriminator": [
+        16,
+        158,
+        38,
+        9,
+        197,
+        115,
+        88,
+        228
+      ]
+    },
+    {
       "name": "LockMark",
       "discriminator": [
         245,
@@ -2183,6 +2777,19 @@
         162,
         209,
         17
+      ]
+    },
+    {
+      "name": "Message",
+      "discriminator": [
+        110,
+        151,
+        23,
+        110,
+        198,
+        6,
+        125,
+        181
       ]
     },
     {
@@ -2325,6 +2932,26 @@
     {
       "code": 6024,
       "name": "NotAuthority"
+    },
+    {
+      "code": 6025,
+      "name": "NotOperator"
+    },
+    {
+      "code": 6026,
+      "name": "WrongRecord"
+    },
+    {
+      "code": 6027,
+      "name": "AlreadyDone"
+    },
+    {
+      "code": 6028,
+      "name": "NotRefused"
+    },
+    {
+      "code": 6029,
+      "name": "NotInOrder"
     }
   ],
   "types": [
@@ -2595,6 +3222,14 @@
             "type": "u64"
           },
           {
+            "name": "opened_at",
+            "docs": [
+              "When it opened: an attest waits only for a claim opened in time",
+              "(section 11.7)."
+            ],
+            "type": "i64"
+          },
+          {
             "name": "records",
             "docs": [
               "The LOCK records it carries, one after the other."
@@ -2659,6 +3294,13 @@
             "type": "u64"
           },
           {
+            "name": "attest_count",
+            "docs": [
+              "Attests of locks so far: attest `n` is at [\"fast\", n] (section 11.7)."
+            ],
+            "type": "u64"
+          },
+          {
             "name": "bump",
             "type": "u8"
           }
@@ -2684,6 +3326,92 @@
           {
             "name": "veth",
             "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "FastLock",
+      "docs": [
+        "A lock on Ethereum whose receipt an attester issued at once, with the",
+        "LOCK record it stated and the vETH it locked (section 11.7, D123)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "id",
+            "docs": [
+              "Its number, counted in `Config::attest_count`: guardians find every",
+              "attest by it, also one naming a lock that does not exist."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "lock_id",
+            "type": "u64"
+          },
+          {
+            "name": "attester",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "recipient",
+            "type": "pubkey"
+          },
+          {
+            "name": "fee",
+            "type": "u64"
+          },
+          {
+            "name": "fast_fee",
+            "type": "u64"
+          },
+          {
+            "name": "locked_at",
+            "type": "i64"
+          },
+          {
+            "name": "collateral",
+            "docs": [
+              "vETH locked by the attester, 1.25 times the amount."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "attested_at",
+            "type": "i64"
+          },
+          {
+            "name": "claim",
+            "docs": [
+              "A claim carrying the same record, opened in time; zero if none."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "prev",
+            "docs": [
+              "The attest of the same lock made before it, zero if none: settled",
+              "first (D126)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "burned",
+            "docs": [
+              "The attester's vETH was burned: when the true record arrives, the",
+              "receipt goes to the attester."
+            ],
+            "type": "bool"
           },
           {
             "name": "bump",
@@ -2893,11 +3621,80 @@
           },
           {
             "name": "issued",
+            "docs": [
+              "Its receipt counted: issued after its claim, or delivered by an",
+              "attest settled with the true record."
+            ],
             "type": "bool"
           },
           {
             "name": "given_up",
             "type": "bool"
+          },
+          {
+            "name": "attests",
+            "docs": [
+              "Attests of the lock so far (D126), and those settled. With any, its",
+              "receipt comes by settling them, or after `first_at` and 7 days when",
+              "none stated the true record."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "settled",
+            "type": "u32"
+          },
+          {
+            "name": "first_at",
+            "docs": [
+              "When its first attest was made: it takes attests for 7 days from it."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "last_attest",
+            "docs": [
+              "Its latest attest: each names the one before, and they are settled",
+              "in the order made."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Message",
+      "docs": [
+        "The batch of one processed message, published so that anyone can bring",
+        "the message to the other network (section 11.3). Anyone may close it",
+        "`MESSAGE_KEPT` after it was processed, its rent back to whoever paid it."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "operator",
+            "type": "pubkey"
+          },
+          {
+            "name": "payer",
+            "type": "pubkey"
+          },
+          {
+            "name": "index",
+            "type": "u64"
+          },
+          {
+            "name": "processed_at",
+            "type": "i64"
+          },
+          {
+            "name": "batch",
+            "type": "bytes"
           },
           {
             "name": "bump",
@@ -2984,6 +3781,21 @@
           {
             "name": "fee",
             "type": "u64"
+          },
+          {
+            "name": "fast_fee",
+            "docs": [
+              "For the attester who pays it at once on Ethereum, or the user",
+              "(D122). Burned with the amount."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "requested_at",
+            "docs": [
+              "When it was made, in its REQUEST record (D124)."
+            ],
+            "type": "i64"
           },
           {
             "name": "fee_paid",

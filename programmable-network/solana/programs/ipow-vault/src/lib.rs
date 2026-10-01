@@ -1,10 +1,11 @@
 //! The iPoW protocol's vault on Solana, for the pair Ethereum and Solana
 //! (D104). Spec: docs/design/ipow-protocol.md, section 11, decisions D104 to
-//! D118. The same rules as `contracts/protocol/iPoWVault.sol` on Ethereum,
+//! D126. The same rules as `contracts/protocol/iPoWVault.sol` on Ethereum,
 //! with the two networks' parts swapped.
 //!
 //! Here it issues vETH, the receipt for ETH locked on Ethereum, for LOCK
-//! records from Ethereum after 7 days of objections (D111). It judges the
+//! records from Ethereum after 7 days of objections (D111), or at once when
+//! an attester locks 1.25 times the amount in vETH (section 11.7). It judges the
 //! records about Solana, REQUEST, CANCEL and BOND for Solana, and slashes an
 //! operator's vETH bond for a false one (D109). No key can change the program
 //! once its upgrade authority is removed (D59).
@@ -23,12 +24,16 @@ pub mod util;
 pub mod add_bond;
 pub mod add_deposits;
 pub mod answer;
+pub mod attest_lock;
+pub mod burn_fast;
 pub mod close_buffer;
+pub mod close_message;
 pub mod collect;
 pub mod decide;
 pub mod give_up;
 pub mod initialize;
 pub mod issue;
+pub mod link_fast;
 pub mod object;
 pub mod open_buffer;
 pub mod open_checkpoint;
@@ -36,6 +41,7 @@ pub mod record_real;
 pub mod record_real_from_job;
 pub mod register_chain;
 pub mod request;
+pub mod settle_fast;
 pub mod submit_message;
 pub mod withdraw_bond;
 pub mod withdraw_credit;
@@ -47,9 +53,19 @@ pub(crate) use add_bond::__client_accounts_add_bond;
 pub use add_deposits::AddDeposits;
 pub(crate) use add_deposits::__client_accounts_add_deposits;
 pub use answer::Answer;
+pub use attest_lock::AttestLock;
+pub(crate) use attest_lock::__client_accounts_attest_lock;
+pub use burn_fast::BurnFast;
+pub(crate) use burn_fast::__client_accounts_burn_fast;
+pub use link_fast::LinkFast;
+pub(crate) use link_fast::__client_accounts_link_fast;
+pub use settle_fast::SettleFast;
+pub(crate) use settle_fast::__client_accounts_settle_fast;
 pub use close_buffer::CloseBuffer;
 pub(crate) use close_buffer::__client_accounts_close_buffer;
 pub(crate) use answer::__client_accounts_answer;
+pub use close_message::CloseMessage;
+pub(crate) use close_message::__client_accounts_close_message;
 pub use collect::Collect;
 pub(crate) use collect::__client_accounts_collect;
 pub use decide::Decide;
@@ -129,8 +145,32 @@ pub mod ipow_vault {
         withdraw_deposits::handler(ctx, amount)
     }
 
-    pub fn make_request(ctx: Context<MakeRequest>, amount: u64, to: [u8; 20], fee: u64) -> Result<()> {
-        request::handler(ctx, amount, to, fee)
+    pub fn make_request(ctx: Context<MakeRequest>, amount: u64, to: [u8; 20], fee: u64, fast_fee: u64) -> Result<()> {
+        request::handler(ctx, amount, to, fee, fast_fee)
+    }
+
+    pub fn attest_lock(
+        ctx: Context<AttestLock>,
+        lock_id: u64,
+        amount: u64,
+        recipient: Pubkey,
+        fee: u64,
+        fast_fee: u64,
+        locked_at: i64,
+    ) -> Result<()> {
+        attest_lock::handler(ctx, lock_id, amount, recipient, fee, fast_fee, locked_at)
+    }
+
+    pub fn link_fast(ctx: Context<LinkFast>, claim_id: u64, attest: u64) -> Result<()> {
+        link_fast::handler(ctx, claim_id, attest)
+    }
+
+    pub fn burn_fast(ctx: Context<BurnFast>, attest: u64) -> Result<()> {
+        burn_fast::handler(ctx, attest)
+    }
+
+    pub fn settle_fast(ctx: Context<SettleFast>, claim_id: u64, attest: u64) -> Result<()> {
+        settle_fast::handler(ctx, claim_id, attest)
     }
 
     pub fn give_up(ctx: Context<GiveUp>, claim_id: u64, lock_id: u64) -> Result<()> {
@@ -182,5 +222,9 @@ pub mod ipow_vault {
 
     pub fn close_buffer(ctx: Context<CloseBuffer>) -> Result<()> {
         close_buffer::handler(ctx)
+    }
+
+    pub fn close_message(ctx: Context<CloseMessage>) -> Result<()> {
+        close_message::handler(ctx)
     }
 }

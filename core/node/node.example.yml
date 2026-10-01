@@ -57,3 +57,6 @@ networks:
 #   checkpoint_paid_ethereum: "100000000000000000"
 #   checkpoint_paid_solana: "100000000"
 #   journal: vault.journal     # keep it: the batches this operator wrote
+#   fast:                      # the fast paths; leave out to attest nothing
+#     min_fee_gwei: 100000     # the least fast fee worth attesting or paying
+#     max_gwei: 1000000000     # the largest lock or burn attested or paid

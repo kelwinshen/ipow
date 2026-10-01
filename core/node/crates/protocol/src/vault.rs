@@ -16,9 +16,11 @@ pub const SOLANA: u8 = 2;
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Record {
     /// A lock on Ethereum, for vETH to `recipient` on Solana.
-    Lock { id: u64, amount: u64, recipient: [u8; 32], fee: u64 },
+    /// `at`: the lock's time, in seconds (D124).
+    Lock { id: u64, amount: u64, recipient: [u8; 32], fee: u64, fast_fee: u64, at: u64 },
     /// A burn of vETH on Solana, for ETH to `to` on Ethereum.
-    Request { id: u64, amount: u64, to: [u8; 20], fee: u64 },
+    /// `at`: the burn's time, in seconds (D124).
+    Request { id: u64, amount: u64, to: [u8; 20], fee: u64, fast_fee: u64, at: u64 },
     /// Solana gave up lock `id`: Ethereum returns it.
     Cancel { id: u64 },
     /// A chain's bond on `network`.
@@ -39,19 +41,23 @@ impl Record {
 
     fn write(&self, out: &mut Vec<u8>) {
         match self {
-            Record::Lock { id, amount, recipient, fee } => {
+            Record::Lock { id, amount, recipient, fee, fast_fee, at } => {
                 out.push(1);
                 out.extend_from_slice(&id.to_be_bytes());
                 out.extend_from_slice(&amount.to_be_bytes());
                 out.extend_from_slice(recipient);
                 out.extend_from_slice(&fee.to_be_bytes());
+                out.extend_from_slice(&fast_fee.to_be_bytes());
+                out.extend_from_slice(&at.to_be_bytes());
             }
-            Record::Request { id, amount, to, fee } => {
+            Record::Request { id, amount, to, fee, fast_fee, at } => {
                 out.push(2);
                 out.extend_from_slice(&id.to_be_bytes());
                 out.extend_from_slice(&amount.to_be_bytes());
                 out.extend_from_slice(to);
                 out.extend_from_slice(&fee.to_be_bytes());
+                out.extend_from_slice(&fast_fee.to_be_bytes());
+                out.extend_from_slice(&at.to_be_bytes());
             }
             Record::Cancel { id } => {
                 out.push(3);
@@ -88,8 +94,8 @@ pub fn decode(batch: &[u8]) -> Option<Vec<Record>> {
     let mut o = 0;
     while o < batch.len() {
         let need = match batch[o] {
-            1 => 57,
-            2 => 45,
+            1 => 73,
+            2 => 61,
             3 => 9,
             4 => 10,
             5 => 1,
@@ -104,12 +110,16 @@ pub fn decode(batch: &[u8]) -> Option<Vec<Record>> {
                 amount: u64_at(batch, o + 9),
                 recipient: batch[o + 17..o + 49].try_into().unwrap(),
                 fee: u64_at(batch, o + 49),
+                fast_fee: u64_at(batch, o + 57),
+                at: u64_at(batch, o + 65),
             },
             2 => Record::Request {
                 id: u64_at(batch, o + 1),
                 amount: u64_at(batch, o + 9),
                 to: batch[o + 17..o + 37].try_into().unwrap(),
                 fee: u64_at(batch, o + 37),
+                fast_fee: u64_at(batch, o + 45),
+                at: u64_at(batch, o + 53),
             },
             3 => Record::Cancel { id: u64_at(batch, o + 1) },
             4 => Record::Bond { network: batch[o + 1], amount: u64_at(batch, o + 2) },
@@ -191,8 +201,19 @@ pub struct Lock {
     pub amount: u64,
     pub recipient: [u8; 32],
     pub fee: u64,
+    /// For an attester of the fast path, or the recipient (D122).
+    pub fast_fee: u64,
+    /// Its block's time, in seconds.
+    pub locked_at: u64,
     pub fee_paid: bool,
     pub returned: bool,
+}
+
+impl Lock {
+    /// The LOCK record that states this lock.
+    pub fn record(&self) -> Record {
+        Record::Lock { id: self.id, amount: self.amount, recipient: self.recipient, fee: self.fee, fast_fee: self.fast_fee, at: self.locked_at }
+    }
 }
 
 /// A burn request in the vault on Solana. Amounts in gwei.
@@ -202,7 +223,37 @@ pub struct Request {
     pub amount: u64,
     pub to: [u8; 20],
     pub fee: u64,
+    /// For an attester who pays it at once on Ethereum, or `to` (D122).
+    pub fast_fee: u64,
+    /// When it was made, in seconds.
+    pub requested_at: u64,
     pub fee_paid: bool,
+}
+
+impl Request {
+    /// The REQUEST record that states this burn.
+    pub fn record(&self) -> Record {
+        Record::Request { id: self.id, amount: self.amount, to: self.to, fee: self.fee, fast_fee: self.fast_fee, at: self.requested_at }
+    }
+}
+
+/// An attest of a lock on Solana: a receipt issued at once (section 11.7).
+#[derive(Clone, Debug)]
+pub struct FastLock {
+    /// Its number: attests are counted, so every one can be found.
+    pub id: u64,
+    /// The attester, as the vault names it.
+    pub attester: String,
+    /// The LOCK record it stated.
+    pub record: Record,
+    pub collateral: u64,
+    pub attested_at: i64,
+    /// The claim linked to it; zero if none.
+    pub claim: u64,
+    /// The attest of the same lock made before it, settled first; zero if
+    /// none (D126).
+    pub prev: u64,
+    pub burned: bool,
 }
 
 #[async_trait]
@@ -238,6 +289,9 @@ pub trait VaultApp: Send + Sync {
     async fn open_checkpoint(&self, confirmations: u16, paid: Amount) -> anyhow::Result<u64>;
 
     // Messages (D107)
+    /// The batch of message `index` of `operator`'s chain, as this vault
+    /// published it when it processed the message; `None` when it has not.
+    async fn message_batch(&self, operator: &str, index: u64) -> anyhow::Result<Option<Vec<u8>>>;
     /// Submits the next message of `operator`'s chain.
     async fn submit_message(&self, operator: &str, tx: &TxProof, input_index: u32, tag_index: u32, batch: &[u8]) -> anyhow::Result<()>;
 
@@ -256,6 +310,68 @@ pub trait VaultApp: Send + Sync {
     async fn receipt_issued(&self, id: u64) -> anyhow::Result<bool>;
     /// Ethereum: whether request `id` was paid.
     async fn request_paid(&self, id: u64) -> anyhow::Result<bool>;
+
+    // Fast paths (section 11.7): each network's own; the other's default
+    // says so.
+    /// Solana: issues lock `l`'s receipt at once, locking 1.25 times its
+    /// amount of this node's vETH. Returns the attest's number.
+    async fn attest_lock(&self, _l: &Lock) -> anyhow::Result<u64> {
+        anyhow::bail!("no attest of locks on this network")
+    }
+    /// Solana: how many attests lock `id` had, if any.
+    async fn lock_attest(&self, _id: u64) -> anyhow::Result<Option<u64>> {
+        Ok(None)
+    }
+    /// Solana: the open attests of lock `id`, newest first, and when its
+    /// first attest was made; `None` when it was never attested.
+    async fn lock_attests(&self, _id: u64) -> anyhow::Result<Option<(i64, Vec<FastLock>)>> {
+        Ok(None)
+    }
+    /// Solana: attests so far.
+    async fn attest_count(&self) -> anyhow::Result<u64> {
+        Ok(0)
+    }
+    /// Solana: attest `id`, until it is settled.
+    async fn fast_lock(&self, _id: u64) -> anyhow::Result<Option<FastLock>> {
+        Ok(None)
+    }
+    /// Solana: links attest `attest` to claim `claim`, opened in time and
+    /// carrying the record it stated; `linked` is the claim linked before.
+    async fn link_fast(&self, _claim: u64, _attest: u64, _linked: Option<u64>) -> anyhow::Result<()> {
+        anyhow::bail!("no attest of locks on this network")
+    }
+    /// Solana: burns an attest with no claim linked in time, or whose linked
+    /// claim was refused.
+    async fn burn_fast(&self, _attest: u64, _linked: Option<u64>) -> anyhow::Result<()> {
+        anyhow::bail!("no attest of locks on this network")
+    }
+    /// Solana: settles attest `attest` with accepted claim `claim`.
+    async fn settle_fast(&self, _claim: u64, _attest: u64) -> anyhow::Result<()> {
+        anyhow::bail!("no attest of locks on this network")
+    }
+    /// Ethereum: pays burn `r` at once from this node's ETH.
+    async fn fast_pay(&self, _r: &Request) -> anyhow::Result<()> {
+        anyhow::bail!("no fast pay on this network")
+    }
+    /// Ethereum: who paid burn `r` at once, stating its true record, if
+    /// anyone.
+    async fn fast_paid_by(&self, _r: &Request) -> anyhow::Result<Option<String>> {
+        Ok(None)
+    }
+    /// Ethereum: pays an accepted claim's request `request` to whoever it
+    /// is owed.
+    async fn pay_request(&self, _claim: u64, _request: u64) -> anyhow::Result<()> {
+        anyhow::bail!("no requests paid on this network")
+    }
+    /// Solana: this node's vETH credit, in gwei: what attests and slashes
+    /// paid it.
+    async fn veth_credit(&self) -> anyhow::Result<u64> {
+        Ok(0)
+    }
+    /// Solana: withdraws this node's credit, its vETH to its own account.
+    async fn withdraw_credit(&self) -> anyhow::Result<()> {
+        anyhow::bail!("no vETH credit on this network")
+    }
 
     // Claims (D111)
     async fn claim_count(&self) -> anyhow::Result<u64>;
@@ -278,19 +394,19 @@ mod tests {
     #[test]
     fn records_round_trip_in_the_bytes_of_section_11_5() {
         let records = vec![
-            Record::Lock { id: 99, amount: 1_000_000_000, recipient: [7; 32], fee: 5 },
-            Record::Request { id: 7, amount: 2, to: [9; 20], fee: 0 },
+            Record::Lock { id: 99, amount: 1_000_000_000, recipient: [7; 32], fee: 5, fast_fee: 6, at: 1_800_000_000 },
+            Record::Request { id: 7, amount: 2, to: [9; 20], fee: 0, fast_fee: 3, at: 1_800_000_001 },
             Record::Cancel { id: 99 },
             Record::Bond { network: ETHEREUM, amount: 10 },
             Record::Exit,
         ];
         let batch = encode(&records);
-        assert_eq!(batch.len(), 57 + 45 + 9 + 10 + 1);
+        assert_eq!(batch.len(), 73 + 61 + 9 + 10 + 1);
         assert_eq!(&batch[..9], &[1, 0, 0, 0, 0, 0, 0, 0, 99]);
         assert_eq!(decode(&batch).unwrap(), records);
         // EXIT must be last; unknown kinds and short records do not parse.
         assert!(decode(&encode(&[Record::Exit, Record::Cancel { id: 1 }])).is_none());
         assert!(decode(&[9]).is_none());
-        assert!(decode(&batch[..56]).is_none());
+        assert!(decode(&batch[..72]).is_none());
     }
 }

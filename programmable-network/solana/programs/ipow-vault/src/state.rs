@@ -19,6 +19,8 @@ pub struct Config {
     pub claim_count: u64,
     pub request_count: u64,
     pub checkpoint_count: u64,
+    /// Attests of locks so far: attest `n` is at ["fast", n] (section 11.7).
+    pub attest_count: u64,
     pub bump: u8,
 }
 
@@ -68,6 +70,9 @@ pub struct Claim {
     pub objections: u32,
     /// Set when decided: what each deposit of the winning side collects.
     pub payout: u64,
+    /// When it opened: an attest waits only for a claim opened in time
+    /// (section 11.7).
+    pub opened_at: i64,
     /// The LOCK records it carries, one after the other.
     #[max_len(MAX_ACTING_BYTES)]
     pub records: Vec<u8>,
@@ -100,6 +105,11 @@ pub struct Request {
     pub amount: u64,
     pub to: [u8; 20],
     pub fee: u64,
+    /// For the attester who pays it at once on Ethereum, or the user
+    /// (D122). Burned with the amount.
+    pub fast_fee: u64,
+    /// When it was made, in its REQUEST record (D124).
+    pub requested_at: i64,
     pub fee_paid: bool,
     pub bump: u8,
 }
@@ -110,8 +120,49 @@ pub struct Request {
 #[derive(InitSpace)]
 pub struct LockMark {
     pub lock_id: u64,
+    /// Its receipt counted: issued after its claim, or delivered by an
+    /// attest settled with the true record.
     pub issued: bool,
     pub given_up: bool,
+    /// Attests of the lock so far (D126), and those settled. With any, its
+    /// receipt comes by settling them, or after `first_at` and 7 days when
+    /// none stated the true record.
+    pub attests: u32,
+    pub settled: u32,
+    /// When its first attest was made: it takes attests for 7 days from it.
+    pub first_at: i64,
+    /// Its latest attest: each names the one before, and they are settled
+    /// in the order made.
+    pub last_attest: u64,
+    pub bump: u8,
+}
+
+/// A lock on Ethereum whose receipt an attester issued at once, with the
+/// LOCK record it stated and the vETH it locked (section 11.7, D123).
+#[account]
+#[derive(InitSpace)]
+pub struct FastLock {
+    /// Its number, counted in `Config::attest_count`: guardians find every
+    /// attest by it, also one naming a lock that does not exist.
+    pub id: u64,
+    pub lock_id: u64,
+    pub attester: Pubkey,
+    pub amount: u64,
+    pub recipient: Pubkey,
+    pub fee: u64,
+    pub fast_fee: u64,
+    pub locked_at: i64,
+    /// vETH locked by the attester, 1.25 times the amount.
+    pub collateral: u64,
+    pub attested_at: i64,
+    /// A claim carrying the same record, opened in time; zero if none.
+    pub claim: u64,
+    /// The attest of the same lock made before it, zero if none: settled
+    /// first (D126).
+    pub prev: u64,
+    /// The attester's vETH was burned: when the true record arrives, the
+    /// receipt goes to the attester.
+    pub burned: bool,
     pub bump: u8,
 }
 
@@ -136,6 +187,25 @@ pub struct Buffer {
     #[max_len(MAX_BATCH)]
     pub batch: Vec<u8>,
     pub bump: u8,
+}
+
+/// The batch of one processed message, published so that anyone can bring
+/// the message to the other network (section 11.3). Anyone may close it
+/// `MESSAGE_KEPT` after it was processed, its rent back to whoever paid it.
+#[account]
+pub struct Message {
+    pub operator: Pubkey,
+    pub payer: Pubkey,
+    pub index: u64,
+    pub processed_at: i64,
+    pub batch: Vec<u8>,
+    pub bump: u8,
+}
+
+impl Message {
+    pub fn space(batch_len: usize) -> usize {
+        8 + 32 + 32 + 8 + 8 + 4 + batch_len + 1
+    }
 }
 
 /// A Bitcoin transaction in a block below a real block (D108).

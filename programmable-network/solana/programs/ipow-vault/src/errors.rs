@@ -27,4 +27,9 @@ pub enum VaultError {
     Overflow,
     TooLarge,
     NotAuthority,
+    NotOperator,
+    WrongRecord,
+    AlreadyDone,
+    NotRefused,
+    NotInOrder,
 }

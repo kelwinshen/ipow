@@ -177,6 +177,13 @@ Mallory's deposit goes to Carl, and nothing of Carl's is slashed.
 At first nobody holds vETH, so every mint takes the slow path. Fast
 redemption works from the first day.
 
+Settled on 2026-10-01 (D122, D123, section 11.7 of the spec): the user
+sets the fast fee in the lock or burn; an attester of a lock must be an
+operator, and a claim carrying the same LOCK record must open within 7
+days of the attest, or its 1.25 vETH can be burned. Handing over the
+attester's own vETH instead was rejected: it only exchanges vETH that
+exists, and mints nothing.
+
 ## Many networks and tokens
 
 Each asset crosses on its own pair of networks, with its own pair chains

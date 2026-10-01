@@ -372,6 +372,18 @@ pub fn tag_index(raw: &[u8]) -> Option<u32> {
     t.output.iter().position(|o| is_payload(o.script_pubkey.as_bytes())).map(|i| i as u32)
 }
 
+/// The output that carries `payload`, wherever in the transaction.
+pub fn output_carrying(raw: &[u8], payload: &[u8; 32]) -> Option<u32> {
+    let t: bitcoin::Transaction = bitcoin::consensus::deserialize(raw).ok()?;
+    t.output
+        .iter()
+        .position(|o| {
+            let s = o.script_pubkey.as_bytes();
+            is_payload(s) && s[2..] == payload[..]
+        })
+        .map(|i| i as u32)
+}
+
 /// The input that spends `coin`: for a chain head, also the output that is
 /// the next chain head (N23).
 pub fn input_spending(raw: &[u8], coin: ([u8; 32], u32)) -> Option<u32> {

@@ -166,6 +166,42 @@ impl VaultApp for EvmVault {
         Ok(())
     }
 
+    async fn message_batch(&self, operator: &str, index: u64) -> anyhow::Result<Option<Vec<u8>>> {
+        let op = Self::operator(operator)?;
+        let c = self.contract().getChain(op).call().await?;
+        if index >= c.messages {
+            return Ok(None);
+        }
+        // Each message's event names the block of the one before: walked
+        // back from the last, one block at a time.
+        let mut block = c.lastMessageBlock;
+        while block != 0 {
+            let filter = Filter::new()
+                .address(self.address)
+                .event_signature(IPoWVault::MessageBatch::SIGNATURE_HASH)
+                .topic1(op.into_word())
+                .from_block(block)
+                .to_block(block);
+            // Several messages may share a block: the lowest of them names the
+            // block of the one before it.
+            let mut lowest: Option<(u64, u64)> = None;
+            for log in self.net.provider().get_logs(&filter).await? {
+                let e = IPoWVault::MessageBatch::decode_log(&log.inner)?.data;
+                if e.index == index {
+                    return Ok(Some(e.batch.to_vec()));
+                }
+                if lowest.is_none_or(|(i, _)| e.index < i) {
+                    lowest = Some((e.index, e.prevBlock));
+                }
+            }
+            match lowest {
+                Some((i, prev)) if i > index && prev != 0 && prev < block => block = prev,
+                _ => break,
+            }
+        }
+        Ok(None)
+    }
+
     async fn final_locks_after(&self, after: u64, limit: usize) -> anyhow::Result<Vec<Lock>> {
         // A lock's number is only settled once its block is final: a
         // reorganisation could give the number another lock (section 11.5).
@@ -187,7 +223,7 @@ impl VaultApp for EvmVault {
         if l.owner == Address::ZERO {
             return Ok(None);
         }
-        Ok(Some(Lock { id, amount: l.amount, recipient: l.recipient.0, fee: l.fee, fee_paid: l.feePaid, returned: l.returned }))
+        Ok(Some(Lock { id, amount: l.amount, recipient: l.recipient.0, fee: l.fee, fast_fee: l.fastFee, locked_at: l.lockedAt, fee_paid: l.feePaid, returned: l.returned }))
     }
 
     async fn requests_after(&self, _after: u64, _limit: usize) -> anyhow::Result<Vec<Request>> {
@@ -208,6 +244,22 @@ impl VaultApp for EvmVault {
 
     async fn request_paid(&self, id: u64) -> anyhow::Result<bool> {
         Ok(self.contract().requestPaid(id).call().await?)
+    }
+
+    async fn fast_pay(&self, r: &Request) -> anyhow::Result<()> {
+        let amount = U256::from(r.amount) * U256::from(1_000_000_000u64);
+        send!(self.net, self.contract().fastPay(r.id, Address::from(r.to), r.fast_fee, r.requested_at).value(amount));
+        Ok(())
+    }
+
+    async fn fast_paid_by(&self, r: &Request) -> anyhow::Result<Option<String>> {
+        let f = self.contract().getFastPay(r.id, Address::from(r.to), r.amount, r.fast_fee, r.requested_at).call().await?;
+        Ok((f.attester != Address::ZERO).then(|| f.attester.to_string()))
+    }
+
+    async fn pay_request(&self, claim: u64, request: u64) -> anyhow::Result<()> {
+        send!(self.net, self.contract().payRequest(U256::from(claim), request));
+        Ok(())
     }
 
     async fn claim_count(&self) -> anyhow::Result<u64> {

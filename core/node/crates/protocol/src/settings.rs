@@ -75,13 +75,29 @@ pub struct VaultSettings {
     /// The operator: the least fee, in gwei, of a record worth carrying.
     #[serde(default)]
     pub min_fee_gwei: u64,
-    /// The operator: what to pay, on each network, to open a checkpoint job
-    /// when no real block is above a message. None: never opens one.
+    /// The operator and the guardian: what to pay, on each network, to open
+    /// a checkpoint job when no real block is above a message (for the
+    /// guardian, a lie it would bring). None: never opens one.
     pub checkpoint_paid_ethereum: Option<String>,
     pub checkpoint_paid_solana: Option<String>,
     /// The operator: the file that keeps every batch it wrote.
     #[serde(default = "default_journal")]
     pub journal: String,
+    /// The operator: the fast paths (section 11.7). None: it attests no
+    /// lock and pays no burn at once.
+    pub fast: Option<FastSettings>,
+}
+
+/// What the operator attests and pays at once.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FastSettings {
+    /// The least fast fee, in gwei, worth attesting a lock or paying a burn.
+    pub min_fee_gwei: u64,
+    /// The largest lock or burn, in gwei, it attests or pays: it locks 1.25
+    /// times a lock's amount in vETH, or pays a burn's amount in ETH, until
+    /// the claim carrying it is accepted.
+    pub max_gwei: u64,
 }
 
 fn zero() -> String {

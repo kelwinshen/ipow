@@ -177,13 +177,18 @@ async fn main() -> anyhow::Result<()> {
                         v.checkpoint_paid_solana.as_ref().map(|a| a.parse().expect("checked when the settings were read")),
                     ],
                     journal: PathBuf::from(&v.journal),
+                    fast: v.fast.clone(),
                 },
             );
             info!(journal = %v.journal, "vault operator");
             pairs.push((Arc::new(op), eth.net.clone()));
         }
         if settings.runs(Role::Guardian) {
-            pairs.push((Arc::new(VaultGuardian::new(eth.clone(), sol.clone())), eth.net.clone()));
+            let checkpoint_paid = [
+                v.checkpoint_paid_ethereum.as_ref().map(|a| a.parse().expect("checked when the settings were read")),
+                v.checkpoint_paid_solana.as_ref().map(|a| a.parse().expect("checked when the settings were read")),
+            ];
+            pairs.push((Arc::new(VaultGuardian::new(eth.clone(), sol.clone(), btc.clone(), checkpoint_paid)), eth.net.clone()));
         }
     }
 

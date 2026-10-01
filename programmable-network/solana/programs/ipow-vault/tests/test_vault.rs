@@ -117,11 +117,25 @@ fn merkle(txids: &[[u8; 32]], index: usize) -> ([u8; 32], Vec<[u8; 32]>) {
 // Records (section 11.5): amounts in gwei, big-endian
 // ---------------------------------------------------------------------
 
+/// The time of the locks in the tests' records: late enough that an attest
+/// earns the whole fast fee, unless a test moves the clock there (D124).
+const LOCKED_AT: i64 = T0 + 60 * DAY;
+/// The time of the burns in the tests' records: the test moves the clock
+/// there before the burn.
+const BURNED_AT: i64 = T0 + 50 * DAY;
+
 fn lock_rec(id: u64, amount: u64, recipient: &Pubkey, fee: u64) -> Vec<u8> {
-    [&[1u8][..], &id.to_be_bytes(), &amount.to_be_bytes(), recipient.as_ref(), &fee.to_be_bytes()].concat()
+    lock_rec_fast(id, amount, recipient, fee, 0)
+}
+fn lock_rec_fast(id: u64, amount: u64, recipient: &Pubkey, fee: u64, fast_fee: u64) -> Vec<u8> {
+    [&[1u8][..], &id.to_be_bytes(), &amount.to_be_bytes(), recipient.as_ref(), &fee.to_be_bytes(), &fast_fee.to_be_bytes(), &LOCKED_AT.to_be_bytes()]
+        .concat()
 }
 fn request_rec(id: u64, amount: u64, to: &[u8; 20], fee: u64) -> Vec<u8> {
-    [&[2u8][..], &id.to_be_bytes(), &amount.to_be_bytes(), to, &fee.to_be_bytes()].concat()
+    request_rec_fast(id, amount, to, fee, 0, BURNED_AT)
+}
+fn request_rec_fast(id: u64, amount: u64, to: &[u8; 20], fee: u64, fast_fee: u64, at: i64) -> Vec<u8> {
+    [&[2u8][..], &id.to_be_bytes(), &amount.to_be_bytes(), to, &fee.to_be_bytes(), &fast_fee.to_be_bytes(), &at.to_be_bytes()].concat()
 }
 fn cancel_rec(id: u64) -> Vec<u8> {
     [&[3u8][..], &id.to_be_bytes()].concat()
@@ -204,6 +218,9 @@ fn request_pda(id: u64) -> Pubkey {
 }
 fn lock_pda(id: u64) -> Pubkey {
     vt(&[b"lock", &id.to_le_bytes()])
+}
+fn fast_pda(id: u64) -> Pubkey {
+    vt(&[b"fast", &id.to_le_bytes()])
 }
 fn ata(owner: &Pubkey) -> Pubkey {
     anchor_spl::associated_token::get_associated_token_address(owner, &mint())
@@ -734,11 +751,13 @@ impl World {
     fn submit(&mut self, operator: &Pubkey, m: &Msg, real: Ref, from: &Keypair, extra: &[Pubkey]) -> Result<(), String> {
         let (btc, walk) = self.btc(m, real);
         let id = self.vault_config().claim_count + 1;
+        let index = self.chain(operator).messages;
         let mut ix = self.ix(
             ipow_vault::ID,
             ipow_vault::client::accounts::SubmitMessage {
                 config: config(),
                 chain: chain_pda(operator),
+                message: message_pda(operator, index),
                 real: real_pda(&real),
                 walk,
                 node: node_pda(&m.block),
@@ -828,6 +847,10 @@ impl World {
     }
 
     fn make_request(&mut self, who: &Keypair, amount: u64, fee: u64) -> Result<u64, String> {
+        self.make_request_fast(who, amount, fee, 0)
+    }
+
+    fn make_request_fast(&mut self, who: &Keypair, amount: u64, fee: u64, fast_fee: u64) -> Result<u64, String> {
         let id = self.vault_config().request_count + 1;
         let ix = self.ix(
             ipow_vault::ID,
@@ -841,7 +864,7 @@ impl World {
                 token_program: TOKEN,
                 system_program: SYSTEM,
             },
-            ipow_vault::client::args::MakeRequest { amount, to: ETH_USER, fee },
+            ipow_vault::client::args::MakeRequest { amount, to: ETH_USER, fee, fast_fee },
         );
         self.send(ix, &[who])?;
         Ok(id)
@@ -862,6 +885,93 @@ impl World {
             ipow_vault::client::args::WithdrawCredit {},
         );
         self.send(ix, &[who])
+    }
+
+    /// Attests lock `lock_id`; returns the attest's number.
+    fn attest(&mut self, who: &Keypair, lock_id: u64, amount: u64, recipient: &Pubkey, fee: u64, fast_fee: u64) -> Result<u64, String> {
+        let n = self.vault_config().attest_count + 1;
+        let to = ata(recipient);
+        if self.ctx.svm.get_account(&to).is_none() {
+            self.veth_account(recipient);
+        }
+        let ix = self.ix(
+            ipow_vault::ID,
+            ipow_vault::client::accounts::AttestLock {
+                config: config(),
+                chain: chain_pda(&who.pubkey()),
+                mark: lock_pda(lock_id),
+                fast: fast_pda(n),
+                mint: mint(),
+                holding: holding(),
+                from: ata(&who.pubkey()),
+                to,
+                attester: who.pubkey(),
+                token_program: TOKEN,
+                system_program: SYSTEM,
+            },
+            ipow_vault::client::args::AttestLock { lock_id, amount, recipient: *recipient, fee, fast_fee, locked_at: LOCKED_AT },
+        );
+        self.send(ix, &[who])?;
+        Ok(n)
+    }
+
+    fn fast(&self, n: u64) -> Option<ipow_vault::accounts::FastLock> {
+        match self.ctx.svm.get_account(&fast_pda(n)) {
+            Some(a) if !a.data.is_empty() => Some(ipow_vault::accounts::FastLock::try_deserialize(&mut &a.data[..]).unwrap()),
+            _ => None,
+        }
+    }
+
+    fn link_fast(&mut self, who: &Keypair, claim_id: u64, attest: u64, linked: Option<u64>) -> Result<(), String> {
+        let ix = self.ix(
+            ipow_vault::ID,
+            ipow_vault::client::accounts::LinkFast { fast: fast_pda(attest), claim: claim_pda(claim_id), linked: linked.map(claim_pda), attester: who.pubkey() },
+            ipow_vault::client::args::LinkFast { claim_id, attest },
+        );
+        self.send(ix, &[who])
+    }
+
+    fn burn_fast(&mut self, caller: &Keypair, attest: u64, linked: Option<u64>) -> Result<(), String> {
+        let ix = self.ix(
+            ipow_vault::ID,
+            ipow_vault::client::accounts::BurnFast {
+                config: config(),
+                fast: fast_pda(attest),
+                linked: linked.map(claim_pda),
+                mint: mint(),
+                holding: holding(),
+                caller_credit: credit_pda(&caller.pubkey()),
+                caller: caller.pubkey(),
+                token_program: TOKEN,
+                system_program: SYSTEM,
+            },
+            ipow_vault::client::args::BurnFast { attest },
+        );
+        self.send(ix, &[caller])
+    }
+
+    fn settle_fast(&mut self, caller: &Keypair, claim_id: u64, attest: u64, attester: &Pubkey, to: Option<Pubkey>) -> Result<(), String> {
+        let ix = self.ix(
+            ipow_vault::ID,
+            ipow_vault::client::accounts::SettleFast {
+                config: config(),
+                claim: claim_pda(claim_id),
+                fast: fast_pda(attest),
+                mark: lock_pda(self.fast(attest).map_or(0, |f| f.lock_id)),
+                prev: self.fast(attest).and_then(|f| (f.prev != 0).then(|| fast_pda(f.prev))),
+                attester: *attester,
+                mint: mint(),
+                holding: holding(),
+                to,
+                attester_credit: credit_pda(attester),
+                caller_credit: credit_pda(&caller.pubkey()),
+                caller: caller.pubkey(),
+                token_program: TOKEN,
+                system_program: SYSTEM,
+            },
+            ipow_vault::client::args::SettleFast { claim_id, attest },
+        );
+        self.send(ix, &[caller])
     }
 
     /// The operator's chain registered, its messages `batches` written below
@@ -961,6 +1071,7 @@ fn refuses_a_forged_message_and_keeps_the_order() {
         ipow_vault::client::accounts::SubmitMessage {
             config: config(),
             chain: chain_pda(&op.pubkey()),
+            message: message_pda(&op.pubkey(), 0),
             real: real_pda(&real),
             walk,
             node: node_pda(&forged.block),
@@ -1110,6 +1221,7 @@ fn a_true_request_earns_its_fee_once_and_a_false_one_slashes_the_veth_bond() {
     w.sub(&pair, 2, real, &[]).unwrap();
     assert_eq!(w.chain(&op.pubkey()).stated, 3 * GWEI_PER_ETH);
 
+    w.set_now(BURNED_AT);
     let r1 = w.make_request(&user, GWEI_PER_ETH, 5).unwrap();
     let r2 = w.make_request(&user, 1, 0).unwrap();
     w.sub(&pair, 3, real, &[request_pda(r1)]).unwrap();
@@ -1287,6 +1399,10 @@ fn certifies_no_job_below_the_minimum_escrow() {
     expect_err(w.record_real_from_job(job_id), "EscrowTooLow");
 }
 
+fn message_pda(operator: &Pubkey, index: u64) -> Pubkey {
+    vt(&[b"message", operator.as_ref(), &index.to_le_bytes()])
+}
+
 fn buffer_pda(owner: &Pubkey) -> Pubkey {
     vt(&[b"buffer", owner.as_ref()])
 }
@@ -1301,7 +1417,7 @@ fn a_large_message_goes_through_a_buffer_and_one_past_the_limits_cannot_be_uploa
     let (pair, real) = w.ready(vec![bond_rec(ETHEREUM, 100 * GWEI_PER_ETH), locks]);
     w.peer_bond(&pair, real);
 
-    // 570 bytes of records do not fit in one Solana transaction with a
+    // 730 bytes of records do not fit in one Solana transaction with a
     // proof from a full block. The test Solana does not enforce the size,
     // so the buffer's path is shown directly.
     let m = pair.msgs[1].clone();
@@ -1325,6 +1441,7 @@ fn a_large_message_goes_through_a_buffer_and_one_past_the_limits_cannot_be_uploa
         write(&mut w, false, chunk.to_vec()).unwrap();
     }
     let (mut btc, walk) = w.btc(&m, real);
+    let index = w.chain(&op.pubkey()).messages;
     btc.raw_tx = vec![];
     let id = w.vault_config().claim_count + 1;
     let ix = w.ix(
@@ -1332,6 +1449,7 @@ fn a_large_message_goes_through_a_buffer_and_one_past_the_limits_cannot_be_uploa
         ipow_vault::client::accounts::SubmitMessage {
             config: config(),
             chain: chain_pda(&op.pubkey()),
+            message: message_pda(&op.pubkey(), index),
             real: real_pda(&real),
             walk,
             node: node_pda(&m.block),
@@ -1349,10 +1467,10 @@ fn a_large_message_goes_through_a_buffer_and_one_past_the_limits_cannot_be_uploa
         ipow_vault::client::args::SubmitMessage { operator: op.pubkey(), btc, input_index: 0, tag_index: 1, batch: vec![] },
     );
     w.send(ix, &[&g]).unwrap();
-    assert_eq!(w.claim(id).records.len(), 570);
+    assert_eq!(w.claim(id).records.len(), 730);
 
     // Past the limits of section 11.3, a buffer takes nothing more.
-    expect_err(write(&mut w, false, vec![0; 2048 - 570 + 1]), "TooLarge");
+    expect_err(write(&mut w, false, vec![0; 2048 - 730 + 1]), "TooLarge");
     expect_err(write(&mut w, true, vec![0; 1024]), "TooLarge");
     let close = w.ix(
         ipow_vault::ID,
@@ -1410,4 +1528,402 @@ fn takes_the_same_bond_for_solana_again_as_true_and_another_amount_as_false() {
     assert_eq!(w.chain(&op.pubkey()).stated, GWEI_PER_ETH);
     w.sub(&pair, 4, real, &[]).unwrap();
     assert!(w.chain(&op.pubkey()).slashed);
+}
+
+/// Each processed message's batch is published in an account of its own,
+/// which its operator may close only after 30 days.
+#[test]
+fn publishes_each_batch_and_keeps_it_30_days() {
+    let mut w = World::new();
+    let op = w.operator.insecure_clone();
+    let (pair, real) = w.ready(vec![bond_rec(ETHEREUM, 7)]);
+    w.sub(&pair, 0, real, &[]).unwrap();
+    let m: ipow_vault::accounts::Message = w.ctx.get_account(&message_pda(&op.pubkey(), 0)).unwrap();
+    assert_eq!(m.batch, pair.msgs[0].batch);
+    assert_eq!(m.index, 0);
+    // The guardian submitted the message, so it paid and gets the rent
+    // back; anyone may close it, here the operator.
+    let g = w.guardian.pubkey();
+    assert_eq!(m.payer, g);
+    let close = |w: &mut World, payer: Pubkey| {
+        let ix = w.ix(
+            ipow_vault::ID,
+            ipow_vault::client::accounts::CloseMessage { message: message_pda(&op.pubkey(), 0), payer },
+            ipow_vault::client::args::CloseMessage {},
+        );
+        w.send(ix, &[&op])
+    };
+    expect_err(close(&mut w, g), "WindowNotOver");
+    w.later(30 * DAY);
+    // Its rent goes to no one else.
+    expect_err(close(&mut w, op.pubkey()), "ConstraintAddress");
+    let before = w.ctx.svm.get_account(&g).unwrap().lamports;
+    close(&mut w, g).unwrap();
+    assert!(w.ctx.svm.get_account(&g).unwrap().lamports > before);
+    assert!(w.ctx.svm.get_account(&message_pda(&op.pubkey(), 0)).is_none_or(|a| a.lamports == 0));
+}
+
+// ---------------------------------------------------------------------
+// Fast paths (section 11.7, D122, D123)
+// ---------------------------------------------------------------------
+
+/// vETH for the operator to attest with: `amount` from the user's lock #1.
+fn attester_funds(w: &mut World, user_veth: Pubkey, amount: u64) {
+    let user = w.user.insecure_clone();
+    let op = w.operator.pubkey();
+    let op_veth = w.veth_account(&op);
+    token_transfer(w, &user, user_veth, op_veth, amount);
+}
+
+#[test]
+fn an_attester_issues_a_receipt_at_once_and_is_repaid_with_the_fast_fee() {
+    let mut w = World::new();
+    let op = w.operator.insecure_clone();
+    let g = w.guardian.insecure_clone();
+    let alice = w.stranger.pubkey();
+    let fast_fee = 1_000_000;
+    let (pair, real, user_veth) = with_veth(&mut w, 10 * GWEI_PER_ETH, vec![lock_rec_fast(5, GWEI_PER_ETH, &alice, 0, fast_fee)]);
+    attester_funds(&mut w, user_veth, 2 * GWEI_PER_ETH);
+    let supply = w.supply();
+
+    // Only an operator attests.
+    w.veth_account(&g.pubkey());
+    expect_err(w.attest(&g, 5, GWEI_PER_ETH, &alice, 0, fast_fee), "AccountNotInitialized");
+    // The receipt at once, new vETH; 1.25 of the attester's vETH locked.
+    let n = w.attest(&op, 5, GWEI_PER_ETH, &alice, 0, fast_fee).unwrap();
+    assert_eq!(w.fast(n).unwrap().lock_id, 5);
+    assert_eq!(w.tokens(&ata(&alice)), GWEI_PER_ETH);
+    assert_eq!(w.supply(), supply + GWEI_PER_ETH);
+    assert_eq!(w.tokens(&ata(&op.pubkey())), 2 * GWEI_PER_ETH - GWEI_PER_ETH * 5 / 4);
+    assert!(w.attest(&op, 5, GWEI_PER_ETH, &alice, 0, fast_fee).is_err());
+    assert_eq!(w.vault_config().attest_count, n);
+
+    // The claim carrying the same record opens and is linked.
+    w.sub(&pair, 2, real, &[]).unwrap();
+    let id = w.vault_config().claim_count;
+    assert_eq!(w.claim(id).value, GWEI_PER_ETH + fast_fee);
+    expect_err(w.settle_fast(&g, id, n, &op.pubkey(), None), "NotAccepted");
+    w.link_fast(&op, id, n, None).unwrap();
+    assert_eq!(w.fast(n).unwrap().claim, id);
+    // Waiting on its claim, the attest cannot be burned, even past 7 days.
+    w.later(WEEK);
+    expect_err(w.burn_fast(&g, n, Some(id)), "NotRefused");
+    w.decide(id).unwrap();
+    // Not issued a second time; nor can it be given up.
+    let to = ata(&alice);
+    assert!(w.issue(id, 5, to).is_err());
+    assert!(w.give_up(id, 5, &w.stranger.insecure_clone()).is_err());
+    w.settle_fast(&g, id, n, &op.pubkey(), None).unwrap();
+    assert_eq!(w.credit(&op.pubkey()).1, GWEI_PER_ETH * 5 / 4 + fast_fee);
+    assert_eq!(w.credit(&g.pubkey()).1, 0);
+    assert_eq!(w.supply(), supply + GWEI_PER_ETH + fast_fee);
+    assert!(w.fast(n).is_none());
+    assert!(w.settle_fast(&g, id, n, &op.pubkey(), None).is_err());
+}
+
+#[test]
+fn an_unlinked_attest_is_burned_after_7_days_and_a_late_true_record_pays_the_attester() {
+    let mut w = World::new();
+    let op = w.operator.insecure_clone();
+    let g = w.guardian.insecure_clone();
+    let alice = w.stranger.pubkey();
+    let (pair, real, user_veth) = with_veth(&mut w, 10 * GWEI_PER_ETH, vec![lock_rec_fast(5, GWEI_PER_ETH, &alice, 0, 7)]);
+    attester_funds(&mut w, user_veth, 2 * GWEI_PER_ETH);
+    let supply = w.supply();
+    let n = w.attest(&op, 5, GWEI_PER_ETH, &alice, 0, 7).unwrap();
+    expect_err(w.burn_fast(&g, n, None), "WindowNotOver");
+    w.later(WEEK);
+    // No claim linked in 7 days: the receipt's amount is burned, the rest to
+    // whoever burns it.
+    w.burn_fast(&g, n, None).unwrap();
+    assert_eq!(w.supply(), supply);
+    assert_eq!(w.credit(&g.pubkey()).1, GWEI_PER_ETH / 4);
+    expect_err(w.burn_fast(&g, n, None), "AlreadyDone");
+    // The true record arrives late: the attester gets the receipt back.
+    w.sub(&pair, 2, real, &[]).unwrap();
+    let id = w.vault_config().claim_count;
+    expect_err(w.link_fast(&op, id, n, None), "AlreadyDone");
+    w.later(WEEK);
+    w.decide(id).unwrap();
+    w.settle_fast(&g, id, n, &op.pubkey(), None).unwrap();
+    assert_eq!(w.credit(&op.pubkey()).1, GWEI_PER_ETH + 7);
+    assert_eq!(w.supply(), supply + GWEI_PER_ETH + 7);
+}
+
+#[test]
+fn an_attester_that_stated_the_lock_wrongly_loses_and_the_true_receipt_is_issued() {
+    let mut w = World::new();
+    let op = w.operator.insecure_clone();
+    let g = w.guardian.insecure_clone();
+    let alice = w.stranger.pubkey();
+    let (pair, real, user_veth) = with_veth(&mut w, 10 * GWEI_PER_ETH, vec![lock_rec_fast(5, GWEI_PER_ETH, &alice, 0, 0)]);
+    attester_funds(&mut w, user_veth, 2 * GWEI_PER_ETH);
+    let supply = w.supply();
+    // The attester names the guardian as the recipient.
+    let n = w.attest(&op, 5, GWEI_PER_ETH, &g.pubkey(), 0, 0).unwrap();
+    assert_eq!(w.tokens(&ata(&g.pubkey())), GWEI_PER_ETH);
+    w.sub(&pair, 2, real, &[]).unwrap();
+    let id = w.vault_config().claim_count;
+    expect_err(w.link_fast(&op, id, n, None), "WrongRecord");
+    w.later(WEEK);
+    w.decide(id).unwrap();
+    let alice_veth = w.veth_account(&alice);
+    expect_err(w.settle_fast(&g, id, n, &op.pubkey(), None), "WrongAccount");
+    expect_err(w.settle_fast(&g, id, n, &op.pubkey(), Some(ata(&g.pubkey()))), "WrongAccount");
+    w.settle_fast(&g, id, n, &op.pubkey(), Some(alice_veth)).unwrap();
+    // The wrong receipt's amount burned, the true one issued: supply grows
+    // by the lock only.
+    assert_eq!(w.tokens(&alice_veth), GWEI_PER_ETH);
+    assert_eq!(w.supply(), supply + GWEI_PER_ETH);
+    assert_eq!(w.credit(&g.pubkey()).1, GWEI_PER_ETH / 4);
+    assert_eq!(w.credit(&op.pubkey()).1, 0);
+}
+
+#[test]
+fn an_attest_whose_linked_claim_is_refused_can_be_burned() {
+    let mut w = World::new();
+    let op = w.operator.insecure_clone();
+    let g = w.guardian.insecure_clone();
+    let alice = w.stranger.pubkey();
+    let (pair, real, user_veth) = with_veth(&mut w, 10 * GWEI_PER_ETH, vec![lock_rec_fast(5, GWEI_PER_ETH, &alice, 0, 0)]);
+    attester_funds(&mut w, user_veth, 2 * GWEI_PER_ETH);
+    let n = w.attest(&op, 5, GWEI_PER_ETH, &alice, 0, 0).unwrap();
+    w.sub(&pair, 2, real, &[]).unwrap();
+    let id = w.vault_config().claim_count;
+    w.link_fast(&op, id, n, None).unwrap();
+    // A guardian objects, and nobody answers: the claim is refused.
+    w.side(id, &g, true).unwrap();
+    w.later(WEEK);
+    w.decide(id).unwrap();
+    assert!(!w.claim(id).accepted);
+    expect_err(w.burn_fast(&g, n, None), "WrongAccount");
+    w.burn_fast(&g, n, Some(id)).unwrap();
+    assert!(w.fast(n).unwrap().burned);
+}
+
+#[test]
+fn a_burn_carries_its_fast_fee_and_the_record_must_state_it() {
+    let mut w = World::new();
+    let op = w.operator.insecure_clone();
+    let user = w.user.insecure_clone();
+    let (pair, real, user_veth) = with_veth(
+        &mut w,
+        10 * GWEI_PER_ETH,
+        vec![bond_rec(SOLANA, GWEI_PER_ETH), request_rec_fast(1, GWEI_PER_ETH, &ETH_USER, 0, 9, BURNED_AT), request_rec_fast(1, GWEI_PER_ETH, &ETH_USER, 0, 9, BURNED_AT + 1)],
+    );
+    let op_veth = w.veth_account(&op.pubkey());
+    token_transfer(&mut w, &user, user_veth, op_veth, 2 * GWEI_PER_ETH);
+    w.add_bond(&op, 2 * GWEI_PER_ETH).unwrap();
+    let supply = w.supply();
+    w.set_now(BURNED_AT);
+    w.make_request_fast(&user, GWEI_PER_ETH, 0, 9).unwrap();
+    assert_eq!(w.supply(), supply - GWEI_PER_ETH - 9);
+    w.sub(&pair, 2, real, &[]).unwrap();
+    w.sub(&pair, 3, real, &[request_pda(1)]).unwrap();
+    assert!(!w.chain(&op.pubkey()).slashed);
+    // The same burn at another time is false.
+    w.sub(&pair, 4, real, &[request_pda(1)]).unwrap();
+    assert!(w.chain(&op.pubkey()).slashed);
+}
+
+#[test]
+fn a_burned_attest_of_a_wrong_record_issues_the_true_receipt_with_its_fast_fee() {
+    let mut w = World::new();
+    let op = w.operator.insecure_clone();
+    let g = w.guardian.insecure_clone();
+    let alice = w.stranger.pubkey();
+    let (pair, real, user_veth) = with_veth(&mut w, 10 * GWEI_PER_ETH, vec![lock_rec_fast(5, GWEI_PER_ETH, &alice, 0, 3)]);
+    attester_funds(&mut w, user_veth, 2 * GWEI_PER_ETH);
+    let supply = w.supply();
+    // Stated with the wrong fast fee, never linked, burned.
+    let n = w.attest(&op, 5, GWEI_PER_ETH, &alice, 0, 4).unwrap();
+    w.later(WEEK);
+    w.burn_fast(&g, n, None).unwrap();
+    w.sub(&pair, 2, real, &[]).unwrap();
+    let id = w.vault_config().claim_count;
+    w.later(WEEK);
+    w.decide(id).unwrap();
+    let alice_veth = ata(&alice);
+    w.settle_fast(&g, id, n, &op.pubkey(), Some(alice_veth)).unwrap();
+    // The true receipt and fast fee are minted to Alice. She keeps what the
+    // attest minted too: its amount was burned from the attester's vETH, so
+    // supply grows by the lock only, and the attester gets nothing back.
+    assert_eq!(w.tokens(&alice_veth), 2 * GWEI_PER_ETH + 3);
+    assert_eq!(w.supply(), supply + GWEI_PER_ETH + 3);
+    assert_eq!(w.credit(&op.pubkey()).1, 0);
+}
+
+#[test]
+fn a_wrong_record_settled_mints_the_true_fast_fee_to_the_recipient() {
+    let mut w = World::new();
+    let op = w.operator.insecure_clone();
+    let g = w.guardian.insecure_clone();
+    let alice = w.stranger.pubkey();
+    let (pair, real, user_veth) = with_veth(&mut w, 10 * GWEI_PER_ETH, vec![lock_rec_fast(5, GWEI_PER_ETH, &alice, 0, 9)]);
+    attester_funds(&mut w, user_veth, 2 * GWEI_PER_ETH);
+    let supply = w.supply();
+    let n = w.attest(&op, 5, GWEI_PER_ETH / 2, &alice, 0, 9).unwrap();
+    w.sub(&pair, 2, real, &[]).unwrap();
+    let id = w.vault_config().claim_count;
+    w.later(WEEK);
+    w.decide(id).unwrap();
+    w.settle_fast(&g, id, n, &op.pubkey(), Some(ata(&alice))).unwrap();
+    // The half minted at once is burned; the true receipt and fast fee are
+    // minted.
+    assert_eq!(w.tokens(&ata(&alice)), GWEI_PER_ETH / 2 + GWEI_PER_ETH + 9);
+    assert_eq!(w.supply(), supply + GWEI_PER_ETH + 9);
+    // The attester paid for the half it minted wrongly: burned from its
+    // vETH, the rest of its collateral to the caller.
+    assert_eq!(w.credit(&g.pubkey()).1, GWEI_PER_ETH * 5 / 8 - GWEI_PER_ETH / 2);
+}
+
+#[test]
+fn an_attest_links_only_a_claim_opened_in_time_and_relinks_after_a_refusal() {
+    let mut w = World::new();
+    let op = w.operator.insecure_clone();
+    let g = w.guardian.insecure_clone();
+    let alice = w.stranger.pubkey();
+    let rec = lock_rec_fast(5, GWEI_PER_ETH, &alice, 0, 0);
+    let (pair, real, user_veth) = with_veth(&mut w, 10 * GWEI_PER_ETH, vec![rec.clone(), rec.clone(), rec]);
+    attester_funds(&mut w, user_veth, 2 * GWEI_PER_ETH);
+    let n = w.attest(&op, 5, GWEI_PER_ETH, &alice, 0, 0).unwrap();
+    // The first claim is linked, objected to and refused: that refuses the
+    // chain here, so a relink is shown with a claim of the same chain
+    // opened in time before the refusal.
+    w.sub(&pair, 2, real, &[]).unwrap();
+    let first = w.vault_config().claim_count;
+    w.sub(&pair, 3, real, &[]).unwrap();
+    let second = w.vault_config().claim_count;
+    w.link_fast(&op, first, n, None).unwrap();
+    expect_err(w.link_fast(&op, second, n, None), "WrongAccount");
+    expect_err(w.link_fast(&op, second, n, Some(first)), "NotRefused");
+    w.side(first, &g, true).unwrap();
+    w.later(WEEK);
+    w.decide(first).unwrap();
+    w.link_fast(&op, second, n, Some(first)).unwrap();
+    assert_eq!(w.fast(n).unwrap().claim, second);
+    // A claim opened after the 7 days is not linked.
+    w.sub(&pair, 4, real, &[]).unwrap();
+    let late = w.vault_config().claim_count;
+    if late > second {
+        expect_err(w.link_fast(&op, late, n, None), "WindowOver");
+    }
+}
+
+#[test]
+fn an_attester_earns_the_part_of_the_fast_fee_for_the_time_left() {
+    let mut w = World::new();
+    let op = w.operator.insecure_clone();
+    let g = w.guardian.insecure_clone();
+    let alice = w.stranger.pubkey();
+    let (pair, real, user_veth) = with_veth(&mut w, 10 * GWEI_PER_ETH, vec![lock_rec_fast(5, GWEI_PER_ETH, &alice, 0, 800)]);
+    attester_funds(&mut w, user_veth, 2 * GWEI_PER_ETH);
+    // Attested 3 days after the lock: 5 of the 8 days left (D124).
+    w.set_now(LOCKED_AT + 3 * DAY);
+    let n = w.attest(&op, 5, GWEI_PER_ETH, &alice, 0, 800).unwrap();
+    w.sub(&pair, 2, real, &[]).unwrap();
+    let id = w.vault_config().claim_count;
+    w.link_fast(&op, id, n, None).unwrap();
+    w.later(WEEK);
+    w.decide(id).unwrap();
+    // The rest of the fee goes to Alice, so her account is needed.
+    expect_err(w.settle_fast(&g, id, n, &op.pubkey(), None), "WrongAccount");
+    w.settle_fast(&g, id, n, &op.pubkey(), Some(ata(&alice))).unwrap();
+    assert_eq!(w.credit(&op.pubkey()).1, GWEI_PER_ETH * 5 / 4 + 500);
+    assert_eq!(w.tokens(&ata(&alice)), GWEI_PER_ETH + 300);
+}
+
+#[test]
+fn a_wrong_attest_made_first_blocks_nothing_and_only_the_true_one_is_repaid() {
+    for true_first in [true, false] {
+        let mut w = World::new();
+        let op = w.operator.insecure_clone();
+        let g = w.guardian.insecure_clone();
+        let alice = w.stranger.pubkey();
+        let (pair, real, user_veth) = with_veth(&mut w, 10 * GWEI_PER_ETH, vec![lock_rec_fast(5, GWEI_PER_ETH, &alice, 0, 0)]);
+        attester_funds(&mut w, user_veth, 3 * GWEI_PER_ETH);
+        let supply = w.supply();
+        // A griefer's attest, 1 gwei to itself, before or after the true one.
+        let (wrong, right) = if true_first {
+            let r = w.attest(&op, 5, GWEI_PER_ETH, &alice, 0, 0).unwrap();
+            (w.attest(&op, 5, 1, &g.pubkey(), 0, 0).unwrap(), r)
+        } else {
+            let x = w.attest(&op, 5, 1, &g.pubkey(), 0, 0).unwrap();
+            (x, w.attest(&op, 5, GWEI_PER_ETH, &alice, 0, 0).unwrap())
+        };
+        assert_eq!(w.tokens(&ata(&alice)), GWEI_PER_ETH);
+        w.sub(&pair, 2, real, &[]).unwrap();
+        let id = w.vault_config().claim_count;
+        w.link_fast(&op, id, right, None).unwrap();
+        // Only the attester links.
+        expect_err(w.link_fast(&g, id, wrong, None), "ConstraintAddress");
+        w.later(WEEK);
+        w.decide(id).unwrap();
+        // Settled in the order made, whoever settles (D126).
+        let (first, second) = if true_first { (right, wrong) } else { (wrong, right) };
+        expect_err(w.settle_fast(&g, id, second, &op.pubkey(), Some(ata(&alice))), "NotInOrder");
+        w.settle_fast(&g, id, first, &op.pubkey(), Some(ata(&alice))).unwrap();
+        w.settle_fast(&g, id, second, &op.pubkey(), Some(ata(&alice))).unwrap();
+        // The true attest repaid, the wrong one's gwei burned: Alice has her
+        // receipt once, and supply grew by the lock only.
+        assert_eq!(w.tokens(&ata(&alice)), GWEI_PER_ETH);
+        assert_eq!(w.supply(), supply + GWEI_PER_ETH);
+        assert_eq!(w.credit(&op.pubkey()).1, GWEI_PER_ETH * 5 / 4);
+        // No attest once the receipt counted.
+        assert!(w.attest(&op, 5, 1, &alice, 0, 0).is_err());
+    }
+}
+
+#[test]
+fn the_earliest_true_attest_counts_and_a_later_copy_is_extra() {
+    let mut w = World::new();
+    let op = w.operator.insecure_clone();
+    let g = w.guardian.insecure_clone();
+    let alice = w.stranger.pubkey();
+    let (pair, real, user_veth) = with_veth(&mut w, 10 * GWEI_PER_ETH, vec![lock_rec_fast(5, GWEI_PER_ETH, &alice, 0, 0)]);
+    attester_funds(&mut w, user_veth, 3 * GWEI_PER_ETH);
+    let supply = w.supply();
+    let early = w.attest(&op, 5, GWEI_PER_ETH, &alice, 0, 0).unwrap();
+    w.later(HOUR);
+    let copy = w.attest(&op, 5, GWEI_PER_ETH, &alice, 0, 0).unwrap();
+    assert_eq!(w.fast(copy).unwrap().prev, early);
+    w.sub(&pair, 2, real, &[]).unwrap();
+    let id = w.vault_config().claim_count;
+    w.later(WEEK);
+    w.decide(id).unwrap();
+    // The copy cannot be settled first and take the early attest's place.
+    expect_err(w.settle_fast(&g, id, copy, &op.pubkey(), Some(ata(&alice))), "NotInOrder");
+    w.settle_fast(&g, id, early, &op.pubkey(), Some(ata(&alice))).unwrap();
+    w.settle_fast(&g, id, copy, &op.pubkey(), Some(ata(&alice))).unwrap();
+    // The copy's receipt is burned from its vETH; Alice keeps the one
+    // minted by the early attest and the copy's, paid for by the copy.
+    assert_eq!(w.supply(), supply + GWEI_PER_ETH);
+    assert_eq!(w.credit(&g.pubkey()).1, GWEI_PER_ETH / 4);
+}
+
+#[test]
+fn a_lock_takes_attests_for_7_days_and_then_its_recipient_issues_the_true_receipt() {
+    let mut w = World::new();
+    let op = w.operator.insecure_clone();
+    let g = w.guardian.insecure_clone();
+    let alice = w.stranger.pubkey();
+    let (pair, real, user_veth) = with_veth(&mut w, 10 * GWEI_PER_ETH, vec![lock_rec_fast(5, GWEI_PER_ETH, &alice, 0, 4)]);
+    attester_funds(&mut w, user_veth, 2 * GWEI_PER_ETH);
+    w.sub(&pair, 2, real, &[]).unwrap();
+    let id = w.vault_config().claim_count;
+    w.later(WEEK);
+    w.decide(id).unwrap();
+    // Only a wrong attest, settled at once: no receipt yet, since another
+    // attest could still come.
+    let n = w.attest(&op, 5, 1, &g.pubkey(), 0, 0).unwrap();
+    let to = w.veth_account(&alice);
+    w.settle_fast(&g, id, n, &op.pubkey(), Some(to)).unwrap();
+    assert_eq!(w.tokens(&to), 0);
+    expect_err(w.issue(id, 5, to), "NotInOrder");
+    w.later(WEEK);
+    // No attest after the 7 days; the recipient issues the true receipt.
+    expect_err(w.attest(&op, 5, 1, &g.pubkey(), 0, 0), "WindowOver");
+    w.issue(id, 5, to).unwrap();
+    assert_eq!(w.tokens(&to), GWEI_PER_ETH + 4);
+    assert!(w.issue(id, 5, to).is_err());
 }

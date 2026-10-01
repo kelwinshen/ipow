@@ -20,9 +20,10 @@ use ipow_bitcoin::view::{BitcoinView, TxStatus};
 use ipow_protocol_core::network::ProtocolNetwork;
 use ipow_protocol_core::settings::Role;
 use ipow_protocol_core::types::{Amount, BlockRef, JobStatus};
-use ipow_protocol_core::vault::{encode, message_payload, Chain, Record, TxProof, VaultApp, ETHEREUM, SOLANA};
+use ipow_protocol_core::settings::FastSettings;
+use ipow_protocol_core::vault::{encode, message_payload, Chain, Record, Request, TxProof, VaultApp, ETHEREUM, SOLANA};
 use tokio::sync::Mutex;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::light::epoch_time_at;
 use crate::supervisor::Worker;
@@ -282,6 +283,22 @@ pub struct VaultOperatorSettings {
     /// message, on Ethereum and on Solana; `None` never opens one.
     pub checkpoint_paid: [Option<Amount>; 2],
     pub journal: PathBuf,
+    /// The fast paths (section 11.7): None attests and pays nothing at once.
+    pub fast: Option<FastSettings>,
+}
+
+/// Section 11.7: an attester locks 1.25 times a lock's amount, and a claim
+/// carrying its record must open within 7 days (D123).
+const FAST_COLLATERAL_BPS: u128 = 12_500;
+const FAST_OPEN_WINDOW: i64 = 7 * 24 * 3600;
+
+/// What a record makes the acting network mint or pay: the amount and the
+/// fast fee, in gwei (section 11.5).
+fn value_of(r: &Record) -> u64 {
+    match r {
+        Record::Lock { amount, fast_fee, .. } | Record::Request { amount, fast_fee, .. } => amount.saturating_add(*fast_fee),
+        _ => 0,
+    }
 }
 
 /// The largest message transaction, without witness data (D119).
@@ -310,6 +327,13 @@ impl ClaimIndex {
     fn handled(&self, r: &Record) -> bool {
         self.carrying.get(r).is_some_and(|ids| ids.iter().any(|id| self.status.get(id).is_none_or(|(_, decided, accepted)| !decided || *accepted)))
     }
+
+    /// Whether a claim of `operator` carrying `r` is open or accepted.
+    fn handled_by(&self, r: &Record, operator: &str) -> bool {
+        self.carrying.get(r).is_some_and(|ids| {
+            ids.iter().any(|id| self.status.get(id).is_some_and(|(op, decided, accepted)| op == operator && (!decided || *accepted)))
+        })
+    }
 }
 
 #[derive(Default)]
@@ -329,6 +353,12 @@ struct OpState {
     /// Messages sent and not mined yet: the Bitcoin height when first seen
     /// waiting, and the fee rate paid.
     waiting: HashMap<[u8; 32], (u32, f64)>,
+    /// The attests of locks read so far, and this node's among them not
+    /// settled yet, by number, with the record each stated.
+    attest_cursor: u64,
+    attests: HashMap<u64, Record>,
+    /// Burns this node paid at once, until the vault repays it.
+    fast_paid: HashMap<u64, Request>,
 }
 
 pub struct VaultOperator {
@@ -445,8 +475,16 @@ impl VaultOperator {
                 let Some(real) = reach(side, self.btc.as_ref(), &mut st.reals[i], &block, self.settings.checkpoint_paid[i]).await? else { break };
                 fill_down(side.net.as_ref(), self.btc.as_ref(), &real, &block).await?;
                 let proof = tx_proof(self.btc.as_ref(), &txid, &block, real).await?;
-                side.vault.submit_message(&side.vault.me(), &proof, 0, 1, &batch).await?;
-                info!(network = side.net.name(), txid = %hex::encode(txid), "submitted a vault message");
+                if let Err(e) = side.vault.submit_message(&side.vault.me(), &proof, 0, 1, &batch).await {
+                    // A guardian may have brought the same message first.
+                    let moved = side.vault.chain(&side.vault.me()).await?.is_some_and(|c| c.coin == (txid, 0));
+                    if !moved {
+                        return Err(e);
+                    }
+                    debug!(network = side.net.name(), txid = %hex::encode(txid), error = %crate::secrets::redact(&e), "a vault message was already brought by someone else");
+                } else {
+                    info!(network = side.net.name(), txid = %hex::encode(txid), "submitted a vault message");
+                }
                 coin = (txid, 0);
             }
         }
@@ -550,17 +588,21 @@ impl VaultOperator {
         }
         for id in st.open_locks.clone().into_iter().take(WINDOW as usize) {
             let Some(l) = self.eth.vault.lock(id).await? else { continue };
-            let r = Record::Lock { id: l.id, amount: l.amount, recipient: l.recipient, fee: l.fee };
+            let r = l.record();
             let accepted = |r: &Record| st.claims[1].carrying.get(r).is_some_and(|ids| ids.iter().any(|c| st.claims[1].status.get(c).is_some_and(|(_, _, a)| *a)));
-            if l.returned || accepted(&r) || self.sol.vault.receipt_issued(l.id).await? {
+            // A receipt an attester issued at once still waits for a claim
+            // carrying the lock (section 11.7).
+            let issued = self.sol.vault.receipt_issued(l.id).await? && self.sol.vault.lock_attest(l.id).await?.is_none();
+            if l.returned || accepted(&r) || issued {
                 // Finished, or handed to its recipient to issue.
                 st.open_locks.remove(&id);
                 continue;
             }
             if self.sol.vault.given_up(l.id).await? {
                 let c = Record::Cancel { id: l.id };
-                if to_eth && home < MAX_HOME_RECORDS && l.amount <= home_room && !st.claims[0].handled(&c) {
-                    home_room -= l.amount;
+                let value = value_of(&r);
+                if to_eth && home < MAX_HOME_RECORDS && value <= home_room && !st.claims[0].handled(&c) {
+                    home_room -= value;
                     home += 1;
                     records.push(c);
                 }
@@ -569,9 +611,17 @@ impl VaultOperator {
             // A fee another operator already earned is carried again, for no
             // fee, when no claim is handling the lock: its user must not be
             // stranded. A duplicate true LOCK is never slashed.
-            let worth = l.fee_paid || l.fee >= self.settings.min_fee_gwei;
-            if to_sol && worth && locks < MAX_LOCKS && l.amount <= lock_room && !st.claims[1].handled(&r) {
-                lock_room -= l.amount;
+            // An attest of this node waits for the claim: carried whatever
+            // its fee.
+            let attested = st.attests.values().any(|a| *a == r);
+            let worth = l.fee_paid || l.fee >= self.settings.min_fee_gwei || attested;
+            let value = value_of(&r);
+            // A lock this node attested waits for a claim of its own: one of
+            // another operator's may be refused after the 7 days (D123).
+            let me = self.sol.vault.me();
+            let handled = if attested { st.claims[1].handled_by(&r, &me) } else { st.claims[1].handled(&r) };
+            if to_sol && worth && locks < MAX_LOCKS && value <= lock_room && !handled {
+                lock_room -= value;
                 locks += 1;
                 records.push(r);
             }
@@ -584,21 +634,219 @@ impl VaultOperator {
         }
         for id in st.open_requests.clone().into_iter().take(WINDOW as usize) {
             let Some(r) = self.sol.vault.request(id).await? else { continue };
-            let rec = Record::Request { id: r.id, amount: r.amount, to: r.to, fee: r.fee };
+            let rec = r.record();
             let accepted = st.claims[0].carrying.get(&rec).is_some_and(|ids| ids.iter().any(|c| st.claims[0].status.get(c).is_some_and(|(_, _, a)| *a)));
             if accepted || self.eth.vault.request_paid(r.id).await? {
                 st.open_requests.remove(&id);
                 continue;
             }
-            let worth = r.fee_paid || r.fee >= self.settings.min_fee_gwei;
-            if to_eth && worth && home < MAX_HOME_RECORDS && r.amount <= home_room && !st.claims[0].handled(&rec) {
-                home_room -= r.amount;
+            // A burn this node paid at once is carried whatever its fee: the
+            // claim repays it.
+            let worth = r.fee_paid || r.fee >= self.settings.min_fee_gwei || st.fast_paid.contains_key(&r.id);
+            let value = value_of(&rec);
+            if to_eth && worth && home < MAX_HOME_RECORDS && value <= home_room && !st.claims[0].handled(&rec) {
+                home_room -= value;
                 home += 1;
                 records.push(rec);
             }
         }
         anyhow::ensure!(encode(&records).len() <= MAX_BATCH, "a batch within the record limits is at most 2,030 bytes");
         Ok(records)
+    }
+
+    /// The fast paths (section 11.7): attests final locks and pays final
+    /// burns whose fast fee is worth it, links each of its attests to a
+    /// claim carrying its record, settles them, and takes the repayments.
+    /// Each on its own: one that fails is only logged.
+    async fn fast(&self, st: &mut OpState, sol_chain: &Chain) {
+        let outcome: anyhow::Result<()> = async {
+            // Its own attests, also after a restart.
+            let me = self.sol.vault.me();
+            let count = self.sol.vault.attest_count().await?;
+            for n in (st.attest_cursor + 1)..=count {
+                if let Some(f) = self.sol.vault.fast_lock(n).await? {
+                    if f.attester == me {
+                        st.attests.insert(n, f.record);
+                    }
+                }
+                st.attest_cursor = n;
+            }
+            Ok(())
+        }
+        .await;
+        if let Err(e) = outcome {
+            warn!(error = %crate::secrets::redact(&e), "reading attests failed");
+        }
+        for n in st.attests.keys().copied().collect::<Vec<_>>() {
+            if let Err(e) = self.tend_attest(st, n).await {
+                warn!(attest = n, error = %crate::secrets::redact(&e), "tending an attest failed");
+            }
+        }
+        for id in st.fast_paid.keys().copied().collect::<Vec<_>>() {
+            let r = st.fast_paid[&id].clone();
+            let outcome: anyhow::Result<()> = async {
+                if self.eth.vault.request_paid(id).await? {
+                    st.fast_paid.remove(&id);
+                    return Ok(());
+                }
+                let rec = r.record();
+                let accepted = st.claims[0].carrying.get(&rec).and_then(|ids| ids.iter().find(|c| st.claims[0].status.get(c).is_some_and(|(_, _, a)| *a)).copied());
+                if let Some(claim) = accepted {
+                    self.eth.vault.pay_request(claim, id).await?;
+                    st.fast_paid.remove(&id);
+                    info!(request = id, claim, "the vault repaid a burn paid at once");
+                }
+                Ok(())
+            }
+            .await;
+            if let Err(e) = outcome {
+                warn!(request = id, error = %crate::secrets::redact(&e), "taking a fast repayment failed");
+            }
+        }
+        let Some(fast) = self.settings.fast.clone() else { return };
+        if sol_chain.refused || sol_chain.slashed || sol_chain.exited {
+            return;
+        }
+        // Attests: the best-paid first (D122).
+        let mut locks = vec![];
+        let accepted = |idx: &ClaimIndex, r: &Record| idx.carrying.get(r).is_some_and(|ids| ids.iter().any(|c| idx.status.get(c).is_some_and(|(_, d, a)| *d && *a)));
+        for id in st.open_locks.iter().copied().take(WINDOW as usize) {
+            match self.eth.vault.lock(id).await {
+                // Speed is what the fast fee pays for: none once a claim
+                // carrying the lock was accepted.
+                // Once only: another attest of its own would count as extra
+                // and lose its vETH (D126).
+                Ok(Some(l))
+                    if l.fast_fee >= fast.min_fee_gwei
+                        && l.amount <= fast.max_gwei
+                        && !l.returned
+                        && !accepted(&st.claims[1], &l.record())
+                        && !st.attests.values().any(|a| matches!(a, Record::Lock { id, .. } if *id == l.id)) =>
+                {
+                    locks.push(l)
+                }
+                Ok(_) => {}
+                Err(e) => warn!(lock = id, error = %crate::secrets::redact(&e), "reading a lock failed"),
+            }
+        }
+        locks.sort_by(|a, b| b.fast_fee.cmp(&a.fast_fee));
+        let now = match self.sol.net.now().await {
+            Ok(t) => t,
+            Err(e) => {
+                warn!(error = %crate::secrets::redact(&e), "reading Solana's time failed");
+                return;
+            }
+        };
+        for l in locks {
+            let outcome: anyhow::Result<()> = async {
+                if self.sol.vault.receipt_issued(l.id).await? || self.sol.vault.given_up(l.id).await? {
+                    return Ok(());
+                }
+                if let Some((first_at, open)) = self.sol.vault.lock_attests(l.id).await? {
+                    // The lock takes no more attests, or an earlier one states
+                    // the true record: this one would count as extra (D126).
+                    if now >= first_at + FAST_OPEN_WINDOW || open.iter().any(|f| f.record == l.record()) {
+                        return Ok(());
+                    }
+                }
+                // Its vETH credit first: the collateral of settled attests.
+                if self.sol.vault.veth_credit().await? > 0 {
+                    self.sol.vault.withdraw_credit().await?;
+                }
+                let n = self.sol.vault.attest_lock(&l).await?;
+                st.attests.insert(n, l.record());
+                info!(lock = l.id, attest = n, collateral = (l.amount as u128 * FAST_COLLATERAL_BPS).div_ceil(10_000) as u64, "issued a receipt at once");
+                Ok(())
+            }
+            .await;
+            if let Err(e) = outcome {
+                warn!(lock = l.id, error = %crate::secrets::redact(&e), "attesting a lock failed");
+            }
+        }
+        // Burns paid at once, the best-paid first. Its own from before a
+        // restart first: repaid when carried, also once accepted.
+        let me = self.eth.vault.me();
+        for id in st.open_requests.iter().copied().take(WINDOW as usize) {
+            if st.fast_paid.contains_key(&id) {
+                continue;
+            }
+            let outcome: anyhow::Result<()> = async {
+                if let Some(r) = self.sol.vault.request(id).await? {
+                    if self.eth.vault.fast_paid_by(&r).await?.is_some_and(|by| by.eq_ignore_ascii_case(&me)) {
+                        st.fast_paid.insert(id, r);
+                    }
+                }
+                Ok(())
+            }
+            .await;
+            if let Err(e) = outcome {
+                warn!(request = id, error = %crate::secrets::redact(&e), "reading a burn failed");
+            }
+        }
+        let mut burns = vec![];
+        for id in st.open_requests.iter().copied().take(WINDOW as usize) {
+            match self.sol.vault.request(id).await {
+                Ok(Some(r)) if r.fast_fee >= fast.min_fee_gwei && r.amount <= fast.max_gwei && !st.fast_paid.contains_key(&id) && !accepted(&st.claims[0], &r.record()) => burns.push(r),
+                Ok(_) => {}
+                Err(e) => warn!(request = id, error = %crate::secrets::redact(&e), "reading a burn failed"),
+            }
+        }
+        burns.sort_by(|a, b| b.fast_fee.cmp(&a.fast_fee));
+        for r in burns {
+            let id = r.id;
+            let outcome: anyhow::Result<()> = async {
+                if self.eth.vault.request_paid(r.id).await? {
+                    return Ok(());
+                }
+                if let Some(by) = self.eth.vault.fast_paid_by(&r).await? {
+                    // Its own, from before a restart: repaid when carried.
+                    if by.eq_ignore_ascii_case(&self.eth.vault.me()) {
+                        st.fast_paid.insert(r.id, r);
+                    }
+                    return Ok(());
+                }
+                self.eth.vault.fast_pay(&r).await?;
+                info!(request = r.id, amount = r.amount, "paid a burn at once");
+                st.fast_paid.insert(r.id, r);
+                Ok(())
+            }
+            .await;
+            if let Err(e) = outcome {
+                warn!(request = id, error = %crate::secrets::redact(&e), "paying a burn at once failed");
+            }
+        }
+    }
+
+    /// Links one of this node's attests to a claim carrying its record, and
+    /// settles it once such a claim is accepted.
+    async fn tend_attest(&self, st: &mut OpState, n: u64) -> anyhow::Result<()> {
+        let Some(f) = self.sol.vault.fast_lock(n).await? else {
+            st.attests.remove(&n);
+            return Ok(());
+        };
+        let idx = &st.claims[1];
+        let carrying: Vec<u64> = idx.carrying.get(&f.record).cloned().unwrap_or_default();
+        if let Some(claim) = carrying.iter().find(|c| idx.status.get(c).is_some_and(|(_, _, a)| *a)) {
+            settle_in_order(self.sol.vault.as_ref(), *claim, n).await?;
+            st.attests.remove(&n);
+            info!(attest = n, claim, "an attest was settled: its vETH back with the fast fee");
+            return Ok(());
+        }
+        if f.burned {
+            return Ok(());
+        }
+        let linked_refused = f.claim != 0 && idx.status.get(&f.claim).is_some_and(|(_, d, a)| *d && !*a);
+        if f.claim == 0 || linked_refused {
+            // Only a claim of its own: another operator could let its claim
+            // be refused and burn the attest before a relink (D123).
+            let me = self.sol.vault.me();
+            let open = carrying.iter().find(|c| idx.status.get(c).is_some_and(|(op, d, _)| !*d && *op == me));
+            if let Some(claim) = open {
+                self.sol.vault.link_fast(*claim, n, (f.claim != 0).then_some(f.claim)).await?;
+                info!(attest = n, claim, "linked an attest to its claim");
+            }
+        }
+        Ok(())
     }
 
     /// Answers objections to this node's claims, and decides and collects.
@@ -660,6 +908,7 @@ impl Worker for VaultOperator {
             return Ok(());
         }
         self.top_up(&chains).await;
+        self.fast(&mut st, &chains[1]).await;
         if !self.catch_up(&mut st, &chains).await? {
             return Ok(());
         }
@@ -706,29 +955,261 @@ impl Worker for VaultOperator {
 struct GuardState {
     claim_cursor: [u64; 2],
     open_claims: [HashSet<u64>; 2],
+    /// The operators seen in claims, as (Ethereum address, Solana address).
+    chains: HashSet<(String, String)>,
+    /// Claims whose operator was learned, by (network, claim).
+    learned: HashSet<(usize, u64)>,
+    /// Attests of locks read so far, and those not settled or burned.
+    attest_cursor: u64,
+    open_attests: HashSet<u64>,
+    /// Locks carried by an accepted claim on Solana: the claim and record.
+    accepted_locks: HashMap<u64, (u64, Record)>,
+    reals: [Reals; 2],
 }
 
 pub struct VaultGuardian {
     eth: Side,
     sol: Side,
+    btc: Arc<dyn BitcoinView>,
+    /// What to pay to open a checkpoint job when a lie waits for a real
+    /// block above it, by network (Ethereum, Solana): the lie's slash pays
+    /// 20% of the bond, well more than the job.
+    checkpoint_paid: [Option<Amount>; 2],
     state: Mutex<GuardState>,
 }
 
+/// Messages brought to a vault per chain and round at most.
+const BRING_PER_ROUND: usize = 5;
+/// Lagging messages of a chain looked at for a lie per round.
+const LOOK_AHEAD: u64 = 20;
+
 impl VaultGuardian {
-    pub fn new(eth: Side, sol: Side) -> Self {
-        VaultGuardian { eth, sol, state: Mutex::new(GuardState::default()) }
+    pub fn new(eth: Side, sol: Side, btc: Arc<dyn BitcoinView>, checkpoint_paid: [Option<Amount>; 2]) -> Self {
+        VaultGuardian { eth, sol, btc, checkpoint_paid, state: Mutex::new(GuardState::default()) }
+    }
+
+    /// Learns the chain of a claim's operator: its address on both
+    /// networks.
+    async fn learn(&self, st: &mut GuardState, acting: u8, operator: &str) -> anyhow::Result<()> {
+        let side = if acting == ETHEREUM { &self.eth } else { &self.sol };
+        let Some(c) = side.vault.chain(operator).await? else { return Ok(()) };
+        let peer = peer_address(&c.peer);
+        // Ethereum addresses in one spelling, so a chain is held once.
+        let pair = if acting == ETHEREUM { (operator.to_lowercase(), peer) } else { (peer, operator.to_string()) };
+        st.chains.insert(pair);
+        Ok(())
+    }
+
+    /// Whether a message is false on `home`, the network it would be
+    /// brought to: a lie that network can prove and slash. The rules of the
+    /// batch's shape are `shape_false`'s; here the records are also checked
+    /// against what `home` holds. `stated` is the chain's stated bond there,
+    /// as it will be once the messages before this one are processed.
+    async fn false_on(&self, home: u8, raw_len: usize, batch: &[u8], stated: &mut u128, bond: u128) -> anyhow::Result<bool> {
+        let Some(records) = ipow_protocol_core::vault::decode(batch) else { return Ok(true) };
+        let Some(next) = shape_false(home, raw_len, batch.len(), &records, *stated, bond) else { return Ok(true) };
+        for r in &records {
+            let false_here = match (r, home) {
+                (Record::Lock { id, .. }, ETHEREUM) => !self.eth.vault.lock(*id).await?.is_some_and(|l| l.record() == *r),
+                (Record::Cancel { id }, ETHEREUM) => self.eth.vault.lock(*id).await?.is_none(),
+                (Record::Request { id, .. }, SOLANA) => !self.sol.vault.request(*id).await?.is_some_and(|q| q.record() == *r),
+                (Record::Cancel { id }, SOLANA) => !self.sol.vault.given_up(*id).await?,
+                _ => false,
+            };
+            if false_here {
+                return Ok(true);
+            }
+        }
+        *stated = next;
+        Ok(false)
+    }
+
+    /// Brings to a vault the messages of a chain that the other vault
+    /// processed and it has not, when one of them is false there (D107,
+    /// D108, D109): an operator that shows a lie to one network only cannot
+    /// hide it from the other. The lie is proven where it is brought and
+    /// slashed, 20% to this node. A chain whose next lagging messages are
+    /// all true is left to its operator, who brings them itself. The batch
+    /// comes from the vault that published it, and must match the hash the
+    /// message carries on Bitcoin.
+    async fn bring_hidden(&self, st: &mut GuardState) {
+        for (eth_op, sol_op) in st.chains.clone() {
+            if let Err(e) = self.bring_chain(st, &eth_op, &sol_op).await {
+                warn!(ethereum = %eth_op, solana = %sol_op, error = %crate::secrets::redact(&e), "bringing a hidden message failed");
+            }
+        }
+    }
+
+    async fn bring_chain(&self, st: &mut GuardState, eth_op: &str, sol_op: &str) -> anyhow::Result<()> {
+        let (Some(e), Some(s)) = (self.eth.vault.chain(eth_op).await?, self.sol.vault.chain(sol_op).await?) else { return Ok(()) };
+        if e.messages == s.messages {
+            return Ok(());
+        }
+        let (behind, ahead, behind_op, ahead_op, chain, lead, i, home) = if e.messages < s.messages {
+            (&self.eth, &self.sol, eth_op, sol_op, e, s.messages, 0, ETHEREUM)
+        } else {
+            (&self.sol, &self.eth, sol_op, eth_op, s, e.messages, 1, SOLANA)
+        };
+        // Already slashed, or the chain ended here. A chain with no bond is
+        // still brought to: the slash marks it, which settles the other
+        // network's claims that count a bond it never had.
+        if chain.slashed || chain.exited {
+            return Ok(());
+        }
+        // The lagging messages up to the first lie, followed on Bitcoin.
+        let mut path = vec![];
+        let mut coin = chain.coin;
+        let mut stated = chain.stated;
+        let mut lie = false;
+        for index in chain.messages..lead.min(chain.messages + LOOK_AHEAD) {
+            let Some(batch) = ahead.vault.message_batch(ahead_op, index).await? else { break };
+            let Some(txid) = self.btc.spender(&coin.0, coin.1).await? else { break };
+            let raw = self.btc.raw_tx(&txid).await?.ok_or_else(|| anyhow::anyhow!("a message on Bitcoin is not known"))?;
+            let input = crate::wallet::input_spending(&raw, coin).ok_or_else(|| anyhow::anyhow!("a message does not spend its chain"))?;
+            // The output the vault ahead took as the tag: the one with this
+            // batch's hash, wherever the operator put it.
+            let tag = crate::wallet::output_carrying(&raw, &message_payload(&batch))
+                .ok_or_else(|| anyhow::anyhow!("a published batch does not match its message on Bitcoin"))?;
+            lie = self.false_on(home, raw.len(), &batch, &mut stated, chain.bond).await?;
+            path.push((index, batch, txid, input, tag));
+            coin = (txid, input);
+            if lie {
+                break;
+            }
+        }
+        if !lie {
+            return Ok(());
+        }
+        for (index, batch, txid, input, tag) in path.into_iter().take(BRING_PER_ROUND) {
+            let Some(block) = mined_in(self.btc.as_ref(), &txid).await? else { break };
+            let Some(real) = reach(behind, self.btc.as_ref(), &mut st.reals[i], &block, self.checkpoint_paid[i]).await? else { break };
+            fill_down(behind.net.as_ref(), self.btc.as_ref(), &real, &block).await?;
+            let proof = tx_proof(self.btc.as_ref(), &txid, &block, real).await?;
+            behind.vault.submit_message(behind_op, &proof, input, tag, &batch).await?;
+            info!(network = behind.net.name(), operator = %behind_op, index, "brought a message the operator had not shown here");
+        }
+        Ok(())
+    }
+
+    /// Checks one claim: collects it once decided, decides it once its 7
+    /// days are over, objects to it when a record is false.
+    async fn tend_claim(&self, st: &mut GuardState, i: usize, id: u64, now: i64) -> anyhow::Result<()> {
+        let (side, id_of) = if i == 0 { (&self.eth, ETHEREUM) } else { (&self.sol, SOLANA) };
+        let c = side.vault.claim(id).await?;
+        if st.learned.insert((i, id)) {
+            if let Err(e) = self.learn(st, id_of, &c.operator).await {
+                st.learned.remove(&(i, id));
+                warn!(network = side.net.name(), claim = id, error = %crate::secrets::redact(&e), "reading a claim's chain failed");
+            }
+        }
+        if c.decided {
+            if c.accepted && id_of == SOLANA {
+                for r in &c.records {
+                    if let Record::Lock { id: lock, .. } = r {
+                        st.accepted_locks.insert(*lock, (id, r.clone()));
+                    }
+                }
+            }
+            side.vault.collect(id).await?;
+            st.open_claims[i].remove(&id);
+            return Ok(());
+        }
+        if now >= c.last_at + OBJECTION_WINDOW {
+            side.vault.decide(id).await?;
+            return Ok(());
+        }
+        if c.held {
+            return Ok(());
+        }
+        for r in &c.records {
+            if self.is_true(id_of, &c.operator, r).await? == Some(false) {
+                info!(network = side.net.name(), claim = id, record = ?r, "objecting to a false claim");
+                side.vault.object(id).await?;
+                break;
+            }
+        }
+        Ok(())
+    }
+
+    /// The attests of locks on Solana (section 11.7, D123): burns one with
+    /// no claim linked within 7 days, or whose linked claim was refused, and
+    /// settles one whose lock an accepted claim states otherwise. Either
+    /// pays this node the quarter above the amount.
+    async fn tend_attests(&self, st: &mut GuardState) -> anyhow::Result<()> {
+        let count = self.sol.vault.attest_count().await?;
+        for n in (st.attest_cursor + 1)..=count {
+            st.open_attests.insert(n);
+        }
+        st.attest_cursor = count;
+        let now = self.sol.net.now().await?;
+        // Oldest first: a lock's attests are settled in the order made.
+        let mut open: Vec<u64> = st.open_attests.iter().copied().collect();
+        open.sort_unstable();
+        for n in open {
+            let outcome: anyhow::Result<()> = async {
+                let Some(f) = self.sol.vault.fast_lock(n).await? else {
+                    st.open_attests.remove(&n);
+                    return Ok(());
+                };
+                let Record::Lock { id: lock, .. } = f.record else { return Ok(()) };
+                if let Some((claim, record)) = st.accepted_locks.get(&lock).cloned() {
+                    // A wrong record: settling it burns the wrong receipt,
+                    // or, once burned, issues the true one to its recipient.
+                    // As stated: its attester settles it.
+                    if record != f.record {
+                        settle_in_order(self.sol.vault.as_ref(), claim, n).await?;
+                        info!(attest = n, claim, "settled an attest that stated its lock wrongly");
+                    }
+                    st.open_attests.remove(&n);
+                    return Ok(());
+                }
+                if f.burned {
+                    return Ok(());
+                }
+                let burnable = if f.claim == 0 {
+                    now >= f.attested_at + FAST_OPEN_WINDOW
+                } else {
+                    let c = self.sol.vault.claim_status(f.claim).await?;
+                    c.decided && !c.accepted
+                };
+                if burnable {
+                    self.sol.vault.burn_fast(n, (f.claim != 0).then_some(f.claim)).await?;
+                    st.open_attests.remove(&n);
+                    info!(attest = n, lock, "burned an attest with no claim to back it");
+                }
+                Ok(())
+            }
+            .await;
+            if let Err(e) = outcome {
+                warn!(attest = n, error = %crate::secrets::redact(&e), "tending an attest failed");
+            }
+        }
+        Ok(())
+    }
+
+    async fn tend_claims(&self, st: &mut GuardState, i: usize) -> anyhow::Result<()> {
+        let side = if i == 0 { &self.eth } else { &self.sol };
+        let count = side.vault.claim_count().await?;
+        for id in (st.claim_cursor[i] + 1)..=count {
+            st.open_claims[i].insert(id);
+        }
+        st.claim_cursor[i] = count;
+        let now = side.net.now().await?;
+        for id in st.open_claims[i].clone() {
+            // Tried again next round.
+            if let Err(e) = self.tend_claim(st, i, id, now).await {
+                warn!(network = side.net.name(), claim = id, error = %crate::secrets::redact(&e), "tending a claim failed");
+            }
+        }
+        Ok(())
     }
 
     /// Whether a record acted on by network `acting` is true on the other
     /// network: `None` when that cannot be told yet.
     async fn is_true(&self, acting: u8, operator: &str, record: &Record) -> anyhow::Result<Option<bool>> {
         Ok(match record {
-            Record::Lock { id, amount, recipient, fee } => Some(
-                self.eth.vault.lock(*id).await?.is_some_and(|l| l.amount == *amount && l.recipient == *recipient && l.fee == *fee),
-            ),
-            Record::Request { id, amount, to, fee } => {
-                Some(self.sol.vault.request(*id).await?.is_some_and(|r| r.amount == *amount && r.to == *to && r.fee == *fee))
-            }
+            Record::Lock { id, .. } => Some(self.eth.vault.lock(*id).await?.is_some_and(|l| l.record() == *record)),
+            Record::Request { id, .. } => Some(self.sol.vault.request(*id).await?.is_some_and(|r| r.record() == *record)),
             Record::Cancel { id } => Some(self.sol.vault.given_up(*id).await?),
             Record::Bond { network, amount } => {
                 let (acting_side, home) = if acting == ETHEREUM { (&self.eth, &self.sol) } else { (&self.sol, &self.eth) };
@@ -751,6 +1232,81 @@ impl VaultGuardian {
     }
 }
 
+/// The rules of a message's shape that make it false on `home`, as both
+/// vaults judge it (D109, D110, D119): a transaction or batch too large, too
+/// many REQUEST and CANCEL records, a REQUEST to address zero, locks whose
+/// amounts overflow, a BOND of an unknown network, or a home BOND that is
+/// zero, repeated in the batch, or not the chain's bond. `None` when false;
+/// otherwise the chain's stated bond after the message, in the home vault's
+/// unit. What the records say about locks, requests and give-ups is
+/// checked against the vault by the caller.
+fn shape_false(home: u8, raw_len: usize, batch_len: usize, records: &[Record], stated: u128, bond: u128) -> Option<u128> {
+    if raw_len > MAX_RAW_TX || batch_len > MAX_BATCH {
+        return None;
+    }
+    let mut home_records = 0;
+    let mut locked: u64 = 0;
+    let mut next = None;
+    for r in records {
+        match r {
+            Record::Request { .. } | Record::Cancel { .. } => {
+                home_records += 1;
+                if home_records > MAX_HOME_RECORDS {
+                    return None;
+                }
+                if let Record::Request { to, .. } = r {
+                    if home == ETHEREUM && *to == [0; 20] {
+                        return None;
+                    }
+                }
+            }
+            Record::Lock { amount, fast_fee, .. } => {
+                // Solana mints the receipt and the fast fee.
+                if home == SOLANA {
+                    locked = locked.checked_add(*amount)?.checked_add(*fast_fee)?;
+                }
+            }
+            Record::Bond { network, amount } => {
+                if *network != ETHEREUM && *network != SOLANA {
+                    return None;
+                }
+                if *network == home {
+                    let unit = if home == ETHEREUM { GWEI } else { 1 };
+                    let amount = *amount as u128 * unit;
+                    if next.is_some() || amount == 0 {
+                        return None;
+                    }
+                    if if stated != 0 { amount != stated } else { amount > bond } {
+                        return None;
+                    }
+                    next = Some(amount);
+                }
+            }
+            Record::Exit => {}
+        }
+    }
+    Some(next.unwrap_or(stated))
+}
+
+/// Settles attest `n` with accepted claim `claim`, after the attests of the
+/// same lock made before it that are not settled yet, oldest first: they
+/// are settled in the order made (D126).
+async fn settle_in_order(vault: &dyn VaultApp, claim: u64, n: u64) -> anyhow::Result<()> {
+    let mut order = vec![n];
+    let mut at = n;
+    while let Some(f) = vault.fast_lock(at).await? {
+        if f.prev == 0 || vault.fast_lock(f.prev).await?.is_none() {
+            break;
+        }
+        order.push(f.prev);
+        at = f.prev;
+    }
+    for m in order.into_iter().rev() {
+        vault.settle_fast(claim, m).await.map_err(|e| e.context(format!("settling attest {m}, of those before {n}")))?;
+    }
+    Ok(())
+}
+
 /// An operator's address as its vault writes it: a Solana chain names its
 /// operator on Ethereum in 20 bytes (`0x…`), an Ethereum chain its operator
 /// on Solana in 32 (base58).
@@ -770,43 +1326,16 @@ impl Worker for VaultGuardian {
 
     async fn round(&self, _network: &dyn ProtocolNetwork) -> anyhow::Result<()> {
         let mut st = self.state.lock().await;
-        for (i, (side, id_of)) in [(&self.eth, ETHEREUM), (&self.sol, SOLANA)].into_iter().enumerate() {
-            let count = side.vault.claim_count().await?;
-            for id in (st.claim_cursor[i] + 1)..=count {
-                st.open_claims[i].insert(id);
-            }
-            st.claim_cursor[i] = count;
-            let now = side.net.now().await?;
-            for id in st.open_claims[i].clone() {
-                let c = match side.vault.claim(id).await {
-                    Ok(c) => c,
-                    Err(e) => {
-                        // Its records cannot be read now: tried again next round.
-                        warn!(network = side.net.name(), claim = id, error = %crate::secrets::redact(&e), "reading a claim failed");
-                        continue;
-                    }
-                };
-                if c.decided {
-                    side.vault.collect(id).await?;
-                    st.open_claims[i].remove(&id);
-                    continue;
-                }
-                if now >= c.last_at + OBJECTION_WINDOW {
-                    side.vault.decide(id).await?;
-                    continue;
-                }
-                if c.held {
-                    continue;
-                }
-                for r in &c.records {
-                    if self.is_true(id_of, &c.operator, r).await? == Some(false) {
-                        info!(network = side.net.name(), claim = id, record = ?r, "objecting to a false claim");
-                        side.vault.object(id).await?;
-                        break;
-                    }
-                }
+        for i in 0..2 {
+            if let Err(e) = self.tend_claims(&mut *st, i).await {
+                let side = if i == 0 { &self.eth } else { &self.sol };
+                warn!(network = side.net.name(), error = %crate::secrets::redact(&e), "reading claims failed");
             }
         }
+        if let Err(e) = self.tend_attests(&mut *st).await {
+            warn!(error = %crate::secrets::redact(&e), "reading attests failed");
+        }
+        self.bring_hidden(&mut *st).await;
         Ok(())
     }
 }
@@ -814,6 +1343,41 @@ impl Worker for VaultGuardian {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_message_is_false_by_its_shape_as_the_vaults_judge_it() {
+        let bond = |network, amount| Record::Bond { network, amount };
+        let request = |to| Record::Request { id: 1, amount: 1, to, fee: 0, fast_fee: 0, at: 0 };
+        let lock = |amount| Record::Lock { id: 1, amount, recipient: [0; 32], fee: 0, fast_fee: 0, at: 0 };
+        let e = 5 * GWEI;
+        // True: the chain's first stated bond, carried forward.
+        assert_eq!(shape_false(ETHEREUM, 300, 10, &[bond(ETHEREUM, 5)], 0, e), Some(e));
+        // The same BOND again is true; another one is not.
+        assert_eq!(shape_false(ETHEREUM, 300, 10, &[bond(ETHEREUM, 5)], e, 9 * GWEI), Some(e));
+        assert_eq!(shape_false(ETHEREUM, 300, 10, &[bond(ETHEREUM, 4)], e, 9 * GWEI), None);
+        // More than the bond, zero, twice in a batch, or an unknown network.
+        assert_eq!(shape_false(ETHEREUM, 300, 10, &[bond(ETHEREUM, 6)], 0, e), None);
+        assert_eq!(shape_false(ETHEREUM, 300, 10, &[bond(ETHEREUM, 0)], 0, e), None);
+        assert_eq!(shape_false(ETHEREUM, 300, 20, &[bond(ETHEREUM, 5), bond(ETHEREUM, 5)], 0, e), None);
+        assert_eq!(shape_false(SOLANA, 300, 10, &[bond(9, 5)], 0, 5), None);
+        // The other network's BOND is not judged here.
+        assert_eq!(shape_false(SOLANA, 300, 10, &[bond(ETHEREUM, 999)], 0, 5), Some(0));
+        // A REQUEST to address zero is false on Ethereum only.
+        assert_eq!(shape_false(ETHEREUM, 300, 45, &[request([0; 20])], 0, e), None);
+        assert_eq!(shape_false(SOLANA, 300, 45, &[request([0; 20])], 0, 5), Some(0));
+        // Locks that overflow are false on Solana.
+        assert_eq!(shape_false(SOLANA, 300, 114, &[lock(u64::MAX), lock(1)], 0, 5), None);
+        assert_eq!(shape_false(ETHEREUM, 300, 114, &[lock(u64::MAX), lock(1)], 0, e), Some(0));
+        // The fast fee is minted too.
+        let fast = Record::Lock { id: 1, amount: u64::MAX, recipient: [0; 32], fee: 0, fast_fee: 1, at: 0 };
+        assert_eq!(shape_false(SOLANA, 300, 65, &[fast], 0, 5), None);
+        // D119: sizes and the count of home records.
+        assert_eq!(shape_false(SOLANA, MAX_RAW_TX + 1, 10, &[], 0, 5), None);
+        assert_eq!(shape_false(SOLANA, 300, MAX_BATCH + 1, &[], 0, 5), None);
+        let many = vec![Record::Cancel { id: 1 }; MAX_HOME_RECORDS + 1];
+        assert_eq!(shape_false(SOLANA, 300, 9 * many.len(), &many, 0, 5), None);
+        assert_eq!(shape_false(SOLANA, 300, 9 * 32, &many[..32], 0, 5), Some(0));
+    }
 
     #[test]
     fn a_journal_cut_short_by_a_crash_still_reads() {

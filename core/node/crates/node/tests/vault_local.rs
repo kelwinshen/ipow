@@ -17,6 +17,7 @@ use ipow_node::operator::Operator;
 use ipow_node::supervisor::Worker;
 use ipow_node::vault::{Side, VaultGuardian, VaultOperator, VaultOperatorSettings};
 use ipow_node::wallet::{head_spend, SharedWallet};
+use ipow_protocol_core::settings::FastSettings;
 use ipow_protocol_core::vault::{encode, message_payload, Record, TxProof, VaultApp};
 use ipow_testing::{World, mine};
 use solana_sdk::signer::Signer;
@@ -93,6 +94,8 @@ impl Setup {
                 min_fee_gwei: 0,
                 checkpoint_paid: [Some(ETH / 10), Some(SOL / 10)],
                 journal: journal.path().join("vault.journal"),
+                // Attests and pays at once only a fast fee of 1 gwei or more.
+                fast: Some(FastSettings { min_fee_gwei: 1, max_gwei: 10_000_000_000 }),
             },
         );
         // Mallory: another operator, with its own keys and journal.
@@ -111,12 +114,13 @@ impl Setup {
                 min_fee_gwei: 0,
                 checkpoint_paid: [None, None],
                 journal: journal.path().join("mallory.journal"),
+                fast: None,
             },
         );
         let (g_eth, g_eth_net) = eth.vault_node(address, 2).await;
         let g_key = sol.chain.funded(100);
         let (g_sol, g_sol_net) = sol.vault_node(&g_key);
-        let guardian = VaultGuardian::new(Side { vault: g_eth, net: g_eth_net }, Side { vault: g_sol, net: g_sol_net });
+        let guardian = VaultGuardian::new(Side { vault: g_eth, net: g_eth_net }, Side { vault: g_sol, net: g_sol_net }, btc.clone(), [Some(ETH / 10), None]);
 
         // The protocol operators take the checkpoint jobs.
         eth.operator().lock_bond(10 * ETH).await.unwrap();
@@ -212,8 +216,8 @@ async fn carries_a_lock_from_ethereum_to_veth_on_solana() {
     // never carries it. Alice then locks 1 ETH for vETH on Solana: the lock
     // too large does not hold hers up.
     let alice = s.sol.user.pubkey();
-    s.eth.user_lock(s.eth_vault_address, [5; 32], 5 * ETH, 1_000_000_000).await;
-    s.eth.user_lock(s.eth_vault_address, alice.to_bytes(), ETH, 1_000_000_000).await;
+    s.eth.user_lock(s.eth_vault_address, [5; 32], 5 * ETH, 1_000_000_000, 0).await;
+    s.eth.user_lock(s.eth_vault_address, alice.to_bytes(), ETH, 1_000_000_000, 0).await;
     s.until("the lock's claim accepted", async |s| {
         let n = s.sol_vault.claim_count().await.unwrap();
         n >= 2 && s.sol_vault.claim(2).await.unwrap().accepted
@@ -245,7 +249,7 @@ async fn a_guardian_objects_to_a_made_up_lock_and_the_claim_is_refused() {
 
     // The lie: lock #99 does not exist.
     let chain = s.m_sol.chain(&m_sol_me).await.unwrap().unwrap();
-    let batch = encode(&[Record::Lock { id: 99, amount: 500_000_000, recipient: [9; 32], fee: 0 }]);
+    let batch = encode(&[Record::Lock { id: 99, amount: 500_000_000, recipient: [9; 32], fee: 0, fast_fee: 0, at: 0 }]);
     let sent = s.mallory_wallet.send(&[head_spend(chain.coin.0, chain.coin.1)], &message_payload(&batch)).await.unwrap();
     s.blocks(1).await;
     // A real block above it on Solana: a checkpoint the honest operator
@@ -291,5 +295,81 @@ async fn a_guardian_objects_to_a_made_up_lock_and_the_claim_is_refused() {
     assert!(s.m_sol.chain(&m_sol_me).await.unwrap().unwrap().refused);
     // The honest operator's chain is untouched.
     assert!(!s.sol_vault.chain(&s.sol_vault.me()).await.unwrap().unwrap().refused);
-    let _ = &s.m_eth;
+
+    // Mallory never showed the lie to Ethereum. The guardian brings it there
+    // once a real block is above it on Ethereum, opening a checkpoint job
+    // itself when none is: lock #99 does not exist, and her ETH bond is
+    // slashed.
+    let m_eth_me = s.m_eth.me();
+    assert!(!s.m_eth.chain(&m_eth_me).await.unwrap().unwrap().slashed);
+    s.until("Mallory's lie brought to Ethereum and slashed", async |s| s.m_eth.chain(&m_eth_me).await.unwrap().unwrap().slashed).await;
+    let c = s.m_eth.chain(&m_eth_me).await.unwrap().unwrap();
+    assert_eq!(c.bond, 0);
+    assert_eq!(c.messages, s.m_sol.chain(&m_sol_me).await.unwrap().unwrap().messages);
+}
+
+/// The fast paths (section 11.7). The operator holds vETH from a lock of its
+/// own. Alice locks 1 ETH with a fast fee: the operator issues her receipt
+/// at once, then carries the lock, links its attest to the claim, and gets
+/// its vETH back with the fast fee once the claim is accepted. Alice burns
+/// vETH with a fast fee: the operator pays her ETH on Ethereum at once.
+#[tokio::test(flavor = "multi_thread")]
+async fn issues_a_receipt_at_once_and_pays_a_burn_at_once() {
+    let s = Setup::new().await;
+    let sol_me = s.sol_vault.me();
+    let op = s.sol.operator_key.pubkey();
+    s.until("the bond counted on Solana", async |s| s.sol_vault.chain(&sol_me).await.unwrap().is_some_and(|c| c.peer_bond == 2_000_000_000)).await;
+    // The operator's own vETH, the slow way.
+    s.eth.user_lock(s.eth_vault_address, op.to_bytes(), ETH, 0, 0).await;
+    s.until("the operator's lock accepted", async |s| {
+        let n = s.sol_vault.claim_count().await.unwrap();
+        n >= 2 && s.sol_vault.claim(2).await.unwrap().accepted
+    })
+    .await;
+    s.sol.issue(2, 1, &op).await;
+    assert_eq!(s.sol.veth(&op).await, 1_000_000_000);
+
+    // Alice's lock, with a fast fee of 0.001 ETH: vETH within a few rounds,
+    // long before any claim could be accepted.
+    let alice = s.sol.user.pubkey();
+    let fast_fee = 1_000_000u64;
+    s.eth.user_lock(s.eth_vault_address, alice.to_bytes(), ETH / 2, 0, fast_fee as u128 * 1_000_000_000).await;
+    let start = s.now().await;
+    for _ in 0..5 {
+        if s.sol.veth(&alice).await > 0 {
+            break;
+        }
+        s.blocks(1).await;
+    }
+    assert_eq!(s.sol.veth(&alice).await, 500_000_000);
+    assert!(s.now().await - start < 2 * 3600, "the receipt came at once");
+    let f = s.sol_vault.fast_lock(1).await.unwrap().unwrap();
+    assert_eq!(f.attester, sol_me);
+    assert_eq!(f.collateral, 625_000_000);
+    assert_eq!(s.sol.veth(&op).await, 1_000_000_000 - 625_000_000);
+
+    // The claim carrying the lock is linked, accepted, and the attest
+    // settled: the operator's vETH back, with the fast fee.
+    s.until("the attest settled", async |s| s.sol_vault.fast_lock(1).await.unwrap().is_none()).await;
+    // Its share of the fast fee: nearly all of it, for an attest within
+    // hours of the lock (D124); Alice gets the rest.
+    let share = s.sol_vault.veth_credit().await.unwrap() - 625_000_000;
+    assert!(share > fast_fee * 99 / 100 && share < fast_fee, "share {share}");
+    assert_eq!(s.sol.veth(&alice).await, 500_000_000 + fast_fee - share);
+
+    // Alice burns 0.2 vETH with a fast fee: the operator pays her ETH on
+    // Ethereum at once, from its own.
+    let to = [0x42u8; 20];
+    let id = s.sol.user_burn(200_000_000, to, 0, 1_000).await;
+    let before = s.eth.balance(alloy::primitives::Address::from(to)).await;
+    for _ in 0..5 {
+        let r = s.sol_vault.request(id).await.unwrap().unwrap();
+        if s.eth_vault.fast_paid_by(&r).await.unwrap().is_some() {
+            break;
+        }
+        s.blocks(1).await;
+    }
+    let r = s.sol_vault.request(id).await.unwrap().unwrap();
+    assert_eq!(s.eth_vault.fast_paid_by(&r).await.unwrap(), Some(s.eth_vault.me()));
+    assert_eq!(s.eth.balance(alloy::primitives::Address::from(to)).await, before + ETH / 5);
 }

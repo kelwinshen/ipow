@@ -10,11 +10,12 @@ import {BitcoinTxLib} from "./BitcoinTxLib.sol";
 /// @title iPoWVault
 /// @notice The protocol's vault on Ethereum, for the pair Ethereum and
 /// Solana. Spec: docs/design/ipow-protocol.md, section 11, decisions D104 to
-/// D117. It is part of the protocol, beside the protocol contract (D104).
+/// D126. It is part of the protocol, beside the protocol contract (D104).
 ///
 /// On Ethereum it holds ETH locked for vETH on Solana. It judges LOCK and
 /// BOND records about itself (D109), and acts on REQUEST, CANCEL and BOND
-/// records from Solana after 7 days of objections (D111).
+/// records from Solana after 7 days of objections (D111). An attester may pay
+/// a burn's ETH at once and be repaid when its claim is accepted (D122).
 ///
 /// There is no owner and no key, and nothing here can be changed after
 /// deployment (D59). The first version holds ETH only (D117).
@@ -55,6 +56,11 @@ contract iPoWVault is ReentrancyGuard {
     uint8 internal constant CANCEL = 3;
     uint8 internal constant BOND = 4;
     uint8 internal constant EXIT = 5;
+    uint256 internal constant LOCK_LEN = 73;
+    uint256 internal constant REQUEST_LEN = 61;
+    /// @notice D124: an attester's share of a fast fee falls to nothing 8 days
+    /// after the lock or burn, about the slow path.
+    uint256 public constant FAST_FEE_DEADLINE = 8 days;
 
     iPoWProtocol public immutable protocol;
     iPoWLightClient public immutable lightClient;
@@ -76,6 +82,10 @@ contract iPoWVault is ReentrancyGuard {
         address owner;
         uint64 amount; // gwei
         uint64 fee; // gwei
+        /// For the attester of the fast path, or the recipient (D122).
+        uint64 fastFee; // gwei
+        /// Its block's time, in the LOCK record (D124).
+        uint64 lockedAt;
         bytes32 recipient; // on Solana
         bool feePaid;
         bool returned;
@@ -106,6 +116,9 @@ contract iPoWVault is ReentrancyGuard {
         /// The value of the chain's open claims here, in wei.
         uint256 openValue;
         uint32 openClaims;
+        /// The block of the chain's last message here, where its
+        /// `MessageBatch` event is: each names the block of the one before.
+        uint64 lastMessageBlock;
     }
 
     struct Claim {
@@ -130,6 +143,16 @@ contract iPoWVault is ReentrancyGuard {
     struct Request {
         address to;
         uint64 amount; // gwei
+        uint64 fastFee; // gwei
+        /// The burn's time on Solana (D124).
+        uint64 requestedAt;
+    }
+
+    /// A burn on Solana paid at once by an attester (section 11.7), under
+    /// the record it stated.
+    struct FastPay {
+        address attester;
+        uint64 paidAt;
     }
 
     uint256 public lockCount;
@@ -141,6 +164,9 @@ contract iPoWVault is ReentrancyGuard {
     /// Several claims may carry the same request; it is paid once.
     mapping(uint256 => mapping(uint64 => Request)) private _requests;
     mapping(uint64 => bool) public requestPaid;
+    /// @dev Request => hash of the record stated => its payment. Several
+    /// may be made; only the true record's is repaid (D126).
+    mapping(uint64 => mapping(bytes32 => FastPay)) private _fastPays;
     /// @dev Claim => lock => whether the claim carries a CANCEL of it.
     mapping(uint256 => mapping(uint64 => bool)) public cancels;
     /// @dev Claim => address => deposits it put down on each side.
@@ -159,11 +185,15 @@ contract iPoWVault is ReentrancyGuard {
     // Events and errors
     // ------------------------------------------------------------------
 
-    event Locked(uint256 indexed lockId, address indexed owner, uint64 amount, uint64 fee, bytes32 recipient);
+    event Locked(uint256 indexed lockId, address indexed owner, uint64 amount, uint64 fee, uint64 fastFee, uint64 lockedAt, bytes32 recipient);
     event ChainRegistered(address indexed operator, bytes32 peerOperator, bytes32 coinTxid, uint32 coinVout);
     event BondChanged(address indexed operator, uint256 bond);
     event RealBlock(bytes32 indexed id);
     event MessageProcessed(address indexed operator, uint64 index, bytes32 txid, bool truthful, uint256 claimId);
+    /// @notice Every message's batch, so that anyone can bring the message to
+    /// the other vault (D107). `prevBlock` is the block of the chain's
+    /// message before it, zero for the first.
+    event MessageBatch(address indexed operator, uint64 indexed index, uint64 prevBlock, bytes batch);
     event Slashed(address indexed operator, uint256 amount, address submitter);
     event FeeEarned(uint256 indexed lockId, address indexed operator, uint256 amount);
     event ClaimOpened(uint256 indexed claimId, address indexed operator, uint256 value);
@@ -174,6 +204,7 @@ contract iPoWVault is ReentrancyGuard {
     event Answered(uint256 indexed claimId, address indexed by);
     event ClaimDecided(uint256 indexed claimId, bool accepted);
     event RequestPaid(uint64 indexed requestId, uint256 indexed claimId, address to, uint256 amount);
+    event FastPaid(uint64 indexed requestId, address indexed attester, address to, uint256 amount);
     event DepositsChanged(address indexed operator, uint256 deposits);
     event LockReturned(uint256 indexed lockId, address owner, uint256 amount);
     event CreditWithdrawn(address indexed to, uint256 amount);
@@ -207,6 +238,7 @@ contract iPoWVault is ReentrancyGuard {
     error NothingToCollect();
     error NoCancel();
     error EscrowTooLow();
+    error AlreadyPaid();
 
     constructor(iPoWProtocol protocol_, bytes32 peerVault_, uint256 deposit_, uint256 minCertifyingEscrow_) {
         if (deposit_ == 0 || minCertifyingEscrow_ == 0) revert ZeroAmount();
@@ -239,6 +271,27 @@ contract iPoWVault is ReentrancyGuard {
         return _requests[claimId][requestId];
     }
 
+    /// @notice The payment made at once of burn `requestId` under the record
+    /// it stated, if any.
+    function getFastPay(uint64 requestId, address to, uint64 amount, uint64 fastFee, uint64 requestedAt)
+        external
+        view
+        returns (FastPay memory)
+    {
+        return _fastPays[requestId][_stated(to, amount, fastFee, requestedAt)];
+    }
+
+    /// @notice D124: an attester's share of `fastFee`, attesting at `at` a
+    /// lock or burn made at `madeAt`: the fee times the time left to 8 days
+    /// after it, over 8 days.
+    function fastShare(uint64 fastFee, uint64 madeAt, uint64 at) public pure returns (uint64) {
+        uint256 end = uint256(madeAt) + FAST_FEE_DEADLINE;
+        if (at >= end) return 0;
+        uint256 left = end - at;
+        if (left > FAST_FEE_DEADLINE) left = FAST_FEE_DEADLINE;
+        return uint64((uint256(fastFee) * left) / FAST_FEE_DEADLINE);
+    }
+
     /// @notice What a registration carries in its `OP_RETURN` (D106).
     function pairCommitment(address operator, bytes32 peerOperator) public view returns (bytes32) {
         return sha256(abi.encodePacked("iPoW pair", address(this), operator, peerVault, peerOperator));
@@ -260,25 +313,58 @@ contract iPoWVault is ReentrancyGuard {
     // Locks (section 11.5)
     // ------------------------------------------------------------------
 
-    /// @notice Locks ETH for vETH on Solana. `msg.value` is the amount and the
-    /// fee; the fee goes to the first operator whose message carrying the
-    /// lock is judged true (D113). Both are whole gwei.
-    function lock(bytes32 recipient, uint256 fee) external payable returns (uint256 lockId) {
-        if (msg.value <= fee) revert ZeroAmount();
-        uint256 amount = msg.value - fee;
-        if (amount % GWEI != 0 || fee % GWEI != 0) revert NotGwei();
-        if (amount / GWEI > type(uint64).max || fee / GWEI > type(uint64).max) revert TooLarge();
+    /// @notice Locks ETH for vETH on Solana. `msg.value` is the amount, the
+    /// fee and the fast fee; the fee goes to the first operator whose message
+    /// carrying the lock is judged true (D113). The fast fee is minted in
+    /// vETH on Solana, to the attester who issued the receipt at once, or to
+    /// the recipient (D122); until then it backs vETH. All are whole gwei.
+    function lock(bytes32 recipient, uint256 fee, uint256 fastFee) external payable returns (uint256 lockId) {
+        if (msg.value <= fee + fastFee) revert ZeroAmount();
+        uint256 amount = msg.value - fee - fastFee;
+        if (amount % GWEI != 0 || fee % GWEI != 0 || fastFee % GWEI != 0) revert NotGwei();
+        if (amount / GWEI > type(uint64).max || fee / GWEI > type(uint64).max || fastFee / GWEI > type(uint64).max) {
+            revert TooLarge();
+        }
         lockId = ++lockCount;
         _locks[lockId] = Lock({
             owner: msg.sender,
             amount: uint64(amount / GWEI),
             fee: uint64(fee / GWEI),
+            fastFee: uint64(fastFee / GWEI),
+            lockedAt: uint64(block.timestamp),
             recipient: recipient,
             feePaid: false,
             returned: false
         });
-        reserve += amount;
-        emit Locked(lockId, msg.sender, uint64(amount / GWEI), uint64(fee / GWEI), recipient);
+        reserve += amount + fastFee;
+        emit Locked(
+            lockId,
+            msg.sender,
+            uint64(amount / GWEI),
+            uint64(fee / GWEI),
+            uint64(fastFee / GWEI),
+            uint64(block.timestamp),
+            recipient
+        );
+    }
+
+    /// @notice Pays a burn on Solana at once, from the sender's own ETH:
+    /// `msg.value` is its amount, sent to `to` (section 11.7). The sender
+    /// states the burn's record. When a claim carrying the same REQUEST
+    /// record is accepted, the vault pays the sender the amount and its
+    /// share of the fast fee (D124). Stated wrongly, the sender's ETH is
+    /// lost: it checks the burn on Solana first. Anyone may call; each
+    /// record stated once, so nobody blocks the true one (D126).
+    function fastPay(uint64 requestId, address to, uint64 fastFee, uint64 requestedAt) external payable nonReentrant {
+        if (to == address(0) || msg.value == 0) revert ZeroAmount();
+        if (msg.value % GWEI != 0) revert NotGwei();
+        if (msg.value / GWEI > type(uint64).max) revert TooLarge();
+        FastPay storage f = _fastPays[requestId][_stated(to, uint64(msg.value / GWEI), fastFee, requestedAt)];
+        if (requestPaid[requestId] || f.attester != address(0)) revert AlreadyPaid();
+        f.attester = msg.sender;
+        f.paidAt = uint64(block.timestamp);
+        emit FastPaid(requestId, msg.sender, to, msg.value);
+        _send(to, msg.value);
     }
 
     // ------------------------------------------------------------------
@@ -434,6 +520,8 @@ contract iPoWVault is ReentrancyGuard {
         }
         if (!truthful) _slash(operator, c);
         emit MessageProcessed(operator, index, txid, truthful, claimId);
+        emit MessageBatch(operator, index, c.lastMessageBlock, batch);
+        c.lastMessageBlock = uint64(block.number);
     }
 
     // ------------------------------------------------------------------
@@ -516,19 +604,30 @@ contract iPoWVault is ReentrancyGuard {
         _credit(msg.sender, entries * cl.payout);
     }
 
-    /// @notice Pays a request carried by an accepted claim, once. Anyone may
-    /// call.
+    /// @notice Pays a request carried by an accepted claim, once, with its
+    /// fast fee: to the attester that paid it at once with the same record,
+    /// its amount and share of the fast fee, the rest to the request's
+    /// address; or else all to the address (section 11.7). Anyone may call.
     function payRequest(uint256 claimId, uint64 requestId) external nonReentrant {
         if (!_claims[claimId].accepted) revert NotAccepted();
         Request storage r = _requests[claimId][requestId];
         if (r.to == address(0)) revert NotAccepted();
         if (requestPaid[requestId]) revert AlreadyDone();
-        uint256 amount = uint256(r.amount) * GWEI;
+        uint256 amount = (uint256(r.amount) + r.fastFee) * GWEI;
         if (amount > reserve) revert Underfunded();
         requestPaid[requestId] = true;
         reserve -= amount;
-        emit RequestPaid(requestId, claimId, r.to, amount);
-        _credit(r.to, amount);
+        FastPay storage f = _fastPays[requestId][_stated(r.to, r.amount, r.fastFee, r.requestedAt)];
+        if (f.attester == address(0)) {
+            emit RequestPaid(requestId, claimId, r.to, amount);
+            _credit(r.to, amount);
+        } else {
+            uint256 share = uint256(fastShare(r.fastFee, r.requestedAt, f.paidAt)) * GWEI;
+            uint256 toAttester = uint256(r.amount) * GWEI + share;
+            emit RequestPaid(requestId, claimId, f.attester, toAttester);
+            _credit(f.attester, toAttester);
+            if (amount > toAttester) _credit(r.to, amount - toAttester);
+        }
     }
 
     /// @notice Returns a lock whose CANCEL an accepted claim carries, with
@@ -538,7 +637,7 @@ contract iPoWVault is ReentrancyGuard {
         if (!cancels[claimId][lockId]) revert NoCancel();
         Lock storage l = _locks[lockId];
         if (l.returned) revert AlreadyDone();
-        uint256 amount = uint256(l.amount) * GWEI;
+        uint256 amount = (uint256(l.amount) + l.fastFee) * GWEI;
         if (amount > reserve) revert Underfunded();
         l.returned = true;
         reserve -= amount;
@@ -590,7 +689,7 @@ contract iPoWVault is ReentrancyGuard {
             uint8 kind = uint8(batch[o]);
             if ((kind == REQUEST || kind == CANCEL) && ++home > MAX_HOME_RECORDS) return (false, 0);
             if (kind == LOCK) {
-                if (o + 57 > batch.length) return (false, 0);
+                if (o + LOCK_LEN > batch.length) return (false, 0);
                 uint64 lockId = _u64(batch, o + 1);
                 Lock storage l = _locks[lockId];
                 if (
@@ -599,23 +698,25 @@ contract iPoWVault is ReentrancyGuard {
                     l.owner == address(0) ||
                     l.amount != _u64(batch, o + 9) ||
                     l.recipient != bytes32(batch[o + 17:o + 49]) ||
-                    l.fee != _u64(batch, o + 49)
+                    l.fee != _u64(batch, o + 49) ||
+                    l.fastFee != _u64(batch, o + 57) ||
+                    l.lockedAt != _u64(batch, o + 65)
                 ) return (false, 0);
-                o += 57;
+                o += LOCK_LEN;
             } else if (kind == REQUEST) {
-                if (o + 45 > batch.length) return (false, 0);
+                if (o + REQUEST_LEN > batch.length) return (false, 0);
                 // Solana writes no request to address zero.
                 if (bytes20(batch[o + 17:o + 37]) == bytes20(0)) return (false, 0);
-                value += uint256(_u64(batch, o + 9)) * GWEI;
+                value += (uint256(_u64(batch, o + 9)) + _u64(batch, o + 45)) * GWEI;
                 acting = true;
-                o += 45;
+                o += REQUEST_LEN;
             } else if (kind == CANCEL) {
                 if (o + 9 > batch.length) return (false, 0);
                 // Solana gives up only a lock it learned from a true LOCK
                 // record, so a lock that does not exist here is a lie.
                 Lock storage l = _locks[_u64(batch, o + 1)];
                 if (l.owner == address(0)) return (false, 0);
-                value += uint256(l.amount) * GWEI;
+                value += (uint256(l.amount) + l.fastFee) * GWEI;
                 acting = true;
                 o += 9;
             } else if (kind == BOND) {
@@ -665,15 +766,17 @@ contract iPoWVault is ReentrancyGuard {
                     emit FeeEarned(lockId, operator, fee);
                     if (fee != 0) _credit(operator, fee);
                 }
-                o += 57;
+                o += LOCK_LEN;
             } else if (kind == REQUEST) {
                 if (claimId != 0) {
                     _requests[claimId][_u64(batch, o + 1)] = Request({
                         to: address(bytes20(batch[o + 17:o + 37])),
-                        amount: _u64(batch, o + 9)
+                        amount: _u64(batch, o + 9),
+                        fastFee: _u64(batch, o + 45),
+                        requestedAt: _u64(batch, o + 53)
                     });
                 }
-                o += 45;
+                o += REQUEST_LEN;
             } else if (kind == CANCEL) {
                 if (claimId != 0) cancels[claimId][_u64(batch, o + 1)] = true;
                 o += 9;
@@ -768,6 +871,10 @@ contract iPoWVault is ReentrancyGuard {
 
     function _id(iPoWProtocol.BlockRef memory b) private view returns (bytes32) {
         return lightClient.nodeId(b.hash, b.height, b.epochTime);
+    }
+
+    function _stated(address to, uint64 amount, uint64 fastFee, uint64 requestedAt) private pure returns (bytes32) {
+        return keccak256(abi.encode(to, amount, fastFee, requestedAt));
     }
 
     function _u64(bytes calldata b, uint256 o) private pure returns (uint64) {

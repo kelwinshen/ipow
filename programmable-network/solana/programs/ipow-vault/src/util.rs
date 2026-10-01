@@ -178,6 +178,29 @@ pub fn u64_at(b: &[u8], o: usize) -> u64 {
 pub struct LockRecord {
     pub amount: u64,
     pub recipient: Pubkey,
+    pub fee: u64,
+    pub fast_fee: u64,
+    pub locked_at: i64,
+}
+
+impl LockRecord {
+    /// What the record's lock backs: the receipt and the fast fee.
+    pub fn value(&self) -> Result<u64> {
+        self.amount.checked_add(self.fast_fee).ok_or_else(|| error!(VaultError::Overflow))
+    }
+
+    /// Whether an attest stated this record.
+    pub fn stated_by(&self, f: &crate::state::FastLock) -> bool {
+        self.amount == f.amount && self.recipient == f.recipient && self.fee == f.fee && self.fast_fee == f.fast_fee && self.locked_at == f.locked_at
+    }
+}
+
+/// D124: an attester's share of `fast_fee`, attesting at `at` a lock or
+/// burn made at `made_at`: the fee times the time left to 8 days after it,
+/// over 8 days.
+pub fn fast_share(fast_fee: u64, made_at: i64, at: i64) -> u64 {
+    let left = (made_at.saturating_add(FAST_FEE_DEADLINE)).saturating_sub(at).clamp(0, FAST_FEE_DEADLINE);
+    (fast_fee as u128 * left as u128 / FAST_FEE_DEADLINE as u128) as u64
 }
 
 pub fn find_lock(records: &[u8], lock_id: u64) -> Option<LockRecord> {
@@ -185,7 +208,13 @@ pub fn find_lock(records: &[u8], lock_id: u64) -> Option<LockRecord> {
     while o + LOCK_LEN <= records.len() {
         if u64_at(records, o + 1) == lock_id {
             let recipient = Pubkey::new_from_array(records[o + 17..o + 49].try_into().unwrap());
-            return Some(LockRecord { amount: u64_at(records, o + 9), recipient });
+            return Some(LockRecord {
+                amount: u64_at(records, o + 9),
+                recipient,
+                fee: u64_at(records, o + 49),
+                fast_fee: u64_at(records, o + 57),
+                locked_at: u64_at(records, o + 65) as i64,
+            });
         }
         o += LOCK_LEN;
     }

@@ -246,6 +246,39 @@ impl SvmWorld {
         }
     }
 
+    /// The user burns `amount` gwei of vETH for ETH to `to` on Ethereum, with
+    /// `fee` for the operator and `fast_fee` for an attester. Returns the
+    /// request's number.
+    pub async fn user_burn(&self, amount: u64, to: [u8; 20], fee: u64, fast_fee: u64) -> u64 {
+        use crate::programs::ipow_vault as vt;
+        let config: vt::accounts::Config = {
+            let data = self.chain.account(&vt_pda(&[b"config"])).await.unwrap().unwrap();
+            anchor_lang::AccountDeserialize::try_deserialize(&mut data.as_slice()).unwrap()
+        };
+        let id = config.request_count + 1;
+        let mint = vt_pda(&[b"veth"]);
+        self.chain
+            .run(
+                &[ix(
+                    vt::ID,
+                    vt::client::accounts::MakeRequest {
+                        config: vt_pda(&[b"config"]),
+                        request: vt_pda(&[b"request", &id.to_le_bytes()]),
+                        mint,
+                        from: anchor_spl::associated_token::get_associated_token_address(&self.user.pubkey(), &mint),
+                        holding: vt_pda(&[b"holding"]),
+                        user: self.user.pubkey(),
+                        token_program: anchor_spl::token::ID,
+                        system_program: SYSTEM,
+                    },
+                    vt::client::args::MakeRequest { amount, to, fee, fast_fee },
+                )],
+                &self.user,
+            )
+            .unwrap();
+        id
+    }
+
     /// Anyone (the user here) issues the vETH of lock `lock_id`, carried by
     /// accepted claim `claim_id`, to `recipient`'s associated account.
     pub async fn issue(&self, claim_id: u64, lock_id: u64, recipient: &Pubkey) {
