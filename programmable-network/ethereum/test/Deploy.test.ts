@@ -59,7 +59,7 @@ describe("Deployment from a network's settings (D134)", function () {
     expect(await protocol.dataFee()).to.equal(ethers.ZeroAddress);
     // The fee follows the price the transaction pays, not the base fee.
     const fee = await protocol.commitmentFeeFor.staticCall(6, { gasPrice: 80n });
-    expect(fee).to.equal(((80_000n * 30n + 520_000n) * 80n * 3n) / 2n);
+    expect(fee).to.equal(((110_000n * 30n + 520_000n) * 80n * 3n) / 2n);
     const a = await (await ethers.getContractAt("VaultHome", d.vaults[0].home)).getAsset(0);
     expect([a.token, a.decimals, a.recordDecimals, a.unit]).to.deep.equal([ethers.ZeroAddress, 8n, 8n, 1n]);
   });
@@ -74,8 +74,8 @@ describe("Deployment from a network's settings (D134)", function () {
     const [, application, user] = await ethers.getSigners();
     await protocol.connect(application).registerApplication([]);
     const price = 10n ** 12n + 7n;
-    const fee = ((80_000n * 30n + 520_000n) * price * 3n) / 2n / 8n;
-    expect(fee).to.be.gt(((80_000n * 30n + 520_000n) * (price / 8n) * 3n) / 2n);
+    const fee = ((110_000n * 30n + 520_000n) * price * 3n) / 2n / 8n;
+    expect(fee).to.be.gt(((110_000n * 30n + 520_000n) * (price / 8n) * 3n) / 2n);
     await ethers.provider.send("hardhat_setNextBlockBaseFeePerGas", ["0x" + price.toString(16)]);
     await protocol.connect(application).openJob(ethers.id("p"), 5n * fee, 0, 6, 0, user.address, fee, { value: fee, gasLimit: 1_000_000n });
     expect((await protocol.getJob(1n)).commitmentFee).to.equal(fee);

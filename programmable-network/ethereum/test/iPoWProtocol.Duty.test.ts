@@ -31,7 +31,7 @@ const ZERO_HASH = "0x" + "00".repeat(32);
 const TAG = ethers.id("transfer-1");
 const SALT = ethers.id("salt");
 
-const FEE = ((80_000n * 30n + 520_000n) * GWEI * 3n) / 2n;
+const FEE = ((110_000n * 30n + 520_000n) * GWEI * 3n) / 2n;
 const ESCROW_FEE = ETH / 200n;
 
 type Ref = { hash: string; height: number; epochTime: number };
@@ -216,7 +216,7 @@ async function assignedJob(
   const confirmations = opts.confirmations ?? 6;
   await setPrice(GWEI);
   const fee =
-    ((80_000n * BigInt(24 + confirmations) + 520_000n) * GWEI * 3n) / 2n;
+    ((110_000n * BigInt(24 + confirmations) + 520_000n) * GWEI * 3n) / 2n;
   const tx = await protocol
     .connect(opts.application ?? ctx.application)
     .openJob(

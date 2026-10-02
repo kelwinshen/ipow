@@ -14,7 +14,7 @@ const { ethers } = await network.create();
 const USD = 10n ** 6n; // one PathUSD
 const SCALE = 10n ** 12n; // attodollars per microdollar
 const TEMPO_BASE_FEE = 2n * 10n ** 10n; // attodollars per gas (TIP-1010)
-const WORK_PER_BLOCK = 80_000n;
+const WORK_PER_BLOCK = 110_000n;
 const WORK_FIXED = 520_000n;
 const GAS = 1_000_000n;
 
@@ -61,9 +61,9 @@ describe("iPoWProtocolToken", function () {
     const { protocol } = await setup();
     await setPrice(TEMPO_BASE_FEE);
     await ethers.provider.send("evm_mine", []);
-    // 2,920,000 gas for 6 confirmations at 2x10^10 attodollars, x 1.5: 0.0876
+    // 3,820,000 gas for 6 confirmations at 2x10^10 attodollars, x 1.5: 0.1146
     // PathUSD.
-    expect(feeFor(TEMPO_BASE_FEE, 6)).to.equal(87_600n);
+    expect(feeFor(TEMPO_BASE_FEE, 6)).to.equal(114_600n);
     // In the coin, as the native build gives it in wei: an application asks
     // it the same way on every network (V14).
     expect(await protocol.commitmentFeeAt(6, TEMPO_BASE_FEE)).to.equal(feeFor(TEMPO_BASE_FEE, 6));

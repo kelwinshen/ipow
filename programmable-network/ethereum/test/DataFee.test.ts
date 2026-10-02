@@ -34,7 +34,7 @@ async function protocolWith(dataFeeName: string | null) {
 /** (work gas x price + work bytes x data price) x 1.5 */
 function feeFor(price: bigint, perByte: bigint, confirmations: number) {
   const window = BigInt(24 + confirmations);
-  const gas = 80_000n * window + 520_000n;
+  const gas = 110_000n * window + 520_000n;
   const bytes = 350n * window + 1_800n;
   return ((gas * price + bytes * perByte) * 3n) / 2n;
 }

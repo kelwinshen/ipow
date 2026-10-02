@@ -61,9 +61,12 @@ abstract contract iPoWProtocol is ReentrancyGuard {
     /// @notice D24: the safety margin of the commitment fee is 1.5.
     uint256 public constant MARGIN_NUMERATOR = 3;
     uint256 public constant MARGIN_DENOMINATOR = 2;
-    /// @notice The work of streaming one block, in gas. Measured on the light
-    /// client on 2026-09-28: about 76,000 when blocks are streamed together.
-    uint256 public constant WORK_PER_BLOCK = 80_000;
+    /// @notice The work of streaming one block, in gas. An operator streams
+    /// blocks as they come, one transaction each: 104,842 gas for one real
+    /// header, measured on 2026-10-02 on a local chain and on Hedera's
+    /// testnet (about 76,000 each when streamed together, measured on
+    /// 2026-09-28).
+    uint256 public constant WORK_PER_BLOCK = 110_000;
     /// @notice The work of a job that does not depend on its window, in gas.
     /// Measured on 2026-09-28: about 175,000 for the jump, 111,000 for naming
     /// the anchor and 216,000 for the proof, which is 502,000. The proof was

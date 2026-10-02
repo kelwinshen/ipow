@@ -12,7 +12,7 @@ const DAY = 24 * HOUR;
 const ETH = 10n ** 18n;
 const GWEI = 10n ** 9n;
 
-const WORK_PER_BLOCK = 80_000n;
+const WORK_PER_BLOCK = 110_000n;
 const WORK_FIXED = 520_000n;
 const TAG = ethers.id("transfer-1");
 // The simulated network estimates gas at a price of zero, where the
@@ -247,11 +247,11 @@ describe("iPoWProtocol: window, deadline and fees (D14, D24, D68 to D70)", funct
 
   it("follows the price of the network (D58)", async function () {
     const ctx = await deploy();
-    const { job, blockNumber } = await openJob(ctx, { price: 40n * GWEI });
+    const { job, blockNumber } = await openJob(ctx, { price: 40n * GWEI, escrow: 2n * ETH });
     const block = await ethers.provider.getBlock(blockNumber);
     expect(block!.baseFeePerGas).to.equal(40n * GWEI);
-    // 30 blocks x 80,000 + 520,000 = 2,920,000 gas, x 40 gwei, x 1.5.
-    expect(job.commitmentFee).to.equal((2_920_000n * 40n * GWEI * 3n) / 2n);
+    // 30 blocks x 110,000 + 520,000 = 3,820,000 gas, x 40 gwei, x 1.5.
+    expect(job.commitmentFee).to.equal((3_820_000n * 40n * GWEI * 3n) / 2n);
   });
 });
 
@@ -329,7 +329,7 @@ describe("iPoWProtocol: opening a job (D19, D40, D55, D56, D65)", function () {
 
   it("rejects an escrow below 5 times the commitment fee and accepts exactly 5 times (D56)", async function () {
     const ctx = await deploy();
-    const fee = (2_920_000n * GWEI * 3n) / 2n;
+    const fee = (3_820_000n * GWEI * 3n) / 2n;
 
     await expect(
       openJob(ctx, { escrow: 5n * fee - 1n })
