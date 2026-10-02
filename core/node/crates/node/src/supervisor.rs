@@ -17,6 +17,11 @@ use tracing::{info, warn};
 #[async_trait]
 pub trait Worker: Send + Sync {
     fn role(&self) -> Role;
+    /// How the logs name this task: the role and its network, or for a
+    /// vault's worker its pair.
+    fn label(&self, network: &str) -> String {
+        format!("{:?} on {network}", self.role())
+    }
     async fn round(&self, network: &dyn ProtocolNetwork) -> anyhow::Result<()>;
 }
 
@@ -59,7 +64,7 @@ async fn keep_running(
     timing: Timing,
     mut stop: watch::Receiver<bool>,
 ) {
-    let label = format!("{:?} on {}", worker.role(), network.name());
+    let label = worker.label(network.name());
     info!(task = %label, "started");
     let mut pause = timing.backoff;
     loop {

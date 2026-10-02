@@ -1,0 +1,51 @@
+# The node on the test networks deployed on 2026-10-02/03 (spec Build
+# status, row 8), on Sepolia and Solana devnet: as a guardian, and as an
+# operator taking jobs on Sepolia, where its bond is locked (on Solana it
+# waits for a bond, spending nothing). Addresses from programmable-network/ethereum/
+# deployments/ethereum-testnet.json and programmable-network/solana/README.md.
+# No secrets: run-testnet.sh loads the keys and endpoints this names.
+
+roles: [operator, guardian]
+
+bitcoin:
+  explorer: https://mempool.space/api
+  # The operator wallet's mainnet WIF key, loaded by run-testnet.sh.
+  wallet_key_env: BTC_WALLET_KEY
+  # At most 10 sat/vB: the wallet holds about 14,000 sats.
+  max_fee_rate: 10
+
+interval_seconds: 30
+
+networks:
+  - name: ethereum-sepolia
+    kind: evm
+    rpc_env: SEPOLIA_RPC_URL
+    key_env: SEPOLIA_PRIVATE_KEY
+    light_client: "0x8e09508deF58997f8481FF678cd7f278DFe22C3F"
+    protocol: "0x21348ef459dDBa5607732Ca1e9992968B4cC5611"
+    # A challenge's deposit, at most 0.01 ETH.
+    guardian: { max_deposit: "10000000000000000" }
+    # At most 0.05 ETH of bond locked for one job: a checkpoint's escrow is
+    # 5 times its fee, about 0.03 ETH at a base fee of 1 gwei.
+    operator: { max_bid: "50000000000000000" }
+
+  - name: solana-devnet
+    kind: svm
+    rpc_env: SOLANA_RPC_URL
+    key_env: SOLANA_KEY
+    light_client: "Ctotq1SSaDJ2EUSe4sMdau92qBesyutH7GPaTRiYp4vJ"
+    protocol: "ChYhovM8vm2tuMRaRFn4m6etG979bjixVa71fXBDwjPL"
+    # At most 0.01 SOL.
+    guardian: { max_deposit: "10000000" }
+    # At most 0.02 SOL; no bond is locked on Solana yet.
+    operator: { max_bid: "20000000" }
+
+# The vault pair, left out while the operator first takes jobs: its
+# operator would register a pair chain on Bitcoin at once.
+# vault:
+#   deposits: 1
+#   pairs:
+#     - networks: [ethereum-sepolia, solana-devnet]
+#       vaults: ["0xD18b7d290f8c94fe561710A78F17494ff2520302", "2e1ZUB5eqA6bQfH3f9pbfvibfie7WnvEJeKif53VAm7p"]
+#       journal: testnet-eth-sol.journal
+#       assets: []

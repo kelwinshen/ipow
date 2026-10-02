@@ -1,0 +1,17 @@
+{
+  "name": "@ipow/sdk",
+  "version": "0.1.0",
+  "description": "Build on the iPoW protocol: networks, quotes, jobs and their Bitcoin side, the vault, BETA and Conversion.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "sync": "node scripts/sync.ts",
+    "test": "node --test test/*.test.ts"
+  },
+  "dependencies": {
+    "ethers": "^6.14.0"
+  }
+}

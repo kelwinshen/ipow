@@ -1332,6 +1332,9 @@ impl VaultOperator {
 
 #[async_trait]
 impl Worker for VaultOperator {
+    fn label(&self, _: &str) -> String {
+        format!("Vault {:?} for {} and {}", self.role(), self.a.net.name(), self.b.net.name())
+    }
     fn role(&self) -> Role {
         Role::Operator
     }
@@ -1896,6 +1899,9 @@ fn peer_address(bytes: &[u8]) -> String {
 
 #[async_trait]
 impl Worker for VaultGuardian {
+    fn label(&self, _: &str) -> String {
+        format!("Vault {:?} for {} and {}", self.role(), self.a.net.name(), self.b.net.name())
+    }
     fn role(&self) -> Role {
         Role::Guardian
     }

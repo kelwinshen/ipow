@@ -17,7 +17,9 @@ for that:
   issues receipt tokens across networks, which BETA would be built on;
   [`ipow-stage7-networks.md`](ipow-stage7-networks.md), the questions
   of stage 7 (the vault across many networks, and what each network
-  needs), with recommendations.
+  needs), with recommendations;
+  [`ipow-sdk.md`](ipow-sdk.md), the TypeScript SDK that apps such as
+  Greatwall.finance build on.
   The protocol redesign was approved on 2026-09-28 and moved to
   [`../design/ipow-protocol.md`](../design/ipow-protocol.md). Its build
   plan is [`ipow-build-plan.md`](ipow-build-plan.md).
@@ -27,7 +29,10 @@ for that:
   (earlier designs, replaced and removed — kept for why the current one
   looks the way it does), and
   [`live-run-log.md`](live-run-log.md) (a dated record of specific
-  deploys, live transactions, and incidents — history, not spec).
+  deploys, live transactions, and incidents — history, not spec), and
+  [`ipow-testnet-run-2026-10-02.md`](ipow-testnet-run-2026-10-02.md) (the
+  new protocol's first job taken end to end on Sepolia, with its timeline
+  and costs, and what it teaches the SDK and Greatwall.finance).
 
 If you're proposing something new that isn't built yet, put it here, not
 in a canonical doc as if it were already true.
