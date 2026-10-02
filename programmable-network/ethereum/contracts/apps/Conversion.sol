@@ -180,7 +180,7 @@ contract Conversion is ReentrancyGuard {
     /// commitment fee and the escrow fee on the lowest escrow. The base fee
     /// can rise before the swap's transaction runs, so send a little more;
     /// what is sent above the fees goes to the operator (D79). Some nodes
-    /// answer a call at a base fee of zero, and this is then zero.
+    /// answer a call at a base fee of zero, and this is then too little.
     function feesFor(uint16 confirmations) external view returns (uint256) {
         (, uint256 escrowFee, uint256 fee) = _escrow(confirmations);
         return fee + escrowFee;

@@ -5,6 +5,7 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 
 import {iPoWLightClient} from "./iPoWLightClient.sol";
 import {BitcoinTxLib} from "./BitcoinTxLib.sol";
+import {IDataFee} from "./DataFee.sol";
 
 /// @title iPoWProtocol
 /// @notice Operators, jobs, fees and the auction of the iPoW protocol. Spec:
@@ -68,6 +69,16 @@ abstract contract iPoWProtocol is ReentrancyGuard {
     /// the anchor and 216,000 for the proof, which is 502,000. The proof was
     /// measured with a Merkle proof of 1 level; a real block has about 12.
     uint256 public constant WORK_FIXED = 520_000;
+    /// @notice D135: the bytes of the work's transactions, each with its
+    /// envelope and signature (about 116 bytes), for a rollup's data fee.
+    /// Measured on 2026-10-02 from the calls' encoding: 228 bytes of calldata
+    /// to stream one block, one transaction per block, as an operator streams
+    /// blocks as they come (streamed together, a further block adds 96); 228
+    /// for the jump, 132 for naming the anchor and 1,092 for a proof of 12
+    /// levels of a 168-byte transaction. A larger transaction or proof is
+    /// above this; the oracles' prices are above what is paid (DataFee.sol).
+    uint256 internal constant WORK_BYTES_PER_BLOCK = 350;
+    uint256 internal constant WORK_BYTES_FIXED = 1_800;
 
     /// @notice D39: an anchor may be at most 2 hours old.
     uint256 public constant MAX_ANCHOR_AGE = 2 hours;
@@ -454,18 +465,24 @@ abstract contract iPoWProtocol is ReentrancyGuard {
     /// @notice D24, D69: amount of work x current price x 1.5, where the work
     /// grows with the window. No person sets the price (D58).
     /// @dev Many nodes run a call that is not a transaction at a price of
-    /// zero, and this then returns zero. To know the fee before sending, use
-    /// `commitmentFeeAt` with the price of the network.
+    /// zero, and this then returns too little: zero, or on a rollup only the
+    /// data part. To know the fee before sending, use `commitmentFeeAt` with
+    /// the price of the network.
     function commitmentFeeFor(uint16 confirmations) public view returns (uint256) {
         return commitmentFeeAt(confirmations, _price());
     }
 
     /// @notice The commitment fee at a given price of work, in the network's
-    /// coin: the price is in the units of the network's gas price, divided by
-    /// the units of it per unit of the coin (D136).
+    /// coin: the price is the network's gas price as a contract sees it (the
+    /// base fee; on Hedera the network's gas price in tinybars, D139),
+    /// divided by the units of it per unit of the coin (D136) or, on
+    /// Polkadot, by its gas per unit of Ethereum's (D140). On a rollup it adds the
+    /// cost of posting the work's data, at the rollup's price now (D135).
     function commitmentFeeAt(uint16 confirmations, uint256 price) public view returns (uint256) {
-        uint256 work = WORK_PER_BLOCK * windowOf(confirmations) + WORK_FIXED;
-        return (work * price * MARGIN_NUMERATOR) / MARGIN_DENOMINATOR / _priceScale();
+        uint256 window = windowOf(confirmations);
+        uint256 cost = (WORK_PER_BLOCK * window + WORK_FIXED) * price
+            + _dataFee(WORK_BYTES_PER_BLOCK * window + WORK_BYTES_FIXED);
+        return (cost * MARGIN_NUMERATOR) / MARGIN_DENOMINATOR / _priceScale();
     }
 
     /// @notice D69: the time an operator has, from the moment it is locked in.
@@ -1387,6 +1404,12 @@ abstract contract iPoWProtocol is ReentrancyGuard {
     /// @dev D137: pays `amount` of the network's coin.
     function _send(address to, uint256 amount) internal virtual;
 
+    /// @dev D135: the cost of posting `size` bytes to a rollup's parent
+    /// network, in the units of the price. None by default.
+    function _dataFee(uint256) internal view virtual returns (uint256) {
+        return 0;
+    }
+
     /// @dev D136: units of the price of work per unit of the coin.
     function _priceScale() internal view virtual returns (uint256) {
         return 1;
@@ -1405,9 +1428,47 @@ abstract contract iPoWProtocol is ReentrancyGuard {
 
 /// @title iPoWProtocolNative
 /// @notice The protocol on a network with a native coin (D137): bonds, fees
-/// and deposits are sent with the call, exactly the amount named.
+/// and deposits are sent with the call, exactly the amount named. On a
+/// rollup, `dataFee` reads the price of posting its data (D135); zero
+/// elsewhere.
 contract iPoWProtocolNative is iPoWProtocol {
-    constructor(iPoWLightClient lightClient_) iPoWProtocol(lightClient_) {}
+    IDataFee public immutable dataFee;
+    /// @dev The gas the reader of the data fee is given, and the gas a call
+    /// must have left to give it all of it (64/63 of it and the call's own
+    /// cost), so that only the reader can make it fail, not a caller's low
+    /// gas limit.
+    uint256 internal constant DATA_FEE_GAS = 100_000;
+    uint256 internal constant DATA_FEE_GAS_NEEDED = 107_000;
+
+    error DataFeeGas();
+
+    constructor(iPoWLightClient lightClient_, IDataFee dataFee_) iPoWProtocol(lightClient_) {
+        dataFee = dataFee_;
+        // A reader that cannot read, within the gas it will be given, is
+        // found here, not at the first job.
+        if (address(dataFee_) != address(0)) dataFee_.dataFee{gas: DATA_FEE_GAS}(1);
+    }
+
+    /// @dev A reader that stops reading counts as no data fee, so that the
+    /// network's jobs can still open: priced too low, a job may draw no bid
+    /// and expire with its fees returned (D61). Failing would end them for
+    /// good, as nobody can change the reader (D59).
+    function _dataFee(uint256 size) internal view override returns (uint256 fee) {
+        address reader = address(dataFee);
+        if (reader == address(0)) return 0;
+        if (gasleft() < DATA_FEE_GAS_NEEDED) revert DataFeeGas();
+        bytes4 selector = IDataFee.dataFee.selector;
+        // In scratch memory, and only the first word of the answer copied.
+        assembly ("memory-safe") {
+            mstore(0, selector)
+            mstore(4, size)
+            let ok := staticcall(DATA_FEE_GAS, reader, 0, 0x24, 0, 0x20)
+            fee := mload(0)
+            if or(iszero(ok), or(xor(returndatasize(), 0x20), gt(fee, 0xffffffffffffffffffffffffffffffff))) {
+                fee := 0
+            }
+        }
+    }
 
     function _take(uint256 amount) internal override {
         if (msg.value != amount) revert WrongValue();
@@ -1416,5 +1477,36 @@ contract iPoWProtocolNative is iPoWProtocol {
     function _send(address to, uint256 amount) internal override {
         (bool ok, ) = to.call{value: amount}("");
         if (!ok) revert TransferFailed();
+    }
+}
+
+/// @title iPoWProtocolGasPrice
+/// @notice The native build on Hedera, whose base fee reads as zero to a
+/// contract (D139): the price of work is the gas price a contract sees,
+/// which is the network's own, in tinybars, whatever price the sender
+/// offers (measured on its testnet on 2026-10-02).
+contract iPoWProtocolGasPrice is iPoWProtocolNative {
+    constructor(iPoWLightClient lightClient_) iPoWProtocolNative(lightClient_, IDataFee(address(0))) {}
+
+    function _price() internal view override returns (uint256) {
+        return tx.gasprice;
+    }
+}
+
+/// @title iPoWProtocolPolkadot
+/// @notice The native build on Polkadot, whose gas is not Ethereum's (D140):
+/// the work's gas constants are Ethereum's, so the cost of the work at the
+/// base fee is divided by Ethereum's gas per unit of Polkadot's, 8, measured
+/// on its testnet on 2026-10-02 (the light client's work took 0.08 to 0.124
+/// of Ethereum's gas). Dividing the cost, not the base fee, loses nothing to
+/// rounding, and `commitmentFeeAt` then takes the base fee as it is.
+contract iPoWProtocolPolkadot is iPoWProtocolNative {
+    /// @notice Units of Ethereum's gas per unit of Polkadot's.
+    uint256 public constant WORK_SCALE = 8;
+
+    constructor(iPoWLightClient lightClient_) iPoWProtocolNative(lightClient_, IDataFee(address(0))) {}
+
+    function _priceScale() internal pure override returns (uint256) {
+        return WORK_SCALE;
     }
 }

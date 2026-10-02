@@ -113,11 +113,13 @@ place that multiplies a record unit by a token unit is checked for it.
 The old contracts were split into routers and facets because HyperEVM's
 blocks held 3M gas. HyperEVM now has two kinds of block: small ones, 2M
 gas, about every second, and big ones, 30M gas, about every minute, which
-an address chooses for its transactions.
+an address chooses for its transactions. (Measured on its testnet on
+2026-10-02: small blocks hold 3M, and a big one comes every 60 seconds;
+see the spec's Build status.)
 
 **Recommendation:** no split. Deploy through big blocks, and measure the
 gas of every call a node or user makes (submitting a message, a proof, a
-challenge, a mint of BETA). A call above 2M goes through big blocks, at
+challenge, a mint of BETA). A call above the small block (3M, measured) goes through big blocks, at
 the cost of up to a minute's wait; the node chooses per call. To be
 confirmed by measurement on HyperEVM testnet before building.
 

@@ -12,8 +12,19 @@ import {VaultReceipts} from "./VaultReceipts.sol";
 /// per pair, D132). A part made for any other caller is bound to that caller
 /// only, and serves no vault.
 contract VaultHomeFactory {
+    /// @notice The native coin's decimals as a contract sees them on this
+    /// network: 18, or 8 on Hedera (D139).
+    uint8 public immutable nativeDecimals;
+
+    error BadDecimals();
+
+    constructor(uint8 nativeDecimals_) {
+        if (nativeDecimals_ == 0 || nativeDecimals_ > 18) revert BadDecimals();
+        nativeDecimals = nativeDecimals_;
+    }
+
     function make(uint8 here, uint8 peer, address coin) external returns (VaultHome) {
-        return new VaultHome(IVaultCore(msg.sender), here, peer, coin);
+        return new VaultHome(IVaultCore(msg.sender), here, peer, coin, nativeDecimals);
     }
 }
 

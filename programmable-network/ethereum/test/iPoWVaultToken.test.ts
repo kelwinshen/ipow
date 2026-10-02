@@ -21,7 +21,7 @@ async function setup() {
   const lightClient = await ethers.deployContract("iPoWLightClient", [0]);
   const coin = await ethers.deployContract("MockToken", ["PathUSD", "pathUSD", 6]);
   const protocol = await ethers.deployContract("iPoWProtocolToken", [await lightClient.getAddress(), await coin.getAddress(), SCALE]);
-  const hf = await ethers.deployContract("VaultHomeFactory");
+  const hf = await ethers.deployContract("VaultHomeFactory", [18]);
   const rf = await ethers.deployContract("VaultReceiptsFactory");
   const vault = await ethers.deployContract("iPoWVaultToken", [
     await protocol.getAddress(),
@@ -76,7 +76,7 @@ describe("iPoWVaultToken", function () {
   it("refuses a coin other than its protocol's, and the coin as a second asset", async function () {
     const { coin, protocol, home } = await setup();
     const other = await ethers.deployContract("MockToken", ["Other", "OTH", 6]);
-    const hf = await ethers.deployContract("VaultHomeFactory");
+    const hf = await ethers.deployContract("VaultHomeFactory", [18]);
     const rf = await ethers.deployContract("VaultReceiptsFactory");
     const factory = await ethers.getContractFactory("iPoWVaultToken");
     await expect(
@@ -97,7 +97,7 @@ describe("iPoWVaultToken", function () {
 
   it("takes the share of a slashed checkpoint job into the backing of the coin, in its own units", async function () {
     const { coin, protocol, stranger, atTempoPrice, slash } = await tokenNetwork(ethers);
-    const hf = await ethers.deployContract("VaultHomeFactory");
+    const hf = await ethers.deployContract("VaultHomeFactory", [18]);
     const rf = await ethers.deployContract("VaultReceiptsFactory");
     const vault = await ethers.deployContract("iPoWVaultToken", [
       await protocol.getAddress(),

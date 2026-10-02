@@ -189,7 +189,7 @@ impl EvmWorld {
             w[12..].copy_from_slice(a.as_slice());
             w
         };
-        let home = deploy_with(&self.apps[0], include_str!("../tests/VaultHomeFactory.bin"), &[]).await;
+        let home = deploy_with(&self.apps[0], include_str!("../tests/VaultHomeFactory.bin"), &[U256::from(18u8).to_be_bytes::<32>()]).await;
         let receipts = deploy_with(&self.apps[0], include_str!("../tests/VaultReceiptsFactory.bin"), &[]).await;
         let n = |v: u8| U256::from(v).to_be_bytes::<32>();
         let d: [u8; 32] = U256::from(deposit).to_be_bytes();

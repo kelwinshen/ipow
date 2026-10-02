@@ -128,7 +128,7 @@ let factories: [string, string] | undefined;
 /** A vault for the pair (`here`, `peer`). */
 async function deployVault(protocol: string, here: number, peer: number) {
   if (!factories) {
-    const h = await ethers.deployContract("VaultHomeFactory");
+    const h = await ethers.deployContract("VaultHomeFactory", [18]);
     const r = await ethers.deployContract("VaultReceiptsFactory");
     factories = [await h.getAddress(), await r.getAddress()];
   }

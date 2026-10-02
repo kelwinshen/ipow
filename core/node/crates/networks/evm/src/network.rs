@@ -15,8 +15,10 @@ use ipow_protocol_core::types::{
 use crate::contracts::{iPoWLightClient, iPoWProtocol, IPoWLightClient, IPoWProtocol};
 
 /// Headers per `extend`. The light client takes up to MAX_WALK (100), at
-/// about 76,000 gas each (V7); 50 keeps one transaction well inside a block.
-const MAX_EXTEND: usize = 50;
+/// about 76,000 gas each (V7). 30 is about 2.3M gas, inside HyperEVM's
+/// small blocks of 3M, the smallest measured (its testnet, 2026-10-02);
+/// 50 headers, 3.8M, would wait there for a big one.
+const MAX_EXTEND: usize = 30;
 
 /// How long to wait for a transaction to be included before sending it
 /// again with a higher fee.

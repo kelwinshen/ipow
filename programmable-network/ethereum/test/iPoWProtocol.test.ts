@@ -23,6 +23,7 @@ async function deploy() {
   const lightClient = await ethers.deployContract("iPoWLightClient", [0]);
   const protocol = await ethers.deployContract("iPoWProtocolNative", [
     await lightClient.getAddress(),
+    ethers.ZeroAddress,
   ]);
   const [, application, user, operatorA, operatorB, stranger] =
     await ethers.getSigners();
@@ -745,7 +746,7 @@ describe("iPoWProtocol: no person in control (D59)", function () {
   it("cannot be deployed without a light client", async function () {
     const factory = await ethers.getContractFactory("iPoWProtocolNative");
     await expect(
-      factory.deploy(ethers.ZeroAddress)
+      factory.deploy(ethers.ZeroAddress, ethers.ZeroAddress)
     ).to.be.revertedWithCustomError(factory, "ZeroAddress");
   });
 

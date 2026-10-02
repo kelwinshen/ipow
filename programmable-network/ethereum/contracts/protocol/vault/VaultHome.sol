@@ -107,12 +107,15 @@ contract VaultHome is ReentrancyGuard {
 
     /// @param coin_ The network's coin (D136): zero for a native coin, which
     /// is asset 0 as ETH is; else the token that is asset 0.
-    constructor(IVaultCore core_, uint8 here_, uint8 peer_, address coin_) {
+    /// @param nativeDecimals_ The native coin's decimals as a contract sees
+    /// them: 18, or 8 on Hedera (D139). Unused when the coin is a token.
+    constructor(IVaultCore core_, uint8 here_, uint8 peer_, address coin_, uint8 nativeDecimals_) {
         core = core_;
         here = here_;
         peer = peer_;
         if (coin_ == address(0)) {
-            _assets.push(Asset({token: address(0), decimals: 18, recordDecimals: 9, unit: 1e9}));
+            uint8 rd = nativeDecimals_ > R.MAX_DECIMALS ? R.MAX_DECIMALS : nativeDecimals_;
+            _assets.push(Asset({token: address(0), decimals: nativeDecimals_, recordDecimals: rd, unit: 10 ** (nativeDecimals_ - rd)}));
         } else {
             uint8 d = IERC20Metadata(coin_).decimals();
             uint8 rd = d > R.MAX_DECIMALS ? R.MAX_DECIMALS : d;
