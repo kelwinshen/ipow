@@ -1,50 +1,24 @@
 // The SDK's Solana vault against a local validator running the production
-// builds of the protocol and vault programs, at their declared ids, with a
-// test key as their upgrade authority (which the vault's set-up demands).
+// builds of the protocol and vault programs (test/helpers/validator.ts).
 
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { spawn, type ChildProcess } from "node:child_process";
-import { mkdtempSync, openSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import anchor from "@coral-xyz/anchor";
-import { Connection, Keypair, LAMPORTS_PER_SOL, PublicKey, SystemProgram } from "@solana/web3.js";
+import { Connection, Keypair, PublicKey, SystemProgram } from "@solana/web3.js";
 
 import { IDLS, SOLANA, SolanaVault } from "../src/index.ts";
+import { startValidator, type Local } from "./helpers/validator.ts";
 
 const { AnchorProvider, BN, Program, Wallet } = anchor;
-const deploy = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "programmable-network", "solana", "target", "deploy");
-const PORT = 18899;
-const URL = `http://127.0.0.1:${PORT}`;
-const authority = Keypair.generate();
 const EVM_VAULT = "0x" + "11".repeat(20);
 const ETHEREUM = 1;
-let validator: ChildProcess;
+let local: Local;
 let connection: Connection;
+let authority: Keypair;
 
 before(async () => {
-  const dir = mkdtempSync(join(tmpdir(), "ipow-sdk-validator-"));
-  const auth = join(dir, "authority.json");
-  writeFileSync(auth, JSON.stringify(Array.from(authority.secretKey)));
-  validator = spawn("solana-test-validator", [
-    "--reset", "--ledger", join(dir, "ledger"), "--rpc-port", String(PORT), "--faucet-port", String(PORT + 101),
-    "--upgradeable-program", SOLANA.programs.protocol, join(deploy, "ipow_protocol.so"), auth,
-    "--upgradeable-program", SOLANA.programs.vault, join(deploy, "ipow_vault.so"), auth,
-  ], { detached: true, stdio: ["ignore", openSync(join(dir, "validator.log"), "w"), openSync(join(dir, "validator.log"), "a")] });
-  connection = new Connection(URL, "confirmed");
-  let up = false;
-  for (let i = 0; i < 60 && !up; i++) {
-    try {
-      await connection.getVersion();
-      up = true;
-    } catch {
-      await new Promise((r) => setTimeout(r, 1000));
-    }
-  }
-  if (!up) throw new Error(`the local validator did not start; see ${join(dir, "validator.log")}`);
-  await connection.confirmTransaction(await connection.requestAirdrop(authority.publicKey, 100 * LAMPORTS_PER_SOL));
+  local = await startValidator(18899, { [SOLANA.programs.protocol]: "ipow_protocol", [SOLANA.programs.vault]: "ipow_vault" });
+  ({ connection, authority } = local);
 
   // The set-up an operator of the deployment does once (scripts/init-testnet.ts).
   const provider = new AnchorProvider(connection, new Wallet(authority), { commitment: "confirmed" });
@@ -67,10 +41,7 @@ before(async () => {
   }).rpc();
 });
 
-after(() => {
-  // Its own process group, so that the test's end stops it and nothing else.
-  if (validator?.pid) process.kill(-validator.pid);
-});
+after(() => local?.stop());
 
 test("locks SOL for its receipt on Ethereum, in record units, and follows it", async () => {
   const vault = new SolanaVault(connection, ETHEREUM, new Wallet(authority));

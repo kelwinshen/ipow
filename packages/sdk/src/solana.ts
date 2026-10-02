@@ -5,7 +5,7 @@
 // made there had its receipt issued here. Amounts are in record units.
 
 import anchor from "@coral-xyz/anchor";
-import { Connection, Keypair, PublicKey, SystemProgram } from "@solana/web3.js";
+import { Connection, Keypair, PublicKey, SystemProgram, Transaction, VersionedTransaction } from "@solana/web3.js";
 import { getAddress } from "ethers";
 
 import { IDLS, SOLANA } from "./generated/solana.ts";
@@ -16,11 +16,12 @@ const { AnchorProvider, BN, Program } = anchor;
 const TOKEN_PROGRAM = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
 const ASSOCIATED_TOKEN_PROGRAM = new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
 
-/** What a wallet must do to send: Anchor's wallet shape. */
+/** What a wallet must do to send: Anchor's wallet shape, which browser
+ *  wallets' adapters also give. */
 export type SolanaWallet = {
   publicKey: PublicKey;
-  signTransaction<T>(tx: T): Promise<T>;
-  signAllTransactions<T>(txs: T[]): Promise<T[]>;
+  signTransaction<T extends Transaction | VersionedTransaction>(tx: T): Promise<T>;
+  signAllTransactions<T extends Transaction | VersionedTransaction>(txs: T[]): Promise<T[]>;
 };
 
 export type SolanaAsset = { number: number; mint: string | null; decimals: number; recordDecimals: number; unit: bigint };

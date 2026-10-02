@@ -2,7 +2,7 @@ import { expect } from "chai";
 import { network } from "hardhat";
 
 import { deployNetwork } from "../deploy/deploy.ts";
-import { burn, displayTxid, encodeRecipient, getJob, getLock, homeAssets, lock, openCheckpoint, quoteCheckpoint, quoteLock } from "../../../packages/sdk/src/index.ts";
+import { creditOf, expireJob, withdrawCredit, buy, cancelBuy, getSwap, quoteSwap, refundSell, sell, burn, burnBeta, collectOwed, createBasket, getBasket, mintBeta, quoteMint, displayTxid, encodeRecipient, getJob, getLock, homeAssets, lock, openCheckpoint, quoteCheckpoint, quoteLock } from "../../../packages/sdk/src/index.ts";
 
 const { ethers } = await network.create();
 
@@ -11,7 +11,7 @@ const { ethers } = await network.create();
 
 async function deployed() {
   const [signer] = await ethers.getSigners();
-  const d = await deployNetwork(signer, { network: "ethereum", env: "testnet", minHeight: 0, maxSats: 1n, pairs: [{ peer: 2, peerVault: "0x" + "ab".repeat(32) }], local: {} });
+  const d = await deployNetwork(signer, { network: "ethereum", env: "testnet", minHeight: 0, maxSats: 100_000n, pairs: [{ peer: 2, peerVault: "0x" + "ab".repeat(32) }], local: {} });
   // The SDK's shape of a deployment.
   return { name: "local", network: "ethereum", number: 1, chainId: 31337, coin: { kind: "native", decimals: 18, price: "baseFee" }, workScale: null, dataFee: "none", ...d, source: "local" } as any;
 }
@@ -92,6 +92,75 @@ describe("The SDK", function () {
     // No receipt of Solana's SOL exists here yet: its burn is refused.
     const receipts = await ethers.getContractAt("VaultReceipts", d.vaults[0].receipts);
     await expect(burn(user, d, { asset: 0, to: "5Ks1r25VGX5S7dUMf8c5oP6qzXfFvckQ67wgtqywnDAN", amount: 1n })).to.be.revertedWithCustomError(receipts, "UnknownAsset");
+  });
+
+  it("makes a BETA basket of ETH and a token, mints it, and burns it with a part deferred", async function () {
+    const d = await deployed();
+    const [user] = await ethers.getSigners();
+    const usd = await ethers.deployContract("MockToken", ["USD", "USD", 6]);
+    await usd.mint(user.address, 10n ** 12n);
+    const ONE = 10n ** 9n; // one whole BETA
+    // One BETA holds 0.001 ETH and 2 USD; 0.5% to mint and to burn.
+    const { key, beta } = await createBasket(user, d, { id: 1, parts: [{ token: ethers.ZeroAddress, amount: 10n ** 15n }, { token: await usd.getAddress(), amount: 2_000_000n }], mintFeeBps: 50, burnFeeBps: 50 });
+
+    const q = await quoteMint(ethers.provider, d, key, 3n * ONE);
+    expect(q.need).to.deep.equal([3n * 10n ** 15n, 6_000_000n]);
+    expect(q.fee).to.deep.equal([(3n * 10n ** 15n * 50n) / 10_000n, 30_000n]);
+    expect(q.value).to.equal(q.need[0] + q.fee[0]);
+    await mintBeta(user, d, q);
+    let b = await getBasket(ethers.provider, d, key);
+    expect([b.beta, b.supply, b.parts.map((p) => p.held)]).to.deep.equal([beta, 3n * ONE, [3n * 10n ** 15n, 6_000_000n]]);
+
+    // Burn 1 BETA, the token part owed rather than paid now.
+    const usdBefore = await usd.balanceOf(user.address);
+    await burnBeta(user, d, key, ONE, { defer: [1] });
+    expect(await usd.balanceOf(user.address)).to.equal(usdBefore);
+    b = await getBasket(ethers.provider, d, key);
+    expect(b.supply).to.equal(2n * ONE);
+    expect(b.parts[1].owed).to.be.greaterThan(0n);
+    await collectOwed(user, d, key, 1);
+    // 2 USD, less the 0.5% burn fee taken when collected.
+    expect((await usd.balanceOf(user.address)) - usdBefore).to.equal(2_000_000n - 10_000n);
+  });
+
+  it("sells ETH for BTC to a Bitcoin address, and refunds it when no operator takes it; cancels a buy the same way", async function () {
+    const d = await deployed();
+    const [user] = await ethers.getSigners();
+    const to = "bc1q7hyq44nph46tjv9m0jzwtgqld029tuem7u5syx";
+    const q = await quoteSwap(ethers.provider, d);
+    expect(q.fees).to.equal(q.commitmentFee + q.margin + q.escrowFee);
+    const amount = 10n ** 16n;
+    const before = await ethers.provider.getBalance(user.address);
+    const { swapId, jobId } = await sell(user, d, q, { amount, sats: 50_000n, to });
+    let s = await getSwap(ethers.provider, d, swapId);
+    expect([s.side, s.state, s.amount, s.sats, s.address, s.job.id, s.job.stage]).to.deep.equal(["Sell", "Open", amount, 50_000n, to, jobId, "Auction"]);
+    expect(s.waitingFor).to.match(/^an operator to pay at least 50000 sats to bc1q7hyq/);
+
+    // No operator in 15 minutes: the job expires and the coin comes back.
+    await ethers.provider.send("evm_increaseTime", [16 * 60]);
+    await ethers.provider.send("evm_mine", []);
+    s = await getSwap(ethers.provider, d, swapId);
+    expect(s.job.stage).to.equal("Expired");
+    expect(s.waitingFor).to.match(/found no operator/);
+    await refundSell(user, d, swapId);
+    expect((await getSwap(ethers.provider, d, swapId)).state).to.equal("Refunded");
+    // The fees are not in the refund: they return once the job is expired
+    // (D61), then withdrawn.
+    expect(await creditOf(ethers.provider, d, user.address)).to.equal(0n);
+    await expireJob(user, d, jobId);
+    expect(await creditOf(ethers.provider, d, user.address)).to.equal(q.fees);
+    await withdrawCredit(user, d);
+    // Back to where the user began, but for gas.
+    expect(before - (await ethers.provider.getBalance(user.address))).to.be.lessThan(10n ** 15n);
+
+    const bought = await buy(user, d, await quoteSwap(ethers.provider, d), { amount, sats: 50_000n });
+    s = await getSwap(ethers.provider, d, bought.swapId);
+    expect([s.side, s.state, s.address]).to.deep.equal(["Buy", "Open", null]);
+    expect(s.waitingFor).to.match(/^an operator to lock the coin/);
+    await ethers.provider.send("evm_increaseTime", [16 * 60]);
+    await ethers.provider.send("evm_mine", []);
+    await cancelBuy(user, d, bought.swapId);
+    expect((await getSwap(ethers.provider, d, bought.swapId)).state).to.equal("Cancelled");
   });
 });
 

@@ -31,6 +31,8 @@ must make easy comes from the first live run,
 | The Bitcoin side is first-class: txids, confirmations of the 6 needed, explorer links | Most of a job's time is Bitcoin's |
 | Time estimates come from real block times | Blocks came 8 seconds and 58 minutes apart in one run |
 | Reads retry, and Bitcoin explorers fall back on each other | Endpoints lag and explorers time out |
+| A call that opens a job states its gas | A gas estimate runs at a price of zero and comes out too low (V14): a sell ran out of gas in the SDK's own test |
+| Fees come back by name | When no operator takes a job, a refund returns the coin but not the fees; they need the job expired and then withdrawn, two calls a user would never guess |
 | One API hides each network's units and sending rules | Hedera: 8 decimals in contracts, 18 over its RPC. Tempo: PathUSD fees and its own transaction type. Polkadot: gas scaled by 8 |
 
 ## The API, by layer
@@ -64,8 +66,8 @@ must make easy comes from the first live run,
 | 1 | `networks` (EVM), `quote`, `jobs` with stages and times, `bitcoin`, and opening a checkpoint | The run's job can be followed from the SDK alone, read-only, on Sepolia; tested on a local chain. Built 2026-10-03 |
 | 2 | `vault` on EVM: lock, burn, follow a lock, receipt balances | Tested on a local chain. Built 2026-10-03, except a successful burn and a lock reaching `Carried`, not yet tested |
 | 3 | Solana: the same layers | Tested on a local Solana validator. The vault built 2026-10-03 (SOL locks, burns, receipt balances, an EVM lock's mark, `followLock`); token locks and jobs on Solana not yet |
-| 4 | `beta` on both | Tested locally |
-| 5 | `conversion` | Tested locally |
+| 4 | `beta` on both | Tested locally. Built 2026-10-03: on EVM against a local chain, on Solana against a local validator with two SPL tokens as parts |
+| 5 | `conversion` | Tested locally. Built 2026-10-03 on EVM: quotes, sell, buy, stages, refund, cancel, Bitcoin addresses; on Solana not yet |
 | 6 | Tempo and Hedera's sending rules; published to npm | Read back on their testnets |
 
 Greatwall.finance can start once steps 1 to 4 are in; its main flow is to

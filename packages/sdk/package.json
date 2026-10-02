@@ -9,7 +9,7 @@
   },
   "scripts": {
     "sync": "node scripts/sync.ts",
-    "test": "node --test test/*.test.ts"
+    "test": "node --test --test-force-exit --test-concurrency=1 test/*.test.ts"
   },
   "dependencies": {
     "ethers": "^6.14.0",

@@ -5,6 +5,7 @@
 import { Contract, type Signer } from "ethers";
 
 import { ABIS } from "./generated/abis.ts";
+import { jobGas } from "./gas.ts";
 import type { Deployment } from "./networks.ts";
 import type { Quote } from "./quote.ts";
 
@@ -12,7 +13,8 @@ export async function openCheckpoint(signer: Signer, d: Deployment, quote: Quote
   if (d.coin.kind !== "native") throw new Error(`${d.name}: a token coin's checkpoint needs its approval first, not built yet`);
   if (quote.network !== d.name) throw new Error(`a quote for ${quote.network}, not ${d.name}`);
   const vault = new Contract(d.vaults[0].vault, ABIS.vault, signer);
-  const tx = await vault.openCheckpoint(quote.confirmations, quote.pay, { value: quote.value });
+  const args = [quote.confirmations, quote.pay];
+  const tx = await vault.openCheckpoint(...args, { value: quote.value, gasLimit: await jobGas(vault, "openCheckpoint", args, quote.value) });
   const receipt = await tx.wait();
   if (!receipt || receipt.status !== 1) throw new Error(`openCheckpoint failed: ${tx.hash}`);
   // The job's id, from the protocol's event.

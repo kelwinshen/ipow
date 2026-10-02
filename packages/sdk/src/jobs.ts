@@ -2,7 +2,7 @@
 // app can show its progress in plain words. Read from the protocol's
 // storage; the job's Bitcoin transaction from explorers.
 
-import { Contract, ZeroAddress, ZeroHash, type Provider } from "ethers";
+import { Contract, ZeroAddress, ZeroHash, type Provider, type Signer } from "ethers";
 
 import { Bitcoin, displayTxid, type BitcoinTx } from "./bitcoin.ts";
 import { ABIS } from "./generated/abis.ts";
@@ -130,4 +130,25 @@ export async function* watchJob(provider: Provider, d: Deployment, id: bigint | 
     if (job.stage === "Settled" || job.stage === "Expired" || job.stage === "Slashed") return;
     await new Promise((r) => setTimeout(r, intervalMs));
   }
+}
+
+/** Ends a job whose auction closed with no bid, so that its fees return to
+ *  its payer (D61). Anyone may call; an app does it for the user when a
+ *  swap or checkpoint found no operator. */
+export async function expireJob(signer: Signer, d: Deployment, jobId: bigint | number): Promise<{ txHash: string }> {
+  const tx = await new Contract(d.protocol, ABIS.protocol, signer).expire(jobId);
+  await tx.wait();
+  return { txHash: tx.hash };
+}
+
+/** What the protocol holds for `who` to withdraw: returned fees, a share
+ *  of a slashed escrow, an operator's pay. */
+export async function creditOf(provider: Provider, d: Deployment, who: string): Promise<bigint> {
+  return new Contract(d.protocol, ABIS.protocol, provider).credit(who);
+}
+
+export async function withdrawCredit(signer: Signer, d: Deployment): Promise<{ txHash: string }> {
+  const tx = await new Contract(d.protocol, ABIS.protocol, signer).withdrawCredit();
+  await tx.wait();
+  return { txHash: tx.hash };
 }

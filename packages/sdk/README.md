@@ -3,7 +3,7 @@
 Build on the iPoW protocol ([`docs/design/ipow-protocol.md`](../../docs/design/ipow-protocol.md)).
 Design and plan: [`docs/drafts/ipow-sdk.md`](../../docs/drafts/ipow-sdk.md).
 
-**Status:** steps 1 to 3 of the plan. On EVM networks:
+**Status:** steps 1 to 5 of the plan. On EVM networks:
 - each deployed network as data;
 - quotes with their margin stated;
 - jobs by stage, with their times and what they wait for;
@@ -21,13 +21,31 @@ receipt issued on Solana. `followLock` follows an EVM lock to its receipt
 on Solana as one journey: `Locked`, `Carried`, `Issued` (or `GivenUp`,
 `Returned`).
 
+BETA on both: create a basket, quote a mint (on Solana priced as the
+program does, since it has no view of it), mint, burn with parts deferred,
+collect what is owed and the creator's fees.
+
+Conversion on EVM networks: quote a swap's fees, sell the coin or a token
+for BTC to a Bitcoin address, buy it with BTC, follow a swap by stage (for a
+buy, where and in which Bitcoin blocks to pay), refund a sell and cancel a
+buy no operator took. Bitcoin addresses (bc1q, bc1p, 1, 3) are converted to
+the scripts the contract holds, and back. Swaps are capped in size for
+buys only (the user's own payment proof, Conversion's C4).
+
+Two things an app must know. A call that opens a job (a checkpoint, a sell,
+a buy) states its gas: an estimate runs at a price of zero and comes out
+too low (spec V14); the SDK does it. And when no operator takes a job, its
+fees do not come back with a refund: the job is expired (`expireJob`,
+anyone may) and the fees withdrawn (`withdrawCredit`); an app does both for
+the user.
+
 Tested on a local chain (`programmable-network/ethereum/test/Sdk.test.ts`)
 and on a local Solana validator running the production programs
-(`node --test test/solana.test.ts`), and read against the live deployment
-on Sepolia. Not tested yet: a burn that succeeds, a lock reaching `Carried`
+(`npm test` here), and read against the live deployment on Sepolia. Not tested yet: a burn that succeeds, a lock reaching `Carried`
 or `Issued`, which need an operator's accepted claim; and a token lock on
-Solana, not built yet. Jobs on Solana are not read yet. BETA and Conversion
-come next.
+Solana, not built yet. Jobs on Solana are not read yet, nor Conversion on
+Solana; a buy's own payment proof and completing a swap (the operator's
+calls) are not in the SDK. Greatwall.finance can start on what is here.
 
 ```ts
 import { network, quoteCheckpoint, openCheckpoint, getJob, findJobTx } from "@ipow/sdk";
