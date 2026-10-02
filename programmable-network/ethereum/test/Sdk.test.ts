@@ -2,7 +2,7 @@ import { expect } from "chai";
 import { network } from "hardhat";
 
 import { deployNetwork } from "../deploy/deploy.ts";
-import { displayTxid, getJob, openCheckpoint, quoteCheckpoint } from "../../../packages/sdk/src/index.ts";
+import { burn, displayTxid, encodeRecipient, getJob, getLock, homeAssets, lock, openCheckpoint, quoteCheckpoint, quoteLock } from "../../../packages/sdk/src/index.ts";
 
 const { ethers } = await network.create();
 
@@ -53,4 +53,45 @@ describe("The SDK", function () {
       "d24d4049d7229d1ee4335161b0153a2787bf06a92f0a9bdfffd73c6f6b420112"
     );
   });
+
+  it("locks ETH for its receipt on Solana, in record units, and follows the lock", async function () {
+    const d = await deployed();
+    const [user] = await ethers.getSigners();
+    const GWEI = 10n ** 9n;
+    // A Solana address, decoded as the vault takes it.
+    const solana = "5Ks1r25VGX5S7dUMf8c5oP6qzXfFvckQ67wgtqywnDAN";
+    expect(encodeRecipient(2, solana)).to.equal("0x4043c1013b9ac5a7b0d6e41df72999295abc02c0b7e824f17a79154e9ab76bb7");
+    const q = await quoteLock(ethers.provider, d, { amount: 10n ** 16n, fee: 1000n * GWEI, fastFee: 0n });
+    expect([q.amount, q.fee, q.asset.unit, q.total, q.value]).to.deep.equal([10n ** 7n, 1000n, GWEI, 10n ** 16n + 1000n * GWEI, 10n ** 16n + 1000n * GWEI]);
+    // Not a whole number of record units: refused before anything is sent.
+    let error = "";
+    await quoteLock(ethers.provider, d, { amount: 10n ** 16n + 1n }).catch((e) => (error = e.message));
+    expect(error).to.match(/whole number of record units/);
+
+    const before = await ethers.provider.getBalance(d.vaults[0].home);
+    const { lockId } = await lock(user, d, q, solana);
+    expect((await ethers.provider.getBalance(d.vaults[0].home)) - before).to.equal(q.total);
+    const l = await getLock(ethers.provider, d, lockId);
+    expect([l.stage, l.owner, l.amount, l.fee, l.recipient]).to.deep.equal(["Locked", user.address, q.amount, q.fee, encodeRecipient(2, solana)]);
+  });
+
+  it("locks a token with its approval, and burns only a receipt that exists", async function () {
+    const d = await deployed();
+    const [user] = await ethers.getSigners();
+    const token = await ethers.deployContract("MockToken", ["USD", "USD", 6]);
+    const home = await ethers.getContractAt("VaultHome", d.vaults[0].home);
+    await home.registerAsset(await token.getAddress());
+    await token.mint(user.address, 10n ** 9n);
+    const assets = await homeAssets(ethers.provider, d);
+    expect(assets.map((a) => [a.number, a.decimals, a.unit])).to.deep.equal([[0, 18, 10n ** 9n], [1, 6, 1n]]);
+    const q = await quoteLock(ethers.provider, d, { asset: 1, amount: 5_000_000n, fee: 1_000n });
+    expect([q.value, q.total]).to.deep.equal([0n, 5_001_000n]);
+    const { lockId } = await lock(user, d, q, "5Ks1r25VGX5S7dUMf8c5oP6qzXfFvckQ67wgtqywnDAN");
+    expect((await getLock(ethers.provider, d, lockId)).asset).to.equal(1);
+    expect(await token.balanceOf(user.address)).to.equal(10n ** 9n - 5_001_000n);
+    // No receipt of Solana's SOL exists here yet: its burn is refused.
+    const receipts = await ethers.getContractAt("VaultReceipts", d.vaults[0].receipts);
+    await expect(burn(user, d, { asset: 0, to: "5Ks1r25VGX5S7dUMf8c5oP6qzXfFvckQ67wgtqywnDAN", amount: 1n })).to.be.revertedWithCustomError(receipts, "UnknownAsset");
+  });
 });
+

@@ -5,5 +5,19 @@ export { priceNow, quoteCheckpoint, type Quote, type QuoteOptions } from "./quot
 export { STAGES, findJobTx, getJob, watchJob, type JobView, type Stage } from "./jobs.ts";
 export { Bitcoin, EXPLORERS, displayTxid, type BitcoinTx } from "./bitcoin.ts";
 export { openCheckpoint } from "./checkpoint.ts";
+export {
+  burn,
+  encodeRecipient,
+  getBurn,
+  getLock,
+  homeAssets,
+  lock,
+  quoteLock,
+  receiptTokens,
+  type BurnState,
+  type HomeAsset,
+  type LockQuote,
+  type LockState,
+} from "./vault.ts";
 export { ABIS } from "./generated/abis.ts";
 export { DEPLOYMENTS } from "./generated/deployments.ts";
