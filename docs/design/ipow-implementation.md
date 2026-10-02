@@ -593,6 +593,18 @@ state (not just a bytecode-length match) before treating any Tempo
 deployment as real. This is a genuine Tempo chain-level issue, not
 something this repo controls, and remains unfixed on Tempo's side.
 
+Measured further on 2026-10-02 and 2026-10-03, for the new protocol's
+deployment: the deployer's ordinary nonce was 12 and exactly the `CREATE`
+addresses of raw nonces 0 to 11 held code, though its nonce lane 1, which
+the earlier deploys used, had reached 27. So a contract appears to land at
+`CREATE(sender, ordinary nonce)` whatever lane sent it, and a deploy in
+another lane can collide with an address already used. The new protocol was
+then deployed in the ordinary lane (nonce key 0), nine transactions from
+nonce 18, and every contract landed at the address its ordinary nonce
+gives, each confirmed by its code and state
+(`programmable-network/tempo/scripts/deploy-new-protocol.ts`). The rule
+above still holds; in the ordinary lane the receipt and the nonce agreed.
+
 Plain Hardhat/ethers can't speak Tempo's fee-sponsored, two-dimensional-
 nonce transaction model at all; every real deploy/write against Tempo
 goes through `viem`'s native Tempo support instead.

@@ -36,6 +36,7 @@ while testing; on mainnet it is removed (D59).
 | Polkadot testnet (5) | `BcTMgkGcknJu9GW6XQ7HoRdXdP3Jo6iRt8ZjKe6fm7r7` | `0x77ef03207173b08A82d6511a35f970033E185d6c` |
 | Hedera testnet (6) | `7Wwn5bjARBmdCjNT7KUBwB7LR3JYSLFAWSSm98pxvE2S` | `0x4d1C3FdE9FaD26b9882b4E607120091E2ff285B4` |
 | HyperEVM testnet (7) | `D73AnEY7aViFo3r6P8iPxMBxEqh6P5DiR4B6dMj7SixA` | `0x4cFD981522F31A4dc12Aeb433907ebc3CBD37A55` |
+| Tempo testnet (8) | `7wvWJdeTW9WynaP17Le7dnWcBkV7qpVz78sR9TrA977Q` | `0x10C9C79C8c46c1f9f07D7A258Bbd42B4ED6f973E` |
 
 ## Programs
 

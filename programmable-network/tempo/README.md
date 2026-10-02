@@ -39,6 +39,32 @@ conversion flows, and [design/ipow-implementation.md §8](../../docs/design/ipow
 [§9](../../docs/design/ipow-implementation.md) for BETA's composition design and this
 package's own PathUSD variants specifically.
 
+## New protocol: test network deployment
+
+The new protocol ([`docs/design/ipow-protocol.md`](../../docs/design/ipow-protocol.md)),
+deployed on Tempo's Moderato testnet (chain 42431) on 2026-10-03 from the one
+source in [`../ethereum`](../ethereum), commit `10e5cf5`, with Tempo's settings
+([`../ethereum/deploy/networks.ts`](../ethereum/deploy/networks.ts)): the token builds,
+with PathUSD (`0x20C0000000000000000000000000000000000000`) as the coin. Sent with
+viem's Tempo support by [`scripts/deploy-new-protocol.ts`](scripts/deploy-new-protocol.ts)
+in the deployer's ordinary nonce lane, each address worked out from the nonce, and
+read back: each contract's code compared with the build and each setting read
+(`node scripts/verify-deployments.ts` in `../ethereum`). Lowest Bitcoin height
+965,567; Conversion's largest swap 100,000 sats. The vault's pair
+on Solana is the account `7wvWJdeTW9WynaP17Le7dnWcBkV7qpVz78sR9TrA977Q`.
+
+| Contract | Address |
+|---|---|
+| Light client (`iPoWLightClient`) | `0x2dD223DcD7F69539Ea895A29095c69c16b088aDb` |
+| Protocol (token build, `iPoWProtocolToken`) | `0x0496e48C51E3783F5a059AC82B70F5D398448D3A` |
+| Conversion | `0xc729b1a6d0325ae559614b6826127e11E51703c1` |
+| BETA (`BetaBaskets`) | `0x6AA1F2dd1a0A28F5FC3a88ec8A219e89987A57aB` |
+| Vault home factory | `0xd6b425c7908E171a33dF2a4e6C5687eDF0D2d6c3` |
+| Vault receipts factory | `0xb856906fEBAFBB21A06DdC35E9BCe476139A86BA` |
+| Vault paired with Solana (`iPoWVaultToken`) | `0x10C9C79C8c46c1f9f07D7A258Bbd42B4ED6f973E` |
+| Its home part | `0xCC87ec659D54802077b6004901A1A72C646bF07A` |
+| Its receipts part | `0x6a4E25f0506C9cddfB1a469c9ED93633edC3eee0` |
+
 ## Setup
 
 ```sh
