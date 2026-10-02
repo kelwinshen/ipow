@@ -44,8 +44,12 @@ Every figure below was read back from the chains.
 | 19:23:24 | Node | Sepolia | Anchored job 1 at block 969,622, one below the best (`anchorJob`) | 111,439 gas |
 | 19:23:33 | Node | Bitcoin | Sent the tagged transaction `f68b80…2404`: it spends the chain head, makes the next one, and carries the job's tag, at 5.5 sat/vB | 1,394 sats |
 | 19:29:30 | Bitcoin | Block 969,624 | The tagged transaction confirmed: 1 of the 6 confirmations | — |
-| until 2026-10-03 19:21:48 | — | Sepolia | Job 1's deadline. The proof needs block 969,629 (6 confirmations), then the node proves (`proveJob`; log: `proven`) | *to be recorded* |
-| proof + 36 h | Node | Sepolia | The lock ends; the node settles (log: `settled`): its bond is freed and it is paid both fees | *to be recorded* |
+| before 20:39 | Node | — | The node had stopped, unnoticed; nothing told the owner. Restarted at 20:39:18, it read everything back and went on | — |
+| 20:39–20:41 | Node | Bitcoin explorer | mempool.space timed out three times again (moving the chain head, reading the tip) | — |
+| 20:41:12 | Node | Sepolia | Jumped the light client to Bitcoin's best block, 969,630 | 170,468 gas |
+| 20:41:48–20:43:48 | Node | Sepolia | Walked back six blocks, one transaction each (`extendBack`), to reach the job's proof block from the best block | 6 × about 104,600 gas |
+| 20:45:24 | Node | Sepolia | Proved job 1 (`proveJob`): the tagged transaction in block 969,624 with blocks on top; the job is `Proven`, and its lock ends 36 hours later (D50) | 337,132 gas |
+| 2026-10-04 08:45:24 | Node | Sepolia | The lock ends; the node settles (log: `settled`): its bond is freed and it is paid both fees | *to be recorded* |
 
 ## What it cost
 
@@ -54,7 +58,7 @@ Every figure below was read back from the chains.
 | One-time operator set-up: chain head, epoch start, jump, walk, registration | 1,470 sats | 926,577 gas, about 0.00094 ETH |
 | The user's job | — | 0.012388 ETH paid (refunded if nobody takes it), plus 274,413 gas |
 | The operator's work on the job so far: bid, jump, anchor, tagged transaction | 1,394 sats | 313,779 gas, about 0.00033 ETH |
-| The proof and the headers streamed for it | — | *to be recorded* |
+| The proof and the blocks for it: a jump, six walks back, the proof | — | 1,135,476 gas, about 0.0011 ETH |
 
 ## What the user went through
 
@@ -88,6 +92,18 @@ Conversion swap or a vault lock.
   `curl` but not Python's HTTP client from the same machine.
 - **Noise.** With no bond on Solana, the node logged the same warning every
   30 seconds.
+- **A silent stop.** The node stopped at some point between 19:29 and 20:39
+  and nothing said so; the owner found out only because the proof did not
+  come. Restarted, it read its state back and proved the job four minutes
+  after it started. A long-running operator needs something that restarts
+  it and someone told when it stops.
+- **Catching up costs a transaction a block.** After the stop, the node
+  jumped to the best block and walked back six blocks, one transaction
+  (about 104,600 gas) each, to reach the proof block. Run without a stop, it
+  streams blocks forward as they come, at about the same cost each.
+- **One explorer was not enough.** On 2026-10-03 the node gained
+  `bitcoin.fallback_explorers`: a read or broadcast that cannot reach the
+  first explorer goes to the next (blockstream.info here).
 
 ## Lessons for the SDK
 
@@ -118,5 +134,5 @@ Conversion swap or a vault lock.
 
 ## Not yet recorded
 
-The proof, the settlement after the 36-hour lock, and their costs are added
-here when they happen.
+The settlement after the 36-hour lock (2026-10-04 08:45:24) and its cost are
+added here when it happens.

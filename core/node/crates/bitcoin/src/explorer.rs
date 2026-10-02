@@ -13,8 +13,12 @@ use crate::reversed;
 use crate::tx::strip_witness;
 use crate::view::{BitcoinView, Coin, TxStatus};
 
+/// Explorers in order of preference: a read or a broadcast that cannot
+/// reach one, or that it fails with a server error, goes to the next. An
+/// answer, including "not known", is taken from the first that gives one,
+/// so two explorers that differ do not make it flip.
 pub struct Explorer {
-    base: String,
+    bases: Vec<String>,
     http: reqwest::Client,
 }
 
@@ -62,23 +66,36 @@ struct Utxo {
 impl Explorer {
     /// `base` is the API root, e.g. `https://mempool.space/api`.
     pub fn new(base: &str) -> anyhow::Result<Self> {
+        Self::with_fallbacks(base, &[])
+    }
+
+    /// `base` first, then each of `fallbacks` when one cannot answer.
+    pub fn with_fallbacks(base: &str, fallbacks: &[String]) -> anyhow::Result<Self> {
         let http = reqwest::Client::builder().timeout(std::time::Duration::from_secs(20)).build()?;
-        Ok(Explorer { base: base.trim_end_matches('/').to_string(), http })
+        let bases = std::iter::once(base).chain(fallbacks.iter().map(String::as_str)).map(|b| b.trim_end_matches('/').to_string()).collect();
+        Ok(Explorer { bases, http })
     }
 
     /// The body of a GET, or `None` for a 404.
     async fn get(&self, path: &str) -> anyhow::Result<Option<String>> {
-        let url = format!("{}{path}", self.base);
-        let res = self.http.get(&url).send().await.with_context(|| format!("GET {url}"))?;
-        if res.status() == reqwest::StatusCode::NOT_FOUND {
-            return Ok(None);
+        let mut last = None;
+        for base in &self.bases {
+            let url = format!("{base}{path}");
+            match self.http.get(&url).send().await {
+                Err(e) => last = Some(anyhow::Error::new(e).context(format!("GET {url}"))),
+                Ok(res) if res.status() == reqwest::StatusCode::NOT_FOUND => return Ok(None),
+                Ok(res) if res.status().is_server_error() => last = Some(anyhow::anyhow!("GET {url}: {}", res.status())),
+                Ok(res) => {
+                    let status = res.status();
+                    let body = res.text().await?;
+                    if !status.is_success() {
+                        bail!("GET {url}: {status}: {}", body.trim());
+                    }
+                    return Ok(Some(body));
+                }
+            }
         }
-        let status = res.status();
-        let body = res.text().await?;
-        if !status.is_success() {
-            bail!("GET {url}: {status}: {}", body.trim());
-        }
-        Ok(Some(body))
+        Err(last.unwrap_or_else(|| anyhow::anyhow!("no explorer")))
     }
 
     async fn need(&self, path: &str) -> anyhow::Result<String> {
@@ -176,14 +193,25 @@ impl BitcoinView for Explorer {
     }
 
     async fn broadcast(&self, raw: &[u8]) -> anyhow::Result<[u8; 32]> {
-        let url = format!("{}/tx", self.base);
-        let res = self.http.post(&url).body(hex::encode(raw)).send().await.with_context(|| format!("POST {url}"))?;
-        let status = res.status();
-        let body = res.text().await?;
-        if !status.is_success() {
-            bail!("the explorer refused the transaction: {status}: {}", body.trim());
+        // The same transaction sent to two explorers is harmless; a refusal
+        // of it is final.
+        let mut last = None;
+        for base in &self.bases {
+            let url = format!("{base}/tx");
+            match self.http.post(&url).body(hex::encode(raw)).send().await {
+                Err(e) => last = Some(anyhow::Error::new(e).context(format!("POST {url}"))),
+                Ok(res) if res.status().is_server_error() => last = Some(anyhow::anyhow!("POST {url}: {}", res.status())),
+                Ok(res) => {
+                    let status = res.status();
+                    let body = res.text().await?;
+                    if !status.is_success() {
+                        bail!("the explorer refused the transaction: {status}: {}", body.trim());
+                    }
+                    return from_display(&body);
+                }
+            }
         }
-        from_display(&body)
+        Err(last.unwrap_or_else(|| anyhow::anyhow!("no explorer")))
     }
 }
 

@@ -142,7 +142,7 @@ async fn main() -> anyhow::Result<()> {
 
     // An explorer URL may carry an API key too.
     secrets::hide(&settings.bitcoin.explorer);
-    let btc: Arc<dyn BitcoinView> = Arc::new(Explorer::new(&settings.bitcoin.explorer)?);
+    let btc: Arc<dyn BitcoinView> = Arc::new(Explorer::with_fallbacks(&settings.bitcoin.explorer, &settings.bitcoin.fallback_explorers)?);
     let wallet = match &settings.bitcoin.wallet_key_env {
         Some(key) if settings.runs(Role::Operator) => {
             let w = Wallet::from_wif(&env(key)?)?;

@@ -19,5 +19,17 @@ export {
   type LockQuote,
   type LockState,
 } from "./vault.ts";
+export {
+  SolanaVault,
+  associatedTokenAccount,
+  getSolanaBurn,
+  type LockMark,
+  type SolanaAsset,
+  type SolanaBurnState,
+  type SolanaLockState,
+  type SolanaWallet,
+} from "./solana.ts";
+export { followLock, type LockJourney } from "./follow.ts";
 export { ABIS } from "./generated/abis.ts";
+export { SOLANA, IDLS } from "./generated/solana.ts";
 export { DEPLOYMENTS } from "./generated/deployments.ts";

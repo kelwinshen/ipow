@@ -63,7 +63,7 @@ must make easy comes from the first live run,
 |---|---|---|
 | 1 | `networks` (EVM), `quote`, `jobs` with stages and times, `bitcoin`, and opening a checkpoint | The run's job can be followed from the SDK alone, read-only, on Sepolia; tested on a local chain. Built 2026-10-03 |
 | 2 | `vault` on EVM: lock, burn, follow a lock, receipt balances | Tested on a local chain. Built 2026-10-03, except a successful burn and a lock reaching `Carried`, not yet tested |
-| 3 | Solana: the same layers | Tested on an in-process Solana |
+| 3 | Solana: the same layers | Tested on a local Solana validator. The vault built 2026-10-03 (SOL locks, burns, receipt balances, an EVM lock's mark, `followLock`); token locks and jobs on Solana not yet |
 | 4 | `beta` on both | Tested locally |
 | 5 | `conversion` | Tested locally |
 | 6 | Tempo and Hedera's sending rules; published to npm | Read back on their testnets |

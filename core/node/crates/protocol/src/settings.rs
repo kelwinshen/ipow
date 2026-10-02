@@ -136,6 +136,10 @@ fn default_deposits() -> u32 {
 pub struct BitcoinSettings {
     /// An Esplora-compatible API for reading real Bitcoin.
     pub explorer: String,
+    /// Others asked, in order, when it cannot answer (it times out, or
+    /// fails with a server error).
+    #[serde(default)]
+    pub fallback_explorers: Vec<String>,
     /// The environment variable that holds the Bitcoin wallet key. Needed
     /// only when the node runs as an operator.
     pub wallet_key_env: Option<String>,

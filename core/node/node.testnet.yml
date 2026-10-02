@@ -9,6 +9,8 @@ roles: [operator, guardian]
 
 bitcoin:
   explorer: https://mempool.space/api
+  # mempool.space times out often from this machine; blockstream.info answers.
+  fallback_explorers: [https://blockstream.info/api]
   # The operator wallet's mainnet WIF key, loaded by run-testnet.sh.
   wallet_key_env: BTC_WALLET_KEY
   # At most 10 sat/vB: the wallet holds about 14,000 sats.

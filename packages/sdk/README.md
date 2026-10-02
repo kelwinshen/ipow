@@ -3,7 +3,7 @@
 Build on the iPoW protocol ([`docs/design/ipow-protocol.md`](../../docs/design/ipow-protocol.md)).
 Design and plan: [`docs/drafts/ipow-sdk.md`](../../docs/drafts/ipow-sdk.md).
 
-**Status:** steps 1 and 2 of the plan, on EVM networks:
+**Status:** steps 1 to 3 of the plan. On EVM networks:
 - each deployed network as data;
 - quotes with their margin stated;
 - jobs by stage, with their times and what they wait for;
@@ -14,11 +14,20 @@ Design and plan: [`docs/drafts/ipow-sdk.md`](../../docs/drafts/ipow-sdk.md).
   units converted to record units, locking (a token approved first),
   burning a receipt, and following each on this network.
 
-Tested on a local chain (`programmable-network/ethereum/test/Sdk.test.ts`),
-and read against the live deployment on Sepolia. Not tested yet: a burn
-that succeeds and a lock reaching `Carried`, which need an operator's
-accepted claim. What happens on the other network (a receipt issued, a burn
-paid) comes with Solana, next; then BETA and Conversion.
+On Solana (`SolanaVault`): the vault's assets, locking SOL for its receipt
+on the pair's EVM network and following that lock, receipt balances,
+burning a receipt, and whether a lock made on the EVM network had its
+receipt issued on Solana. `followLock` follows an EVM lock to its receipt
+on Solana as one journey: `Locked`, `Carried`, `Issued` (or `GivenUp`,
+`Returned`).
+
+Tested on a local chain (`programmable-network/ethereum/test/Sdk.test.ts`)
+and on a local Solana validator running the production programs
+(`node --test test/solana.test.ts`), and read against the live deployment
+on Sepolia. Not tested yet: a burn that succeeds, a lock reaching `Carried`
+or `Issued`, which need an operator's accepted claim; and a token lock on
+Solana, not built yet. Jobs on Solana are not read yet. BETA and Conversion
+come next.
 
 ```ts
 import { network, quoteCheckpoint, openCheckpoint, getJob, findJobTx } from "@ipow/sdk";
