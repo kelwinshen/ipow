@@ -6,15 +6,23 @@ import {VaultHome} from "./VaultHome.sol";
 import {VaultReceipts} from "./VaultReceipts.sol";
 
 /// @title VaultHomeFactory
-/// @notice Makes a vault's `VaultHome` for the core that calls it, so that
-/// the core's own deployment code does not hold the part's: it would pass
-/// Ethereum's limit on it. One factory serves every vault of a network (one
-/// per pair, D132). A part made for any other caller is bound to that caller
-/// only, and serves no vault.
+/// @notice Makes a vault's `VaultHome` for the core it names, before that
+/// core is deployed, and records what it made: the core's deployment takes
+/// the part and checks that the factory made it, so whoever checks a vault
+/// compares the factory's code with the source. Made in its own transaction
+/// so that no transaction creates the core and its parts together, which
+/// passes Tempo's limit of 50 million gas (2026-10-03). One factory serves
+/// every vault of a network (one per pair, D132). Anyone may make a part;
+/// one made for another core serves only that core. `made` shows a part's
+/// code, not that its vault exists: one whose vault was never deployed
+/// holds whatever is locked into it for good, so whoever checks a part also
+/// reads that its core has code and names it.
 contract VaultHomeFactory {
     /// @notice The native coin's decimals as a contract sees them on this
     /// network: 18, or 8 on Hedera (D139).
     uint8 public immutable nativeDecimals;
+
+    mapping(address => bool) public made;
 
     error BadDecimals();
 
@@ -23,15 +31,19 @@ contract VaultHomeFactory {
         nativeDecimals = nativeDecimals_;
     }
 
-    function make(uint8 here, uint8 peer, address coin) external returns (VaultHome) {
-        return new VaultHome(IVaultCore(msg.sender), here, peer, coin, nativeDecimals);
+    function make(IVaultCore core, uint8 here, uint8 peer, address coin) external returns (VaultHome part) {
+        part = new VaultHome(core, here, peer, coin, nativeDecimals);
+        made[address(part)] = true;
     }
 }
 
 /// @title VaultReceiptsFactory
 /// @notice The same for a vault's `VaultReceipts`.
 contract VaultReceiptsFactory {
-    function make(uint8 here, uint8 peer) external returns (VaultReceipts) {
-        return new VaultReceipts(IVaultCore(msg.sender), here, peer);
+    mapping(address => bool) public made;
+
+    function make(IVaultCore core, uint8 here, uint8 peer) external returns (VaultReceipts part) {
+        part = new VaultReceipts(core, here, peer);
+        made[address(part)] = true;
     }
 }

@@ -2,6 +2,7 @@ import { expect } from "chai";
 import { network } from "hardhat";
 
 import { tokenNetwork } from "./helpers/tokenNetwork.ts";
+import { makeParts } from "./helpers/vaultParts.ts";
 
 const { ethers } = await network.create();
 
@@ -16,24 +17,22 @@ const ETHEREUM = 1;
 const DEPOSIT = USD / 10n;
 const GAS = 3_000_000n;
 
+/** A token-build vault for the pair Tempo-Ethereum, its parts made first. */
+async function tokenVault(protocol: any, coin: string, minEscrow: bigint) {
+  const hf = await ethers.deployContract("VaultHomeFactory", [18]);
+  const rf = await ethers.deployContract("VaultReceiptsFactory");
+  const parts = await makeParts(ethers, hf, rf, TEMPO, ETHEREUM, coin);
+  const args = [await protocol.getAddress(), TEMPO, ETHEREUM, ethers.zeroPadValue("0x11", 32), DEPOSIT, minEscrow, await hf.getAddress(), await rf.getAddress(), parts.home, parts.receipts, coin];
+  return { args, parts };
+}
+
 async function setup() {
   const [, user, operator] = await ethers.getSigners();
   const lightClient = await ethers.deployContract("iPoWLightClient", [0]);
   const coin = await ethers.deployContract("MockToken", ["PathUSD", "pathUSD", 6]);
   const protocol = await ethers.deployContract("iPoWProtocolToken", [await lightClient.getAddress(), await coin.getAddress(), SCALE]);
-  const hf = await ethers.deployContract("VaultHomeFactory", [18]);
-  const rf = await ethers.deployContract("VaultReceiptsFactory");
-  const vault = await ethers.deployContract("iPoWVaultToken", [
-    await protocol.getAddress(),
-    TEMPO,
-    ETHEREUM,
-    ethers.zeroPadValue("0x11", 32),
-    DEPOSIT,
-    10n * USD,
-    await hf.getAddress(),
-    await rf.getAddress(),
-    await coin.getAddress(),
-  ]);
+  const { args } = await tokenVault(protocol, await coin.getAddress(), 10n * USD);
+  const vault = await ethers.deployContract("iPoWVaultToken", args);
   const home = await ethers.getContractAt("VaultHome", await vault.home());
   for (const who of [user, operator]) {
     await coin.mint(who.address, 1_000n * USD);
@@ -76,40 +75,21 @@ describe("iPoWVaultToken", function () {
   it("refuses a coin other than its protocol's, and the coin as a second asset", async function () {
     const { coin, protocol, home } = await setup();
     const other = await ethers.deployContract("MockToken", ["Other", "OTH", 6]);
-    const hf = await ethers.deployContract("VaultHomeFactory", [18]);
-    const rf = await ethers.deployContract("VaultReceiptsFactory");
+    const { args } = await tokenVault(protocol, await other.getAddress(), 10n * USD);
     const factory = await ethers.getContractFactory("iPoWVaultToken");
-    await expect(
-      factory.deploy(
-        await protocol.getAddress(),
-        TEMPO,
-        ETHEREUM,
-        ethers.zeroPadValue("0x11", 32),
-        DEPOSIT,
-        10n * USD,
-        await hf.getAddress(),
-        await rf.getAddress(),
-        await other.getAddress()
-      )
-    ).to.be.revertedWithCustomError(factory, "WrongCoin");
+    await expect(factory.deploy(...args)).to.be.revertedWithCustomError(factory, "WrongCoin");
+    // Its parts made with the native coin as asset 0, the vault naming its
+    // protocol's coin: the home does not hold the coin.
+    const native = await tokenVault(protocol, ethers.ZeroAddress, 10n * USD);
+    const nativeArgs = [...native.args.slice(0, -1), await coin.getAddress()];
+    await expect(factory.deploy(...nativeArgs)).to.be.revertedWithCustomError(factory, "BadNetworks");
     await expect(home.registerAsset(await coin.getAddress())).to.be.revertedWithCustomError(home, "AssetExists");
   });
 
   it("takes the share of a slashed checkpoint job into the backing of the coin, in its own units", async function () {
     const { coin, protocol, stranger, atTempoPrice, slash } = await tokenNetwork(ethers);
-    const hf = await ethers.deployContract("VaultHomeFactory", [18]);
-    const rf = await ethers.deployContract("VaultReceiptsFactory");
-    const vault = await ethers.deployContract("iPoWVaultToken", [
-      await protocol.getAddress(),
-      TEMPO,
-      ETHEREUM,
-      ethers.zeroPadValue("0x11", 32),
-      DEPOSIT,
-      USD,
-      await hf.getAddress(),
-      await rf.getAddress(),
-      await coin.getAddress(),
-    ]);
+    const { args } = await tokenVault(protocol, await coin.getAddress(), USD);
+    const vault = await ethers.deployContract("iPoWVaultToken", args);
     const home = await ethers.getContractAt("VaultHome", await vault.home());
     await coin.connect(stranger).approve(await vault.getAddress(), ethers.MaxUint256);
     await atTempoPrice();

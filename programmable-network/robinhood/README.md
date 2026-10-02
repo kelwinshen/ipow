@@ -6,6 +6,30 @@ deployed to Robinhood Chain testnet. Robinhood Chain is an Arbitrum-Orbit L2 for
 actually flows, and
 [design/ipow-implementation.md §8](../../docs/design/ipow-implementation.md) for BETA's composition design.
 
+## New protocol: test network deployment
+
+The new protocol ([`docs/design/ipow-protocol.md`](../../docs/design/ipow-protocol.md)),
+deployed on Robinhood testnet (chain 46630) on 2026-10-02 from the one source in
+[`../ethereum`](../ethereum) with this network's settings
+([`../ethereum/deploy/networks.ts`](../ethereum/deploy/networks.ts)), and read back:
+each contract's code compared with the build and each setting read
+(`node scripts/verify-deployments.ts` in `../ethereum`). Lowest Bitcoin height
+965,567; Conversion's largest swap 100,000 sats. The vault's
+pair on Solana is the account `Dydhoos4EgX15LFLJR5a6DvGtuzmNjegpzzynJSJbF5`.
+
+| Contract | Address |
+|---|---|
+| Light client (`iPoWLightClient`) | `0xc729b1a6d0325ae559614b6826127e11E51703c1` |
+| Protocol | `0xd6b425c7908E171a33dF2a4e6C5687eDF0D2d6c3` |
+| Reader of the data price (D135) | `0x6AA1F2dd1a0A28F5FC3a88ec8A219e89987A57aB` |
+| Conversion | `0xb856906fEBAFBB21A06DdC35E9BCe476139A86BA` |
+| BETA (`BetaBaskets`) | `0xd9a6e550Ea8a3970d08F34b0b1a417338C839C4c` |
+| Vault home factory | `0x9d2d501827e84d53addA293E70A8995078c87891` |
+| Vault receipts factory | `0x10C9C79C8c46c1f9f07D7A258Bbd42B4ED6f973E` |
+| Vault paired with Solana | `0x15390C4901e11D3732489825c2FBa33A2E3e5b37` |
+| Its home part | `0xfebE817d06A642D8C66fe5548Df61A5AfaFdc201` |
+| Its receipts part | `0xA3E1811D33bBAeA900dB14660fdF09C2EAd87A7a` |
+
 ## Setup
 
 ```sh

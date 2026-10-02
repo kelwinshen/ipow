@@ -9,6 +9,29 @@ ETH. See the [root architecture doc](../../docs/design/ipow-implementation.md) f
 conversion actually flows, and [design/ipow-implementation.md §8](../../docs/design/ipow-implementation.md) /
 [§9](../../docs/design/ipow-implementation.md) for BETA's composition design and Conversion's.
 
+## New protocol: test network deployment
+
+The new protocol ([`docs/design/ipow-protocol.md`](../../docs/design/ipow-protocol.md)),
+deployed on HyperEVM testnet (chain 998) on 2026-10-02 from the one source in
+[`../ethereum`](../ethereum) with this network's settings
+([`../ethereum/deploy/networks.ts`](../ethereum/deploy/networks.ts)), and read back:
+each contract's code compared with the build and each setting read
+(`node scripts/verify-deployments.ts` in `../ethereum`). Lowest Bitcoin height
+965,567; Conversion's largest swap 100,000 sats. The vault's
+pair on Solana is the account `D73AnEY7aViFo3r6P8iPxMBxEqh6P5DiR4B6dMj7SixA`.
+
+| Contract | Address |
+|---|---|
+| Light client (`iPoWLightClient`) | `0x15390C4901e11D3732489825c2FBa33A2E3e5b37` |
+| Protocol | `0x2Dd456fCe7B3574AbD76b2899d3106CaB6ff5b9B` |
+| Conversion | `0x6c5d75F830C002f4B73b4625F3E2bFaeC50b5D2E` |
+| BETA (`BetaBaskets`) | `0xf35A1C4A9dE7B7FffF62c7cEfda2ac91a71cB6cc` |
+| Vault home factory | `0x01BE560A22e91201C9414b634f0a61085F84dD08` |
+| Vault receipts factory | `0x4265A27605cDd45b69d36f17635Bad03351387e6` |
+| Vault paired with Solana | `0x4cFD981522F31A4dc12Aeb433907ebc3CBD37A55` |
+| Its home part | `0xA1C38ee95A97d8F8355313c3De4D1C914B04693c` |
+| Its receipts part | `0xD0bE0340C8cB132D8AF1765Af0d7358Af434984c` |
+
 ## Router + facets, not plain contracts
 
 HyperEVM testnet's block gas limit (3,000,000) is well under what the plain

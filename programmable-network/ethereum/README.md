@@ -4,6 +4,29 @@ Solidity implementation of the iPoW protocol, deployed to Sepolia. See the
 [root architecture doc](../../docs/design/ipow-implementation.md) for how a conversion
 actually flows; this covers building, testing, and deploying this package.
 
+## New protocol: test network deployment
+
+The new protocol ([`docs/design/ipow-protocol.md`](../../docs/design/ipow-protocol.md)),
+deployed on Sepolia (chain 11155111) on 2026-10-02 from the one source in
+[`../ethereum`](../ethereum) with this network's settings
+([`../ethereum/deploy/networks.ts`](../ethereum/deploy/networks.ts)), and read back:
+each contract's code compared with the build and each setting read
+(`node scripts/verify-deployments.ts` in `../ethereum`). Lowest Bitcoin height
+965,567; Conversion's largest swap 100,000 sats. The vault's
+pair on Solana is the account `5Ks1r25VGX5S7dUMf8c5oP6qzXfFvckQ67wgtqywnDAN`.
+
+| Contract | Address |
+|---|---|
+| Light client (`iPoWLightClient`) | `0x8e09508deF58997f8481FF678cd7f278DFe22C3F` |
+| Protocol | `0x21348ef459dDBa5607732Ca1e9992968B4cC5611` |
+| Conversion | `0x9dF80412e01720F904f5059559eD6f66c7558803` |
+| BETA (`BetaBaskets`) | `0xb5375fDaF8b6E04942dFc593E7065A606Fe5588d` |
+| Vault home factory | `0xfeD6F6DbA0860C9E8cECDf33d4BE60B0Da6980b3` |
+| Vault receipts factory | `0x3Dda5326A3380E8b24D6a482CC1c3205Ae535502` |
+| Vault paired with Solana | `0xD18b7d290f8c94fe561710A78F17494ff2520302` |
+| Its home part | `0x89b83188c77172dB53873e4E67181a627753eD6d` |
+| Its receipts part | `0xd72b80270BB25AD1Cb826e4C43ee1359dBB2DC79` |
+
 ## Contracts
 
 - `contracts/iPoW.sol` — main contract: commit/approve/settle logic,

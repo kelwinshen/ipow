@@ -19,8 +19,11 @@ export type NetworkSettings = {
   /** Fixed network number (D133). */
   number: number;
   chainId: Record<Env, number | null>;
-  /** Names of the environment variables that hold the RPC endpoints. */
+  /** Names of the variables in the network package's git-ignored .env
+   *  (programmable-network/<network>/.env) that hold its RPC endpoints and
+   *  its deployer's key. */
   rpcEnv: Record<Env, string>;
+  keyEnv: Record<Env, string>;
   coin: Coin;
   /** The reader of a rollup's price of data (D135). */
   dataFee: "none" | "op" | "arb";
@@ -54,6 +57,7 @@ export const NETWORKS: Record<string, NetworkSettings> = {
     number: 1,
     chainId: { testnet: 11155111, mainnet: 1 },
     rpcEnv: { testnet: "SEPOLIA_RPC_URL", mainnet: "ETHEREUM_RPC_URL" },
+    keyEnv: { testnet: "SEPOLIA_PRIVATE_KEY", mainnet: "ETHEREUM_PRIVATE_KEY" },
     coin: { kind: "native", decimals: 18, price: "baseFee" },
     dataFee: "none",
     vault: { testnet: TEST_18, mainnet: ETHEREUM_MAINNET },
@@ -62,6 +66,7 @@ export const NETWORKS: Record<string, NetworkSettings> = {
     number: 3,
     chainId: { testnet: 84532, mainnet: 8453 },
     rpcEnv: { testnet: "BASE_SEPOLIA_RPC_URL", mainnet: "BASE_RPC_URL" },
+    keyEnv: { testnet: "BASE_SEPOLIA_PRIVATE_KEY", mainnet: "BASE_PRIVATE_KEY" },
     coin: { kind: "native", decimals: 18, price: "baseFee" },
     // GasPriceOracle predeploy (D135).
     dataFee: "op",
@@ -72,6 +77,7 @@ export const NETWORKS: Record<string, NetworkSettings> = {
     // Testnet read from its endpoint on 2026-10-02.
     chainId: { testnet: 46630, mainnet: null },
     rpcEnv: { testnet: "ROBINHOOD_TESTNET_RPC_URL", mainnet: "ROBINHOOD_RPC_URL" },
+    keyEnv: { testnet: "ROBINHOOD_TESTNET_PRIVATE_KEY", mainnet: "ROBINHOOD_PRIVATE_KEY" },
     coin: { kind: "native", decimals: 18, price: "baseFee" },
     // ArbGasInfo precompile (D135).
     dataFee: "arb",
@@ -80,6 +86,7 @@ export const NETWORKS: Record<string, NetworkSettings> = {
   polkadot: {
     number: 5,
     rpcEnv: { testnet: "POLKADOT_TESTNET_RPC_URL", mainnet: "POLKADOT_RPC_URL" },
+    keyEnv: { testnet: "POLKADOT_TESTNET_PRIVATE_KEY", mainnet: "POLKADOT_PRIVATE_KEY" },
     coin: { kind: "native", decimals: 18, price: "baseFee" },
     dataFee: "none",
     vault: { testnet: TEST_18, mainnet: null },
@@ -96,6 +103,7 @@ export const NETWORKS: Record<string, NetworkSettings> = {
     number: 6,
     chainId: { testnet: 296, mainnet: 295 },
     rpcEnv: { testnet: "HEDERA_TESTNET_RPC_URL", mainnet: "HEDERA_RPC_URL" },
+    keyEnv: { testnet: "HEDERA_TESTNET_PRIVATE_KEY", mainnet: "HEDERA_PRIVATE_KEY" },
     // Measured on its testnet on 2026-10-02 (NetworkProbe): a contract sees a
     // base fee of 0, the transaction's gas price in tinybars (80), and HBAR in
     // 8 decimals (1 HBAR sent arrived as 10^8), while its RPC shows 18 (D139).
@@ -107,7 +115,8 @@ export const NETWORKS: Record<string, NetworkSettings> = {
     number: 7,
     // Each read from its network's endpoint on 2026-10-02.
     chainId: { testnet: 998, mainnet: 999 },
-    rpcEnv: { testnet: "HYPERLIQUID_TESTNET_RPC_URL", mainnet: "HYPERLIQUID_MAINNET_RPC_URL" },
+    rpcEnv: { testnet: "HYPEREVM_TESTNET_RPC_URL", mainnet: "HYPEREVM_RPC_URL" },
+    keyEnv: { testnet: "HYPEREVM_TESTNET_PRIVATE_KEY", mainnet: "HYPEREVM_PRIVATE_KEY" },
     coin: { kind: "native", decimals: 18, price: "baseFee" },
     dataFee: "none",
     vault: { testnet: TEST_18, mainnet: null },
@@ -120,6 +129,7 @@ export const NETWORKS: Record<string, NetworkSettings> = {
     number: 8,
     chainId: { testnet: 42431, mainnet: null },
     rpcEnv: { testnet: "TEMPO_TESTNET_RPC_URL", mainnet: "TEMPO_RPC_URL" },
+    keyEnv: { testnet: "TEMPO_TESTNET_PRIVATE_KEY", mainnet: "TEMPO_PRIVATE_KEY" },
     // PathUSD, 6 decimals, read on its testnet on 2026-10-02. The gas price
     // is in attodollars: a sender pays gas x price / 10^12 PathUSD, checked
     // against real receipts on its testnet the same day.

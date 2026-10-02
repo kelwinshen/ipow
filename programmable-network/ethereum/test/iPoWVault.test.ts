@@ -3,6 +3,7 @@ import { network } from "hardhat";
 
 import { COIN_SCRIPT, buildTx, concat, headerHashLE, merkle, mine, targetFromBits, txidLE } from "./helpers/bitcoin.ts";
 
+import { makeParts } from "./helpers/vaultParts.ts";
 const { ethers } = await network.create();
 
 // The protocol's vault on Ethereum: its core, `home` for Ethereum's assets
@@ -123,16 +124,18 @@ const ETH_KEY = key(ETHEREUM, 0);
 const SOL_KEY = key(SOLANA, 0);
 
 /** The factories that make a vault's parts, deployed once. */
-let factories: [string, string] | undefined;
+let factories: [any, any] | undefined;
 
-/** A vault for the pair (`here`, `peer`). */
+/** A vault for the pair (`here`, `peer`): its parts made first, then it. */
 async function deployVault(protocol: string, here: number, peer: number) {
   if (!factories) {
-    const h = await ethers.deployContract("VaultHomeFactory", [18]);
-    const r = await ethers.deployContract("VaultReceiptsFactory");
-    factories = [await h.getAddress(), await r.getAddress()];
+    factories = [await ethers.deployContract("VaultHomeFactory", [18]), await ethers.deployContract("VaultReceiptsFactory")];
   }
-  return ethers.deployContract("iPoWVaultNative", [protocol, here, peer, PEER_VAULT, DEPOSIT, MIN_CERTIFYING_ESCROW, ...factories]);
+  const [h, r] = factories;
+  const parts = await makeParts(ethers, h, r, here, peer, ethers.ZeroAddress);
+  const vault = await ethers.deployContract("iPoWVaultNative", [protocol, here, peer, PEER_VAULT, DEPOSIT, MIN_CERTIFYING_ESCROW, await h.getAddress(), await r.getAddress(), parts.home, parts.receipts]);
+  if ((await vault.getAddress()) !== parts.core) throw new Error("the vault is not where its parts were made for");
+  return vault;
 }
 
 async function deploy() {
@@ -391,6 +394,48 @@ describe("iPoWVault: real Bitcoin (D108)", function () {
     for (const [a, b] of [[1, 1], [0, 2], [1, 0]]) {
       await expect(deployVault(await protocol.getAddress(), a, b)).to.be.revertedWithCustomError(factory, "BadNetworks");
     }
+  });
+
+  it("takes only parts its factories made, for it and its pair, before it", async function () {
+    const { protocol } = await deploy();
+    const p = await protocol.getAddress();
+    const [deployer] = await ethers.getSigners();
+    const factory = await ethers.getContractFactory("iPoWVaultNative");
+    const h = await ethers.deployContract("VaultHomeFactory", [18]);
+    const r = await ethers.deployContract("VaultReceiptsFactory");
+    const args = (home: string, receipts: string, hf = h, rf = r) =>
+      Promise.all([hf.getAddress(), rf.getAddress()]).then(([a, b]) => [p, ETHEREUM, SOLANA, PEER_VAULT, DEPOSIT, MIN_CERTIFYING_ESCROW, a, b, home, receipts]);
+
+    // Parts made by other factories than the ones it names.
+    const otherH = await ethers.deployContract("VaultHomeFactory", [18]);
+    const otherR = await ethers.deployContract("VaultReceiptsFactory");
+    let parts = await makeParts(ethers, otherH, otherR, ETHEREUM, SOLANA, ethers.ZeroAddress);
+    await expect(factory.deploy(...(await args(parts.home, parts.receipts)))).to.be.revertedWithCustomError(factory, "BadNetworks");
+
+    // Parts made by its factories, but for another vault's address.
+    const n = await ethers.provider.getTransactionCount(deployer.address);
+    const elsewhere = ethers.getCreateAddress({ from: deployer.address, nonce: n + 5 });
+    const home = await h.make.staticCall(elsewhere, ETHEREUM, SOLANA, ethers.ZeroAddress);
+    await h.make(elsewhere, ETHEREUM, SOLANA, ethers.ZeroAddress);
+    const receipts = await r.make.staticCall(elsewhere, ETHEREUM, SOLANA);
+    await r.make(elsewhere, ETHEREUM, SOLANA);
+    await expect(factory.deploy(...(await args(home, receipts)))).to.be.revertedWithCustomError(factory, "BadNetworks");
+
+    // Parts made for it, but for another pair.
+    parts = await makeParts(ethers, h, r, ETHEREUM, 3, ethers.ZeroAddress);
+    await expect(factory.deploy(...(await args(parts.home, parts.receipts)))).to.be.revertedWithCustomError(factory, "BadNetworks");
+
+    // Made for it and its pair, but with a token as asset 0, where its coin
+    // is the native one.
+    const token = await ethers.deployContract("MockToken", ["T", "T", 6]);
+    parts = await makeParts(ethers, h, r, ETHEREUM, SOLANA, await token.getAddress());
+    await expect(factory.deploy(...(await args(parts.home, parts.receipts)))).to.be.revertedWithCustomError(factory, "BadNetworks");
+
+    // Made for it and its pair: taken.
+    parts = await makeParts(ethers, h, r, ETHEREUM, SOLANA, ethers.ZeroAddress);
+    const vault = await factory.deploy(...(await args(parts.home, parts.receipts)));
+    expect([await vault.getAddress(), await vault.home(), await vault.receipts()]).to.deep.equal([parts.core, parts.home, parts.receipts]);
+    expect([await h.made(parts.home), await r.made(parts.receipts), await h.made(parts.receipts)]).to.deep.equal([true, true, false]);
   });
 
   it("records a block below a real block as real", async function () {

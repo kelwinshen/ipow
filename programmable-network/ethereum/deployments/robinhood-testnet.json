@@ -1,0 +1,28 @@
+{
+  "network": "robinhood",
+  "env": "testnet",
+  "chainId": 46630,
+  "lightClient": "0xc729b1a6d0325ae559614b6826127e11E51703c1",
+  "dataFee": "0x6AA1F2dd1a0A28F5FC3a88ec8A219e89987A57aB",
+  "protocol": "0xd6b425c7908E171a33dF2a4e6C5687eDF0D2d6c3",
+  "conversion": "0xb856906fEBAFBB21A06DdC35E9BCe476139A86BA",
+  "betaBaskets": "0xd9a6e550Ea8a3970d08F34b0b1a417338C839C4c",
+  "homeFactory": "0x9d2d501827e84d53addA293E70A8995078c87891",
+  "receiptsFactory": "0x10C9C79C8c46c1f9f07D7A258Bbd42B4ED6f973E",
+  "vaults": [
+    {
+      "peer": 2,
+      "peerVault": "0x03530130456245ee86bdfdf653eace2d3a6f18451a8240d72bdde2b83e3ce110",
+      "vault": "0x15390C4901e11D3732489825c2FBa33A2E3e5b37",
+      "home": "0xfebE817d06A642D8C66fe5548Df61A5AfaFdc201",
+      "receipts": "0xA3E1811D33bBAeA900dB14660fdF09C2EAd87A7a"
+    }
+  ],
+  "deployer": "0x9784B80BC7b95753f2a2732649F3a1136b4c2BF1",
+  "minHeight": 965567,
+  "maxSats": "100000",
+  "solanaPairAccount": "Dydhoos4EgX15LFLJR5a6DvGtuzmNjegpzzynJSJbF5",
+  "at": "2026-10-02T14:29:04.727Z",
+  "source": "a9493c7",
+  "vaultParts": "made by the vault"
+}

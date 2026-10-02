@@ -1,0 +1,28 @@
+{
+  "network": "hedera",
+  "env": "testnet",
+  "chainId": 296,
+  "lightClient": "0x3f0B074Ae2a695C3D5D9694Bbb52B03e0541f972",
+  "dataFee": null,
+  "protocol": "0x5fCc0AB68575E3fb84716006bf513e9Fd6569958",
+  "conversion": "0x66785511306769B886746D2f33f8D76F4E267E61",
+  "betaBaskets": "0x49b893bcA0635A256Ae2a322c3D9A8d6A05194c4",
+  "homeFactory": "0x86D140FF6A9A1FF7a6Aaade0468176B506572DFb",
+  "receiptsFactory": "0xec231FD201dd448feBDFB873B20875FBdFd238F1",
+  "vaults": [
+    {
+      "peer": 2,
+      "peerVault": "0x60d1e6de715b0cdd2ef3d9058cdcdd09e233428206ec45389a10c668ebd18dff",
+      "vault": "0x4d1C3FdE9FaD26b9882b4E607120091E2ff285B4",
+      "home": "0xb57684c90C266F5d93913fC3C22249dD89858DaB",
+      "receipts": "0xC0BF165BCbfF23A83f824C84c818994Ea57078fd"
+    }
+  ],
+  "deployer": "0x9784B80BC7b95753f2a2732649F3a1136b4c2BF1",
+  "minHeight": 965567,
+  "maxSats": "100000",
+  "solanaPairAccount": "7Wwn5bjARBmdCjNT7KUBwB7LR3JYSLFAWSSm98pxvE2S",
+  "at": "2026-10-02T14:32:07.533Z",
+  "source": "a9493c7",
+  "vaultParts": "made by the vault"
+}

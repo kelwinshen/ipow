@@ -182,35 +182,59 @@ impl EvmWorld {
     /// Deploys the protocol's vault (section 11) for the pair of networks
     /// `here` and `peer` (D132), naming the vault there (for Solana, the
     /// pair's configuration account), with its deposit and least certifying
-    /// escrow in wei. Its parts' factories are deployed with it.
+    /// escrow in wei. Its parts' factories are deployed with it, and make
+    /// its two parts first, each in its own transaction, for the vault's
+    /// address two transactions on: five transactions in all.
     pub async fn deploy_vault(&self, here: u8, peer: u8, peer_vault: [u8; 32], deposit: u128, min_certifying_escrow: u128) -> Address {
+        use alloy::providers::Provider;
         let word = |a: Address| {
             let mut w = [0u8; 32];
             w[12..].copy_from_slice(a.as_slice());
             w
         };
-        let home = deploy_with(&self.apps[0], include_str!("../tests/VaultHomeFactory.bin"), &[U256::from(18u8).to_be_bytes::<32>()]).await;
-        let receipts = deploy_with(&self.apps[0], include_str!("../tests/VaultReceiptsFactory.bin"), &[]).await;
         let n = |v: u8| U256::from(v).to_be_bytes::<32>();
+        let home_factory = deploy_with(&self.apps[0], include_str!("../tests/VaultHomeFactory.bin"), &[n(18)]).await;
+        let receipts_factory = deploy_with(&self.apps[0], include_str!("../tests/VaultReceiptsFactory.bin"), &[]).await;
+        let deployer = self.net.keys[1].parse::<PrivateKeySigner>().unwrap().address();
+        let nonce = self.apps[0].get_transaction_count(deployer).await.unwrap();
+        let core = deployer.create(nonce + 2);
+        // A factory's first contract is at its nonce 1.
+        let (home, receipts) = (home_factory.create(1), receipts_factory.create(1));
+        let call = |sig: &str, args: &[[u8; 32]]| {
+            let mut data = alloy::primitives::keccak256(sig.as_bytes())[..4].to_vec();
+            for a in args {
+                data.extend_from_slice(a);
+            }
+            Bytes::from(data)
+        };
+        for (to, data) in [
+            (home_factory, call("make(address,uint8,uint8,address)", &[word(core), n(here), n(peer), [0u8; 32]])),
+            (receipts_factory, call("make(address,uint8,uint8)", &[word(core), n(here), n(peer)])),
+        ] {
+            let receipt = self.apps[0].send_transaction(TransactionRequest::default().to(to).input(data.into())).await.unwrap().get_receipt().await.unwrap();
+            assert!(receipt.status(), "a vault part was not made");
+        }
         let d: [u8; 32] = U256::from(deposit).to_be_bytes();
         let m: [u8; 32] = U256::from(min_certifying_escrow).to_be_bytes();
-        deploy_with(
+        let vault = deploy_with(
             &self.apps[0],
             include_str!("../tests/iPoWVaultNative.bin"),
-            &[word(self.protocol), n(here), n(peer), peer_vault, d, m, word(home), word(receipts)],
+            &[word(self.protocol), n(here), n(peer), peer_vault, d, m, word(home_factory), word(receipts_factory), word(home), word(receipts)],
         )
-        .await
+        .await;
+        assert_eq!(vault, core, "the vault is where its parts were made for");
+        vault
     }
 
     /// Two vaults of one pair of EVM networks, `a` and `b` (D132), here on
     /// one chain. Each names the other at deployment, so the second's address
-    /// is predicted from the deployer's nonce: `deploy_vault` sends three
-    /// transactions (two factories, then the vault).
+    /// is predicted from the deployer's nonce: `deploy_vault` sends five
+    /// transactions (two factories, two parts, then the vault).
     pub async fn deploy_evm_pair(&self, a: u8, b: u8, deposit: u128, min_certifying_escrow: u128) -> (Address, Address) {
         use alloy::providers::Provider;
         let deployer = self.net.keys[1].parse::<PrivateKeySigner>().unwrap().address();
         let nonce = self.apps[0].get_transaction_count(deployer).await.unwrap();
-        let predicted = deployer.create(nonce + 5);
+        let predicted = deployer.create(nonce + 9);
         let word = |x: Address| {
             let mut w = [0u8; 32];
             w[12..].copy_from_slice(x.as_slice());

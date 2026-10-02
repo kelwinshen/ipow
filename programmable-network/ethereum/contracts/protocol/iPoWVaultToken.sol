@@ -8,6 +8,8 @@ import {iPoWProtocol} from "./iPoWProtocol.sol";
 import {iPoWProtocolToken} from "./iPoWProtocolToken.sol";
 import {iPoWVault} from "./iPoWVault.sol";
 import {VaultHomeFactory, VaultReceiptsFactory} from "./vault/VaultFactories.sol";
+import {VaultHome} from "./vault/VaultHome.sol";
+import {VaultReceipts} from "./vault/VaultReceipts.sol";
 
 /// @title iPoWVaultToken
 /// @notice The vault on a network without a native coin (D136, D137), such
@@ -32,8 +34,10 @@ contract iPoWVaultToken is iPoWVault {
         uint256 minCertifyingEscrow_,
         VaultHomeFactory homeFactory_,
         VaultReceiptsFactory receiptsFactory_,
+        VaultHome home_,
+        VaultReceipts receipts_,
         IERC20 coin_
-    ) iPoWVault(protocol_, here_, peer_, peerVault_, deposit_, minCertifyingEscrow_, homeFactory_, receiptsFactory_, address(coin_)) {
+    ) iPoWVault(protocol_, here_, peer_, peerVault_, deposit_, minCertifyingEscrow_, homeFactory_, receiptsFactory_, home_, receipts_, address(coin_)) {
         if (address(coin_) != address(iPoWProtocolToken(address(protocol_)).coin())) revert WrongCoin();
         coin = coin_;
         coin_.forceApprove(address(protocol_), type(uint256).max);

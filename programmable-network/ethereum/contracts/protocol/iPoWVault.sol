@@ -223,6 +223,8 @@ abstract contract iPoWVault is ReentrancyGuard, IVaultCore {
         uint256 minCertifyingEscrow_,
         VaultHomeFactory homeFactory_,
         VaultReceiptsFactory receiptsFactory_,
+        VaultHome home_,
+        VaultReceipts receipts_,
         address coin_
     ) {
         if (deposit_ == 0 || minCertifyingEscrow_ == 0) revert ZeroAmount();
@@ -235,14 +237,16 @@ abstract contract iPoWVault is ReentrancyGuard, IVaultCore {
         lightClient = protocol_.lightClient();
         peerVault = peerVault_;
         deposit = deposit_;
-        home = homeFactory_.make(here_, peer_, coin_);
-        receipts = receiptsFactory_.make(here_, peer_);
-        // Made for this vault and its pair. What the parts' code is, the
-        // factories' code shows: whoever checks a vault reads `homeFactory`
-        // and `receiptsFactory` and compares their code with the source.
+        home = home_;
+        receipts = receipts_;
+        // Made by the factories, before this vault, for this vault and its
+        // pair. What the parts' code is, the factories' code shows: whoever
+        // checks a vault reads `homeFactory` and `receiptsFactory` and
+        // compares their code with the source.
         if (
-            address(home.core()) != address(this) || address(receipts.core()) != address(this) || home.here() != here_
-                || home.peer() != peer_ || receipts.here() != here_ || receipts.peer() != peer_
+            !homeFactory_.made(address(home_)) || !receiptsFactory_.made(address(receipts_))
+                || address(home_.core()) != address(this) || address(receipts_.core()) != address(this) || home_.here() != here_
+                || home_.peer() != peer_ || receipts_.here() != here_ || receipts_.peer() != peer_
         ) revert BadNetworks();
         homeFactory = address(homeFactory_);
         receiptsFactory = address(receiptsFactory_);
@@ -962,8 +966,10 @@ contract iPoWVaultNative is iPoWVault {
         uint256 deposit_,
         uint256 minCertifyingEscrow_,
         VaultHomeFactory homeFactory_,
-        VaultReceiptsFactory receiptsFactory_
-    ) iPoWVault(protocol_, here_, peer_, peerVault_, deposit_, minCertifyingEscrow_, homeFactory_, receiptsFactory_, address(0)) {}
+        VaultReceiptsFactory receiptsFactory_,
+        VaultHome home_,
+        VaultReceipts receipts_
+    ) iPoWVault(protocol_, here_, peer_, peerVault_, deposit_, minCertifyingEscrow_, homeFactory_, receiptsFactory_, home_, receipts_, address(0)) {}
 
     function _take(uint256 amount) internal override {
         if (msg.value != amount) revert WrongValue();
