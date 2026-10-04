@@ -8,7 +8,20 @@ use crate::state::{Config, Side, Swap, SwapState};
 
 /// Buy: asks for `amount` of SOL, or of `mint`'s token, for `sats` paid on
 /// Bitcoin. `paid` lamports pay the job's fees.
-pub fn handler(mut ctx: Context<Buy>, amount: u64, sats: u64, confirmations: u16, paid: u64) -> Result<()> {
+pub fn handler(ctx: Context<Buy>, amount: u64, sats: u64, confirmations: u16, paid: u64) -> Result<()> {
+    let user = ctx.accounts.user.key();
+    buy(ctx, user, amount, sats, confirmations, paid)
+}
+
+/// A buy whose coin goes to `recipient`, the signer paying the fees (T2,
+/// D21): an operator opens the buy of a tunnel for the user, who then signs
+/// only on the other network.
+pub fn for_recipient(ctx: Context<Buy>, recipient: Pubkey, amount: u64, sats: u64, confirmations: u16, paid: u64) -> Result<()> {
+    require!(recipient != Pubkey::default(), ConversionError::ZeroRecipient);
+    buy(ctx, recipient, amount, sats, confirmations, paid)
+}
+
+fn buy(mut ctx: Context<Buy>, recipient: Pubkey, amount: u64, sats: u64, confirmations: u16, paid: u64) -> Result<()> {
     require!(amount > 0 && sats > 0, ConversionError::InvalidAmount);
     require!(sats <= MAX_SATS, ConversionError::TooLarge);
     let a = &mut ctx.accounts;
@@ -36,7 +49,7 @@ pub fn handler(mut ctx: Context<Buy>, amount: u64, sats: u64, confirmations: u16
     s.id = id;
     s.side = Side::Buy;
     s.state = SwapState::Open;
-    s.user = a.user.key();
+    s.user = recipient;
     s.mint = a.mint.as_ref().map_or(Pubkey::default(), |m| m.key());
     s.amount = amount;
     s.sats = sats;

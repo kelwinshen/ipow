@@ -64,3 +64,57 @@ const state = await getLock(provider, d, lockId);    // Locked, Carried or Retur
 The SDK never holds keys: it takes the app's provider and signer. After a
 deployment or a contract change, `node scripts/sync.ts` regenerates its
 networks and ABIs from this repository.
+
+## In an app
+
+**Install.** Build it to `dist/` (JavaScript with type declarations) with
+`pnpm build` here, then from another repository on the same machine:
+
+```sh
+pnpm add file:../ipow/packages/sdk     # or: npm install ../ipow/packages/sdk
+```
+
+After a change here, build again and reinstall there: a `file:` dependency
+is a copy.
+
+It runs in Node and in the browser: bundled for the browser with esbuild
+on 2026-10-03, it needs no Node module. It uses `fetch`, and the `buffer`
+package for Solana's transactions.
+
+**EVM wallets** (MetaMask or any injected wallet), with ethers v6:
+
+```ts
+import { BrowserProvider } from "ethers";
+import { network, quoteLock, lock } from "@ipow/sdk";
+
+const provider = new BrowserProvider(window.ethereum);
+const signer = await provider.getSigner();           // asks the wallet
+const d = network("ethereum-testnet");                // its chain id: d.chainId
+const quote = await quoteLock(provider, d, { amount: 10n ** 16n });
+await lock(signer, d, quote, solanaAddress);
+```
+
+Check that the wallet is on `d.chainId` first (`await provider.getNetwork()`),
+and ask it to switch if not.
+
+**Solana wallets** (Phantom, or any wallet adapter): the SDK takes a wallet
+with `publicKey`, `signTransaction` and `signAllTransactions`, which a
+wallet adapter gives.
+
+```ts
+import { Connection } from "@solana/web3.js";
+import { SolanaVault, SolanaBeta } from "@ipow/sdk";
+
+const connection = new Connection("https://api.devnet.solana.com", "confirmed");
+const vault = new SolanaVault(connection, 1 /* paired with Ethereum */, wallet);
+await vault.lock({ recipient: evmAddress, amount: 10_000_000n });   // 0.01 SOL
+const beta = new SolanaBeta(connection, wallet);
+```
+
+**What an app should know:**
+- Amounts are bigints in each asset's smallest unit; a vault counts in
+  record units (gwei for ETH), and `quoteLock` converts.
+- Calls that open a job set their own gas; leave it to the SDK.
+- When no operator takes a job, call `expireJob` and `withdrawCredit` for
+  the user: the fees do not come back with a refund.
+- Bitcoin addresses are mainnet (`bc1q`, `bc1p`, `1`, `3`).

@@ -3,17 +3,20 @@
 // wrapped SOL; one whole BETA is 10^9 of its smallest units. Solana has no
 // view of a mint's cost, so the SDK prices it as the program does.
 
-import anchor from "@coral-xyz/anchor";
-import { Connection, PublicKey, SystemProgram, TransactionInstruction, type AccountMeta } from "@solana/web3.js";
+// Imported, not global: in a browser this is the `buffer` package.
+import { Buffer } from "buffer";
+import { AnchorProvider, BN, Program } from "@coral-xyz/anchor";
+import { Connection, PublicKey, SystemProgram, Transaction, TransactionInstruction, type AccountMeta } from "@solana/web3.js";
 
 import { IDLS, SOLANA } from "./generated/solana.ts";
 import { associatedTokenAccount, type SolanaWallet } from "./solana.ts";
 
-const { AnchorProvider, BN, Program } = anchor;
 
 const TOKEN_PROGRAM = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
 const ASSOCIATED_TOKEN_PROGRAM = new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
 const ONE = 1_000_000_000n;
+/** Wrapped SOL: a part SOL itself stands in for, wrapped as it is minted. */
+export const WRAPPED_SOL = "So11111111111111111111111111111111111111112";
 const BPS = 10_000n;
 
 export type SolanaBasketPart = { mint: string; amount: bigint; tokenProgram: string; decimals: number; held: bigint; owed: bigint };
@@ -67,6 +70,9 @@ export class SolanaBeta {
   }
   betaMint(basket: PublicKey): PublicKey {
     return this.pda(Buffer.from("beta"), basket.toBuffer());
+  }
+  private owedRecord(basket: PublicKey, owner: PublicKey, index: number): PublicKey {
+    return this.pda(Buffer.from("owed"), basket.toBuffer(), owner.toBuffer(), Buffer.from([index]));
   }
   private feesRecord(basket: PublicKey, feeTo: PublicKey): PublicKey {
     return this.pda(Buffer.from("fees"), basket.toBuffer(), feeTo.toBuffer());
@@ -129,11 +135,21 @@ export class SolanaBeta {
   }
 
   /** Mints `amount` BETA to the wallet; its account for BETA is made first
-   *  if it has none. The parts come from its accounts for them. */
+   *  if it has none. The parts come from its accounts for them; a wrapped
+   *  SOL part short of what the mint takes is wrapped from the wallet's SOL
+   *  first, in the same transaction. */
   async mint(address: string, amount: bigint): Promise<{ signature: string }> {
     const b = await this.getBasket(address);
     const user = this.wallet.publicKey;
     const beta = new PublicKey(b.beta);
+    const wrap: TransactionInstruction[] = [];
+    const sol = b.parts.findIndex((p) => p.mint === WRAPPED_SOL);
+    if (sol >= 0) {
+      const q = await this.quoteMint(address, amount);
+      const take = q.need[sol] + q.fee[sol];
+      const short = take - (await this.tokenBalance(user, new PublicKey(WRAPPED_SOL)));
+      if (short > 0n) wrap.push(...wrapSolInstructions(user, short));
+    }
     const signature = await this.program.methods
       .mint(new BN(amount.toString()))
       .accountsStrict({
@@ -146,7 +162,7 @@ export class SolanaBeta {
         associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM,
         systemProgram: SystemProgram.programId,
       } as any)
-      .preInstructions([createAccountIdempotent(user, user, beta)])
+      .preInstructions([...wrap, createAccountIdempotent(user, user, beta)])
       .remainingAccounts(await this.partAccounts(b, user))
       .rpc();
     return { signature };
@@ -172,9 +188,109 @@ export class SolanaBeta {
         systemProgram: SystemProgram.programId,
       } as any)
       .preInstructions(b.parts.map((p) => createAccountIdempotent(user, user, new PublicKey(p.mint), new PublicKey(p.tokenProgram))))
-      .remainingAccounts(await this.partAccounts(b, user))
+      // After every part's accounts, the wallet's owed record of each
+      // deferred part, in order: the program opens one that is missing.
+      .remainingAccounts([
+        ...(await this.partAccounts(b, user)),
+        ...b.parts.flatMap((_, i) => (bits & (1 << i) ? [{ pubkey: this.owedRecord(new PublicKey(address), user, i), isSigner: false, isWritable: true }] : [])),
+      ])
       .rpc();
     return { signature };
+  }
+
+  /** What `owner` is owed of part `index`, deferred in a burn: paid, less
+   *  the burn fee, by `collectOwed`. */
+  async owed(address: string, index: number, owner: PublicKey = this.wallet.publicKey): Promise<bigint> {
+    const at = this.owedRecord(new PublicKey(address), owner, index);
+    if (!(await this.connection.getAccountInfo(at))) return 0n;
+    return big(((await (this.program.account as any).owed.fetch(at)) as any).amount);
+  }
+
+  /** The fees `receiver` can collect, by part. */
+  async feesOf(address: string, receiver: PublicKey = this.wallet.publicKey): Promise<bigint[]> {
+    const at = this.feesRecord(new PublicKey(address), receiver);
+    if (!(await this.connection.getAccountInfo(at))) return [];
+    return ((await (this.program.account as any).fees.fetch(at)) as any).amounts.map(big);
+  }
+
+  /** The accounts of part `index` alone, as collecting takes them. */
+  private async partAccountsOf(b: SolanaBasket, index: number, user: PublicKey): Promise<AccountMeta[]> {
+    return (await this.partAccounts(b, user)).slice(4 * index, 4 * index + 4);
+  }
+
+  /** Collects what the wallet is owed of part `index`, less the burn fee;
+   *  its account for the part is made first if missing. */
+  async collectOwed(address: string, index: number): Promise<{ signature: string }> {
+    const b = await this.getBasket(address);
+    const user = this.wallet.publicKey;
+    const part = b.parts[index];
+    if (!part) throw new Error(`no part ${index}`);
+    const basket = new PublicKey(address);
+    const signature = await this.program.methods
+      .collectOwed(index)
+      .accountsStrict({
+        basket,
+        owed: this.owedRecord(basket, user, index),
+        fees: this.feesFor(b),
+        user,
+      } as any)
+      .preInstructions([createAccountIdempotent(user, user, new PublicKey(part.mint), new PublicKey(part.tokenProgram))])
+      .remainingAccounts(await this.partAccountsOf(b, index, user))
+      .rpc();
+    return { signature };
+  }
+
+  /** Collects the wallet's fees of part `index`, as a receiver of the
+   *  basket's fees, to its own account for the part. */
+  async collectFees(address: string, index: number): Promise<{ signature: string }> {
+    const b = await this.getBasket(address);
+    const user = this.wallet.publicKey;
+    const part = b.parts[index];
+    if (!part) throw new Error(`no part ${index}`);
+    const basket = new PublicKey(address);
+    const signature = await this.program.methods
+      .collectFees(index)
+      .accountsStrict({ basket, fees: this.feesRecord(basket, user), receiver: user })
+      .preInstructions([createAccountIdempotent(user, user, new PublicKey(part.mint), new PublicKey(part.tokenProgram))])
+      .remainingAccounts(await this.partAccountsOf(b, index, user))
+      .rpc();
+    return { signature };
+  }
+
+  /** What `owner` holds of a token, 0 without an account for it. */
+  async tokenBalance(owner: PublicKey, mint: PublicKey): Promise<bigint> {
+    const account = associatedTokenAccount(owner, mint);
+    if (!(await this.connection.getAccountInfo(account))) return 0n;
+    return big((await this.connection.getTokenAccountBalance(account)).value.amount);
+  }
+
+  /** Turns all the wallet's wrapped SOL back into SOL, closing its account
+   *  for it. */
+  async unwrapSol(): Promise<{ signature: string }> {
+    const user = this.wallet.publicKey;
+    const account = associatedTokenAccount(user, new PublicKey(WRAPPED_SOL));
+    const tx = new Transaction().add(
+      new TransactionInstruction({
+        programId: TOKEN_PROGRAM,
+        keys: [
+          { pubkey: account, isSigner: false, isWritable: true },
+          { pubkey: user, isSigner: false, isWritable: true },
+          { pubkey: user, isSigner: true, isWritable: false },
+        ],
+        // The token program's CloseAccount.
+        data: Buffer.from([9]),
+      })
+    );
+    const signature = await (this.program.provider as AnchorProvider).sendAndConfirm(tx);
+    return { signature };
+  }
+
+  /** Every basket of this program: their addresses, newest id first. */
+  async allBaskets(): Promise<string[]> {
+    const all = await (this.program.account as any).basket.all();
+    return all
+      .sort((a: any, b: any) => (big(b.account.id) > big(a.account.id) ? 1 : -1))
+      .map((a: any) => (a.publicKey as PublicKey).toBase58());
   }
 
   /** BETA the wallet holds of a basket. */
@@ -186,3 +302,15 @@ export class SolanaBeta {
   }
 }
 
+/** Instructions that wrap `lamports` of the wallet's SOL into its wrapped
+ *  SOL account, made first if missing. */
+export function wrapSolInstructions(owner: PublicKey, lamports: bigint): TransactionInstruction[] {
+  const mint = new PublicKey(WRAPPED_SOL);
+  const account = associatedTokenAccount(owner, mint);
+  return [
+    createAccountIdempotent(owner, owner, mint),
+    SystemProgram.transfer({ fromPubkey: owner, toPubkey: account, lamports }),
+    // The token program's SyncNative: the account's lamports become its balance.
+    new TransactionInstruction({ programId: TOKEN_PROGRAM, keys: [{ pubkey: account, isSigner: false, isWritable: true }], data: Buffer.from([17]) }),
+  ];
+}

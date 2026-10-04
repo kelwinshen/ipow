@@ -163,6 +163,85 @@ variant documented in `ipow-implementation.md`. Because the MINT anchor's
 operator had already self-attested, the mint exercised immediately rather
 than waiting for the full challenge window.
 
+## 2026-10-03: Conversion redeployed for the tunnel (T1, T2)
+
+Conversion with `sellInWindow` and `buyFor`
+([`ipow-conversion-tunnel.md`](ipow-conversion-tunnel.md)), deployed by
+the owner. None of the contracts replaced held a swap.
+
+| Network | New Conversion | Replaced | Unused |
+|---|---|---|---|
+| Sepolia | `0x5fdFfea2E1e03E6Eb376Aa6d679A4C8b62bf6da1` | `0x9dF80412e01720F904f5059559eD6f66c7558803` | `0x7082Eba69c5804773E6731EeA3103154025e7fEC` |
+| Base Sepolia | `0x6CCCA5c12689DC5d14F8C540c7c0C9a20731e8C1` | `0x6c5d75F830C002f4B73b4625F3E2bFaeC50b5D2E` | `0xCA39c4e5d4f938A380E61475bF4CeF8D1B7d6190` |
+| HyperEVM testnet | `0x6CCCA5c12689DC5d14F8C540c7c0C9a20731e8C1` | `0x6c5d75F830C002f4B73b4625F3E2bFaeC50b5D2E` | `0xCA39c4e5d4f938A380E61475bF4CeF8D1B7d6190` |
+| Robinhood testnet | `0x2Dd456fCe7B3574AbD76b2899d3106CaB6ff5b9B` | `0xb856906fEBAFBB21A06DdC35E9BCe476139A86BA` | |
+| Solana devnet | program `9Argk3M83p8t5pWG92PhwEhYzysWt5n82siEWyb29w7D` upgraded in place, slot 507034248 | | |
+
+Read back: `verify-deployments.ts` matches every contract of all seven
+EVM test networks with its build; each new Conversion
+and each unused one holds 17,792 bytes of code and no swap; the Solana
+program's code is byte for byte `target/deploy/conversion.so` (SHA-256
+`3c9324c0...`), with `SellInWindow` and `BuyFor` in it.
+
+Friction, for the SDK and Greatwall:
+- The script ran twice per network: the first run's contracts are left
+  unused (listed in each deployment as `unusedConversions`), and the
+  second recorded the first as the one it replaced, corrected by hand.
+- The Solana upgrade first failed: the CLI extended the program by 6,352
+  bytes, below the 10,240 the loader requires; `solana program extend`
+  by 10,240 first, then the deploy, went through.
+- Robinhood's public RPC failed TLS (`UNABLE_TO_GET_ISSUER_CERT_LOCALLY`):
+  the deploy packages now use Alchemy's endpoints for Base, HyperEVM,
+  Robinhood and Tempo (each checked by its chain id first), and Robinhood
+  was redeployed through it, once.
+- Hedera, Polkadot and Tempo kept the old Conversion: its code was added
+  to `deployments/source-a9493c7/` so the check compares them with it.
+
+## 2026-10-04: the first tunnel, SOL on devnet into AAPL on Sepolia
+
+The first conversion between two programmable networks on the new protocol
+([`ipow-conversion-tunnel.md`](ipow-conversion-tunnel.md)), run from
+Greatwall's Convert by the owner, with one operator node on both legs.
+
+| UTC | Step | Where |
+|---|---|---|
+| 01:07 | The user opens buy 8 (0.36 AAPL for 900 sats) and pays its job fee | Sepolia |
+| 01:08 | Greatwall registers the buy, signed by its owner; the node promises its sale | node |
+| 01:10 | The node bids; the auction ends a minute later | Sepolia |
+| 01:19 | Anchored at Bitcoin block 969784; the AAPL locked, address `bc1qtyq93a0…` named | Sepolia |
+| 01:32 | The user signs sale 1 (0.06 SOL, paid to that address in blocks 969785 to 969796); the node wins it | Solana devnet |
+| block 969786 | The node pays 900 sats (`93d979a1…`), and its receipt spends them (`ac335dbc…`), in the same block | Bitcoin |
+| 03:25 | Buy 8 proven and completed: 0.36 AAPL to the user | Sepolia |
+| 03:26 | Sale 1 proven; the node collects the SOL after its lock (2026-10-05 15:26) | Solana devnet |
+
+Two hours from the user's first signature to the AAPL; the user signed
+twice on Sepolia (the buy, the registration's message) and once on Solana.
+Cost to the operator: the two Bitcoin transactions' fees, from a wallet of
+about 14,000 sats; everything else came back to it.
+
+What it taught, fixed the same day:
+- The node read a buy's job fees with `feesFor`, which many RPCs run at a
+  price of zero: the protocol refused the buy (`FeesNotPaid`). It now
+  prices with `commitmentFeeAt` and the network's price, as the SDK does.
+- Tunnels opened by the operator for the user (T2) cost the operator a job's
+  fees whenever the user walked away: three such buys were left before the
+  owner decided the user opens and pays for the buy (Q5, revised). Those
+  jobs also locked most of the operator's 0.1 ETH bond, so a later buy
+  found no bidder: the bond was raised to 0.2 ETH.
+- The node's API cut connections at 30 seconds, less than a Sepolia
+  transaction takes: two buys were opened and never recorded.
+- mempool.space does not answer from the owner's network; the app's own
+  explorer calls had no timeout and hung the page. Everything now goes
+  through the SDK's client, blockstream first, 8 seconds each.
+- A Solana send whose confirmation web3.js gave up on after 30 seconds had
+  landed; the SDK now asks for its status for up to two minutes.
+- The app had kept the two legs linked only in the browser; the SDK now
+  finds a buy's sale on chain (`sellPaying`), and the page records it.
+- The page: a timer read the swap before it loaded; the source side of a
+  tunnel's buy showed the sats as if they were SOL and no address; a
+  completed tunnel read "Converting" after the operator's lock on the sale,
+  which is not the user's wait.
+
 ## Housekeeping
 
 **2026-09-24**: a stale, expired, never-claimed test `Pending` account on

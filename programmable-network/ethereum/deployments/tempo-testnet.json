@@ -23,5 +23,8 @@
   "minHeight": 965567,
   "maxSats": "100000",
   "solanaPairAccount": "7wvWJdeTW9WynaP17Le7dnWcBkV7qpVz78sR9TrA977Q",
-  "at": "2026-10-02T18:37:03.660Z"
+  "at": "2026-10-02T18:37:03.660Z",
+  "sources": {
+    "Conversion": "a9493c7"
+  }
 }

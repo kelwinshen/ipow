@@ -98,3 +98,25 @@ address: a transaction of his that spends one would read as a receipt.
 | C3 | The escrow x | Decided 2026-09-29: the protocol minimum (5 times the commitment fee). In a conversion the Conversion contract itself keeps the user's coin safe: it is refunded, or, for Bitcoin to token, locked by the operator before the user pays. The 125% of D36 stays the rule for transfers between programmable networks, where the escrow is what repays a loss |
 | C4 | How the user's own payment proof (D10) is protected | Decided 2026-09-29: it must lie on the chain the protocol protects (below Bob's close, or on top of Bob's anchor at full difficulty), with a payment deadline and a size limit per swap. No challenge or attest inside Conversion |
 | C5 | Which coins? | Decided 2026-09-29: the network's own coin and tokens (ERC-20, SPL) |
+
+## 2026-10-04: a swap nobody took ends in one transaction
+
+`cancel` and `refundSell` expire the swap's job themselves when nobody
+bid (`protocol.expire`, which anyone may call, D61), so the user signs
+once to end the swap, and the fees are in their credit on the protocol.
+The credit is withdrawn apart, once for all of a user's untaken jobs:
+the protocol pays a credit only to its owner, so an application cannot
+withdraw it for them. Folding that in needs a protocol change (a
+withdrawal anyone may trigger that pays the owner), left for the next
+protocol upgrade. Built and tested; live at the next Conversion redeploy.
+
+## 2026-10-04: a buy keeps the user's own Bitcoin script
+
+A buy takes the user's own Bitcoin output script (`buy`'s `userScript`,
+empty for none, at most 40 bytes) and keeps it on the swap, as the old
+protocol did, so that any app, in any browser, can show where the user
+said they would pay from. It is a note, not a rule: anyone may pay a buy
+from anywhere, and nothing checks the payment against it. Built and
+tested on EVM networks; the Solana program is unchanged (buys into Solana
+are not open to users yet). Live at the next Conversion redeploy, with
+the one-transaction close above.

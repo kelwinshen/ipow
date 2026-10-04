@@ -58,6 +58,19 @@ pub struct Swap {
     /// escrow after a slash.
     pub compensated: bool,
     pub bump: u8,
+    /// Sell in a tunnel only (T1): the Bitcoin blocks its payment must be
+    /// mined in, those of the buy it pays on another network; zero for none.
+    /// A payment proven outside them refunds the user.
+    pub pay_from: u32,
+    pub pay_to: u32,
+}
+
+impl Swap {
+    /// Whether a tunnel's sell was proven by a transaction mined outside its
+    /// payment window. A sell with no window never is.
+    pub fn outside_window(&self, proof_height: u32) -> bool {
+        self.pay_from != 0 && (proof_height < self.pay_from || proof_height > self.pay_to)
+    }
 }
 
 /// Marks an operator's script used, so a payment to it belongs to one swap.

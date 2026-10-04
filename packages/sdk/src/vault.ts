@@ -9,6 +9,7 @@ import { Contract, ZeroAddress, getAddress, type Provider, type Signer } from "e
 
 import { ABIS } from "./generated/abis.ts";
 import { rpcScale, type Deployment } from "./networks.ts";
+import type { LockMark } from "./solana.ts";
 
 /** Solana's network number (D133). */
 const SOLANA = 2;
@@ -213,4 +214,49 @@ export async function getBurn(provider: Provider, d: Deployment, requestId: bigi
     at: Number(b.at),
     to: b.to,
   };
+}
+
+/** Reads ids from `count` down, 20 at a time, keeping those `mine` accepts,
+ *  at most `limit`: a test network's few locks or burns. A busy network
+ *  wants its events, by owner, instead. */
+async function newestOf<T>(count: number, limit: number, read: (id: number) => Promise<T>, mine: (x: T) => boolean): Promise<T[]> {
+  const out: T[] = [];
+  for (let top = count; top >= 1 && out.length < limit; top -= 20) {
+    const ids = Array.from({ length: Math.min(20, top) }, (_, i) => top - i);
+    for (const x of await Promise.all(ids.map(read))) if (mine(x) && out.length < limit) out.push(x);
+  }
+  return out;
+}
+
+/** The locks `owner` made on this network, newest first, at most `limit`. */
+export async function locksOf(provider: Provider, d: Deployment, owner: string, limit = 50, pair = 0): Promise<LockState[]> {
+  const count = Number(await new Contract(pairOf(d, pair).home, ABIS.vaultHome, provider).lockCount());
+  const who = owner.toLowerCase();
+  return newestOf(count, limit, (id) => getLock(provider, d, id, pair), (l) => l.owner.toLowerCase() === who);
+}
+
+/** The burns `owner` made on this network, newest first, at most `limit`. */
+export async function burnsOf(provider: Provider, d: Deployment, owner: string, limit = 50, pair = 0): Promise<BurnState[]> {
+  const count = Number(await new Contract(pairOf(d, pair).receipts, ABIS.vaultReceipts, provider).burnCount());
+  const who = owner.toLowerCase();
+  return newestOf(count, limit, (id) => getBurn(provider, d, id, pair), (b) => b.owner.toLowerCase() === who);
+}
+
+/** Whether lock `lockId` made on the pair's other network had its receipt
+ *  issued here; null while no claim or attest has touched it. */
+export async function receiptMark(
+  provider: Provider,
+  d: Deployment,
+  lockId: bigint | number,
+  pair = 0
+): Promise<LockMark | null> {
+  const m = await new Contract(pairOf(d, pair).receipts, ABIS.vaultReceipts, provider).getMark(lockId);
+  if (!m.issued && !m.givenUp && Number(m.attests) === 0) return null;
+  return { issued: m.issued, givenUp: m.givenUp, attests: Number(m.attests), settled: Number(m.settled) };
+}
+
+/** Whether burn `requestId` made on the pair's other network was paid here
+ *  by its claim (an attester may have paid it at once before). */
+export async function requestPaid(provider: Provider, d: Deployment, requestId: bigint | number, pair = 0): Promise<boolean> {
+  return new Contract(pairOf(d, pair).home, ABIS.vaultHome, provider).requestPaid(requestId);
 }

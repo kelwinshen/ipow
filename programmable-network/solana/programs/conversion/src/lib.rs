@@ -95,6 +95,20 @@ pub mod conversion {
         sell::handler(ctx, amount, sats, script, confirmations, paid)
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn sell_in_window(
+        ctx: Context<Sell>,
+        amount: u64,
+        sats: u64,
+        script: Vec<u8>,
+        pay_from: u32,
+        pay_to: u32,
+        confirmations: u16,
+        paid: u64,
+    ) -> Result<()> {
+        sell::in_window(ctx, amount, sats, script, pay_from, pay_to, confirmations, paid)
+    }
+
     pub fn complete_sell(ctx: Context<CompleteSell>, raw_tx: Vec<u8>) -> Result<()> {
         complete_sell::handler(ctx, raw_tx)
     }
@@ -105,6 +119,10 @@ pub mod conversion {
 
     pub fn buy(ctx: Context<Buy>, amount: u64, sats: u64, confirmations: u16, paid: u64) -> Result<()> {
         buy::handler(ctx, amount, sats, confirmations, paid)
+    }
+
+    pub fn buy_for(ctx: Context<Buy>, recipient: Pubkey, amount: u64, sats: u64, confirmations: u16, paid: u64) -> Result<()> {
+        buy::for_recipient(ctx, recipient, amount, sats, confirmations, paid)
     }
 
     pub fn fund(ctx: Context<Fund>, script: Vec<u8>) -> Result<()> {

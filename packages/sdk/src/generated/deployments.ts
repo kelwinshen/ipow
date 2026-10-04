@@ -14,7 +14,7 @@ export const DEPLOYMENTS = {
     "dataFee": "op",
     "lightClient": "0x10C9C79C8c46c1f9f07D7A258Bbd42B4ED6f973E",
     "protocol": "0x2Dd456fCe7B3574AbD76b2899d3106CaB6ff5b9B",
-    "conversion": "0x6c5d75F830C002f4B73b4625F3E2bFaeC50b5D2E",
+    "conversion": "0x6CCCA5c12689DC5d14F8C540c7c0C9a20731e8C1",
     "betaBaskets": "0xf35A1C4A9dE7B7FffF62c7cEfda2ac91a71cB6cc",
     "vaults": [
       {
@@ -41,7 +41,7 @@ export const DEPLOYMENTS = {
     "dataFee": "none",
     "lightClient": "0x8e09508deF58997f8481FF678cd7f278DFe22C3F",
     "protocol": "0x21348ef459dDBa5607732Ca1e9992968B4cC5611",
-    "conversion": "0x9dF80412e01720F904f5059559eD6f66c7558803",
+    "conversion": "0x5fdFfea2E1e03E6Eb376Aa6d679A4C8b62bf6da1",
     "betaBaskets": "0xb5375fDaF8b6E04942dFc593E7065A606Fe5588d",
     "vaults": [
       {
@@ -95,7 +95,7 @@ export const DEPLOYMENTS = {
     "dataFee": "none",
     "lightClient": "0x15390C4901e11D3732489825c2FBa33A2E3e5b37",
     "protocol": "0x2Dd456fCe7B3574AbD76b2899d3106CaB6ff5b9B",
-    "conversion": "0x6c5d75F830C002f4B73b4625F3E2bFaeC50b5D2E",
+    "conversion": "0x6CCCA5c12689DC5d14F8C540c7c0C9a20731e8C1",
     "betaBaskets": "0xf35A1C4A9dE7B7FffF62c7cEfda2ac91a71cB6cc",
     "vaults": [
       {
@@ -149,7 +149,7 @@ export const DEPLOYMENTS = {
     "dataFee": "arb",
     "lightClient": "0xc729b1a6d0325ae559614b6826127e11E51703c1",
     "protocol": "0xd6b425c7908E171a33dF2a4e6C5687eDF0D2d6c3",
-    "conversion": "0xb856906fEBAFBB21A06DdC35E9BCe476139A86BA",
+    "conversion": "0x2Dd456fCe7B3574AbD76b2899d3106CaB6ff5b9B",
     "betaBaskets": "0xd9a6e550Ea8a3970d08F34b0b1a417338C839C4c",
     "vaults": [
       {

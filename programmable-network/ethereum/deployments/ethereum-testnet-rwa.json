@@ -1,0 +1,36 @@
+{
+  "network": "ethereum-testnet",
+  "chainId": 11155111,
+  "minter": "0x9784B80BC7b95753f2a2732649F3a1136b4c2BF1",
+  "operator": "0x9784B80BC7b95753f2a2732649F3a1136b4c2BF1",
+  "tokens": {
+    "AAPL": {
+      "address": "0x9246Ce8312BAB79866125957240Ede78263E10aC",
+      "name": "Apple (test)",
+      "decimals": 18,
+      "faucet": "5",
+      "vaultAsset": 1
+    },
+    "TSLA": {
+      "address": "0x12268ABD5814bd53F52E4A7e7dee0978791048f4",
+      "name": "Tesla (test)",
+      "decimals": 18,
+      "faucet": "5",
+      "vaultAsset": 2
+    },
+    "NVDA": {
+      "address": "0x0352eF8943B606B2613d79634D5876E7D550448B",
+      "name": "NVIDIA (test)",
+      "decimals": 18,
+      "faucet": "5",
+      "vaultAsset": 3
+    },
+    "GOLD": {
+      "address": "0x75eddA253800F4718dc71fC255A5A77ff2A9fa0a",
+      "name": "Gold, 1 troy ounce (test)",
+      "decimals": 18,
+      "faucet": "1",
+      "vaultAsset": 4
+    }
+  }
+}

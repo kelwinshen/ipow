@@ -38,6 +38,9 @@ export type JobView = {
   };
   /** The proven transaction, as explorers show it; null before the proof. */
   provenTxid: string | null;
+  /** The height of the block the proof put that transaction in; null
+   *  before the proof. */
+  provenHeight: number | null;
 };
 
 const when = (t: bigint | number) => (Number(t) === 0 ? null : Number(t));
@@ -95,6 +98,7 @@ export async function getJob(provider: Provider, d: Deployment, id: bigint | num
     tag: job.tag,
     times,
     provenTxid: duty.txid === ZeroHash ? null : displayTxid(duty.txid),
+    provenHeight: duty.txid === ZeroHash ? null : Number(duty.proofBlock.height),
   };
 }
 

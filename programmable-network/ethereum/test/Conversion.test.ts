@@ -258,7 +258,7 @@ describe("Conversion: buy, BTC to coin", function () {
   /** The operator wins, anchors at a new block, and locks 1 ETH. */
   async function funded(ctx: Ctx, script = OPERATOR_SCRIPT) {
     const { conversion, protocol, chain, user, operator } = ctx;
-    await conversion.connect(user).buy(ethers.ZeroAddress, ETH, 5_000_000n, 6, FEES, { value: FEES, gasLimit: GAS });
+    await conversion.connect(user).buy(ethers.ZeroAddress, ETH, 5_000_000n, "0x", 6, FEES, { value: FEES, gasLimit: GAS });
     const swapId = await conversion.swapCount();
     const jobId = await win(ctx, swapId);
     const parent = chain.tip;
@@ -392,7 +392,7 @@ describe("Conversion: buy, BTC to coin", function () {
   it("lets only the job's operator fund, after its anchor, in time, with a new script", async function () {
     const ctx = await deploy();
     const { conversion, protocol, chain, user, operator, stranger } = ctx;
-    await conversion.connect(user).buy(ethers.ZeroAddress, ETH, 5_000_000n, 6, FEES, { value: FEES, gasLimit: GAS });
+    await conversion.connect(user).buy(ethers.ZeroAddress, ETH, 5_000_000n, "0x", 6, FEES, { value: FEES, gasLimit: GAS });
     const jobId = await win(ctx, 1n);
     await expect(conversion.connect(operator).fund(1n, OPERATOR_SCRIPT, { value: ETH })).to.be.revertedWithCustomError(conversion, "NotAnchored");
     const anchor = await chain.add();
@@ -401,7 +401,7 @@ describe("Conversion: buy, BTC to coin", function () {
     await expect(conversion.connect(operator).fund(1n, OPERATOR_SCRIPT, { value: ETH - 1n })).to.be.revertedWithCustomError(conversion, "InvalidAmount");
     await conversion.connect(operator).fund(1n, OPERATOR_SCRIPT, { value: ETH });
 
-    await conversion.connect(user).buy(ethers.ZeroAddress, ETH, 5_000_000n, 6, FEES, { value: FEES, gasLimit: GAS });
+    await conversion.connect(user).buy(ethers.ZeroAddress, ETH, 5_000_000n, "0x", 6, FEES, { value: FEES, gasLimit: GAS });
     const job2 = await win(ctx, 2n);
     // An anchor mined 40 minutes ago: the payment blocks are mostly over.
     const anchor2 = await chain.add([], (await latestTime()) - 40 * MINUTE);
@@ -412,26 +412,54 @@ describe("Conversion: buy, BTC to coin", function () {
     expect((await conversion.getSwap(2n)).state).to.equal(5n); // Cancelled
 
     // A script named for an earlier swap is refused.
-    await conversion.connect(user).buy(ethers.ZeroAddress, ETH, 5_000_000n, 6, FEES, { value: FEES, gasLimit: GAS });
+    await conversion.connect(user).buy(ethers.ZeroAddress, ETH, 5_000_000n, "0x", 6, FEES, { value: FEES, gasLimit: GAS });
     const job3 = await win(ctx, 3n);
     await protocol.connect(operator).anchorJob(job3, await chain.add());
     await expect(conversion.connect(operator).fund(3n, OPERATOR_SCRIPT, { value: ETH })).to.be.revertedWithCustomError(conversion, "ScriptUsed");
   });
 
-  it("cancels a swap nobody took", async function () {
+  it("keeps the user's own Bitcoin script on a buy, as a note", async function () {
     const ctx = await deploy();
     const { conversion, user } = ctx;
-    await conversion.connect(user).buy(ethers.ZeroAddress, ETH, 5_000_000n, 6, FEES, { value: FEES, gasLimit: GAS });
+    await conversion.connect(user).buy(ethers.ZeroAddress, ETH, 5_000_000n, USER_SCRIPT, 6, FEES, { value: FEES, gasLimit: GAS });
+    expect((await conversion.getSwap(1n)).userScript).to.equal(USER_SCRIPT);
+    // Too long for any standard script: refused. Empty: allowed.
+    await expect(
+      conversion.connect(user).buy(ethers.ZeroAddress, ETH, 5_000_000n, "0x" + "00".repeat(41), 6, FEES, { value: FEES, gasLimit: GAS })
+    ).to.be.revertedWithCustomError(conversion, "InvalidScript");
+    await conversion.connect(user).buy(ethers.ZeroAddress, ETH, 5_000_000n, "0x", 6, FEES, { value: FEES, gasLimit: GAS });
+    expect((await conversion.getSwap(2n)).userScript).to.equal("0x");
+  });
+
+  it("cancels a swap nobody took, with the job's fees to the user's credit", async function () {
+    const ctx = await deploy();
+    const { conversion, protocol, user } = ctx;
+    await conversion.connect(user).buy(ethers.ZeroAddress, ETH, 5_000_000n, "0x", 6, FEES, { value: FEES, gasLimit: GAS });
     await expect(conversion.cancel(1n)).to.be.revertedWithCustomError(conversion, "FundingTimeNotOver");
     await mineAt((await latestTime()) + 16 * MINUTE);
+    const jobId = (await conversion.getSwap(1n)).jobId;
+    expect(await protocol.credit(user.address)).to.equal(0n);
     await conversion.cancel(1n);
     expect((await conversion.getSwap(1n)).state).to.equal(5n);
+    // The job expired with the swap: the fees are the user's to withdraw.
+    expect((await protocol.getJob(jobId)).feesReturned).to.equal(true);
+    expect(await protocol.credit(user.address)).to.equal(FEES);
+    await expect(protocol.connect(user).withdrawCredit()).to.changeEtherBalance(ethers, user, FEES);
+  });
+
+  it("refunds a sell nobody took, with the job's fees to the user's credit", async function () {
+    const ctx = await deploy();
+    const { conversion, protocol, user } = ctx;
+    await conversion.connect(user).sell(ethers.ZeroAddress, ETH, 5_000_000n, USER_SCRIPT, 6, FEES, { value: ETH + FEES, gasLimit: GAS });
+    await mineAt((await latestTime()) + 16 * MINUTE);
+    await expect(conversion.refundSell(1n, "0x")).to.changeEtherBalance(ethers, user, ETH);
+    expect(await protocol.credit(user.address)).to.equal(FEES);
   });
 
   it("buys a token, locked exactly by the operator", async function () {
     const ctx = await deploy();
     const { conversion, protocol, token, chain, user, operator } = ctx;
-    await conversion.connect(user).buy(await token.getAddress(), 1000n, 5_000_000n, 6, FEES, { value: FEES, gasLimit: GAS });
+    await conversion.connect(user).buy(await token.getAddress(), 1000n, 5_000_000n, "0x", 6, FEES, { value: FEES, gasLimit: GAS });
     const jobId = await win(ctx, 1n);
     await protocol.connect(operator).anchorJob(jobId, await chain.add());
     await token.mint(operator.address, 1000n);
@@ -447,7 +475,7 @@ describe("Conversion: buy, BTC to coin", function () {
     const ctx = await deploy();
     const { conversion, user } = ctx;
     await expect(
-      conversion.connect(user).buy(ethers.ZeroAddress, ETH, MAX_SATS + 1n, 6, FEES, { value: FEES, gasLimit: GAS })
+      conversion.connect(user).buy(ethers.ZeroAddress, ETH, MAX_SATS + 1n, "0x", 6, FEES, { value: FEES, gasLimit: GAS })
     ).to.be.revertedWithCustomError(conversion, "TooLarge");
   });
 });
@@ -466,5 +494,138 @@ describe("Conversion: compensation after a slash", function () {
     await protocol.connect(guardian).reportMissedDuty(jobId, salt);
     const escrow = (await protocol.getJob(jobId)).escrow;
     await expect(conversion.compensate(1n)).to.changeEtherBalance(ethers, user, (escrow * 8000n) / 10000n);
+  });
+});
+
+describe("Conversion: tunnels between programmable networks (T1, T2)", function () {
+  /** A sell paying OPERATOR_SCRIPT, whose payment counts only in Bitcoin blocks payFrom to payTo. */
+  async function sellInWindow(ctx: Ctx, payFrom: number, payTo: number, sats = 5_000_000n) {
+    const { conversion, user } = ctx;
+    await conversion.connect(user).sellInWindow(ethers.ZeroAddress, ETH, sats, OPERATOR_SCRIPT, payFrom, payTo, 6, FEES, { value: ETH + FEES, gasLimit: GAS });
+    return await conversion.swapCount();
+  }
+
+  it("completes a sell whose payment is mined inside its window", async function () {
+    const ctx = await deploy();
+    const { conversion, chain, operator } = ctx;
+    const h = chain.tip.height;
+    // The duty anchors at h + 1 and its transaction lands at h + 2.
+    const swapId = await sellInWindow(ctx, h + 2, h + 13);
+    await win(ctx, swapId);
+    const { jobId, tagged, proofBlock } = await duty(ctx, swapId, { extra: [{ value: 5_000_000n, script: OPERATOR_SCRIPT }] });
+    expect(proofBlock.height).to.equal(h + 2);
+    await afterLock(ctx, jobId);
+    await expect(conversion.completeSell(swapId, tagged.raw)).to.changeEtherBalance(ethers, operator, ETH);
+  });
+
+  it("refunds the user when the payment is mined outside the window, with no transaction needed", async function () {
+    const ctx = await deploy();
+    const { conversion, chain, user } = ctx;
+    const h = chain.tip.height;
+    const swapId = await sellInWindow(ctx, h + 2, h + 3);
+    await win(ctx, swapId);
+    // Three blocks before the transaction: it lands at h + 5, after the window.
+    const { jobId, tagged } = await duty(ctx, swapId, { before: 3, extra: [{ value: 5_000_000n, script: OPERATOR_SCRIPT }] });
+    await afterLock(ctx, jobId);
+    await expect(conversion.completeSell(swapId, tagged.raw)).to.be.revertedWithCustomError(conversion, "PaidOutsideWindow");
+    await expect(conversion.refundSell(swapId, "0x")).to.changeEtherBalance(ethers, user, ETH);
+    expect((await conversion.getSwap(swapId)).state).to.equal(4n); // Refunded
+  });
+
+  it("counts a payment mined in the window's first or last block, and not one block either side", async function () {
+    // The duty's transaction lands at h + 2 in each case.
+    const cases: [number, number, boolean][] = [
+      [2, 2, true], // first and last block of the window
+      [1, 2, true], // last block
+      [2, 9, true], // first block
+      [3, 9, false], // one block before the window
+      [1, 1, false], // one block after it
+    ];
+    for (const [from, to, inside] of cases) {
+      const ctx = await deploy();
+      const { conversion, chain, operator, user } = ctx;
+      const h = chain.tip.height;
+      const swapId = await sellInWindow(ctx, h + from, h + to);
+      await win(ctx, swapId);
+      const { jobId, tagged, proofBlock } = await duty(ctx, swapId, { extra: [{ value: 5_000_000n, script: OPERATOR_SCRIPT }] });
+      expect(proofBlock.height).to.equal(h + 2);
+      await afterLock(ctx, jobId);
+      if (inside) {
+        await expect(conversion.refundSell(swapId, tagged.raw)).to.be.revertedWithCustomError(conversion, "NotRefundable");
+        await expect(conversion.completeSell(swapId, tagged.raw)).to.changeEtherBalance(ethers, operator, ETH);
+      } else {
+        await expect(conversion.completeSell(swapId, tagged.raw)).to.be.revertedWithCustomError(conversion, "PaidOutsideWindow");
+        await expect(conversion.refundSell(swapId, "0x")).to.changeEtherBalance(ethers, user, ETH);
+      }
+    }
+  });
+
+  it("does not refund a sell paid in full inside its window, with or without its transaction", async function () {
+    const ctx = await deploy();
+    const { conversion, chain } = ctx;
+    const h = chain.tip.height;
+    const swapId = await sellInWindow(ctx, h + 2, h + 13);
+    await win(ctx, swapId);
+    const { jobId, tagged } = await duty(ctx, swapId, { extra: [{ value: 5_000_000n, script: OPERATOR_SCRIPT }] });
+    // Neither while the lock runs, nor after it.
+    await expect(conversion.refundSell(swapId, tagged.raw)).to.be.revertedWithCustomError(conversion, "NotRefundable");
+    await afterLock(ctx, jobId);
+    await expect(conversion.refundSell(swapId, tagged.raw)).to.be.revertedWithCustomError(conversion, "NotRefundable");
+    await expect(conversion.refundSell(swapId, "0x")).to.be.revert(ethers);
+  });
+
+  it("refuses a window that starts at zero or ends before it starts", async function () {
+    const ctx = await deploy();
+    const { conversion, user } = ctx;
+    for (const [from, to] of [[0, 10], [10, 9]]) {
+      await expect(
+        conversion.connect(user).sellInWindow(ethers.ZeroAddress, ETH, 5_000_000n, OPERATOR_SCRIPT, from, to, 6, FEES, { value: ETH + FEES, gasLimit: GAS })
+      ).to.be.revertedWithCustomError(conversion, "BadWindow");
+    }
+  });
+
+  it("opens a buy for a recipient: the coin goes to them, the opener pays the fees", async function () {
+    const ctx = await deploy();
+    const { conversion, user, operator, stranger } = ctx;
+    await expect(
+      conversion.connect(operator).buyFor(ethers.ZeroAddress, ethers.ZeroAddress, ETH, 5_000_000n, 6, FEES, { value: FEES, gasLimit: GAS })
+    ).to.be.revertedWithCustomError(conversion, "ZeroRecipient");
+    // A stranger opens it for the user; nobody takes it; the fees go back to the stranger.
+    await expect(
+      conversion.connect(stranger).buyFor(user.address, ethers.ZeroAddress, ETH, 5_000_000n, 6, FEES, { value: FEES, gasLimit: GAS })
+    ).to.emit(conversion, "Bought");
+    const s = await conversion.getSwap(1n);
+    expect(s.user).to.equal(user.address);
+    const job = await ctx.protocol.getJob(s.jobId);
+    expect(job.payer).to.equal(stranger.address);
+  });
+
+  it("links a buy and a sell with one Bitcoin payment: both complete", async function () {
+    const ctx = await deploy();
+    const { conversion, protocol, chain, user, operator } = ctx;
+    // The buy on the destination network: the operator opens it for the user,
+    // wins it, anchors and locks 1 ETH at its new script.
+    await conversion.connect(operator).buyFor(user.address, ethers.ZeroAddress, ETH, 5_000_000n, 6, FEES, { value: FEES, gasLimit: GAS });
+    const buyId = await conversion.swapCount();
+    const buyJob = await win(ctx, buyId);
+    const anchor = await chain.add();
+    await protocol.connect(operator).anchorJob(buyJob, anchor);
+    await conversion.connect(operator).fund(buyId, OPERATOR_SCRIPT, { value: ETH });
+    const buy = await conversion.getSwap(buyId);
+    expect(buy.state).to.equal(2n); // Funded
+
+    // The sell on the source network pays the buy's script, within the buy's payment blocks.
+    const sellId = await sellInWindow(ctx, anchor.height + 1, anchor.height + 12);
+    const sellJob = await win(ctx, sellId);
+    const sold = await duty(ctx, sellId, { extra: [{ value: 5_000_000n, script: OPERATOR_SCRIPT }] });
+    expect(sold.proofBlock.height).to.be.within(anchor.height + 1, anchor.height + 12);
+
+    // The buy's receipt spends that payment (output 2 of the sell's transaction).
+    const { tagged: receipt } = await duty(ctx, buyId, { alsoSpends: [{ txidLE: sold.tagged.txid, vout: 2 }] });
+    await expect(conversion.completeBuy(buyId, receipt.raw, sold.tagged.raw, 2)).to.changeEtherBalance(ethers, user, ETH);
+
+    // And the sell's operator is paid the user's ETH once its lock ends.
+    await afterLock(ctx, sellJob);
+    await expect(conversion.completeSell(sellId, sold.tagged.raw)).to.changeEtherBalance(ethers, operator, ETH);
   });
 });

@@ -5,7 +5,7 @@
   "lightClient": "0xc729b1a6d0325ae559614b6826127e11E51703c1",
   "dataFee": "0x6AA1F2dd1a0A28F5FC3a88ec8A219e89987A57aB",
   "protocol": "0xd6b425c7908E171a33dF2a4e6C5687eDF0D2d6c3",
-  "conversion": "0xb856906fEBAFBB21A06DdC35E9BCe476139A86BA",
+  "conversion": "0x2Dd456fCe7B3574AbD76b2899d3106CaB6ff5b9B",
   "betaBaskets": "0xd9a6e550Ea8a3970d08F34b0b1a417338C839C4c",
   "homeFactory": "0x9d2d501827e84d53addA293E70A8995078c87891",
   "receiptsFactory": "0x10C9C79C8c46c1f9f07D7A258Bbd42B4ED6f973E",
@@ -24,5 +24,9 @@
   "solanaPairAccount": "Dydhoos4EgX15LFLJR5a6DvGtuzmNjegpzzynJSJbF5",
   "at": "2026-10-02T14:29:04.727Z",
   "source": "a9493c7",
-  "vaultParts": "made by the vault"
+  "vaultParts": "made by the vault",
+  "previousConversion": "0xb856906fEBAFBB21A06DdC35E9BCe476139A86BA",
+  "sources": {
+    "Conversion": "current"
+  }
 }

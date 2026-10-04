@@ -177,7 +177,7 @@ impl SvmNetwork {
         self.read(&Self::job_pda(id)).await?.ok_or_else(|| anyhow::anyhow!("job {id} does not exist"))
     }
 
-    async fn protocol_record(&self) -> anyhow::Result<pr::accounts::Protocol> {
+    pub(crate) async fn protocol_record(&self) -> anyhow::Result<pr::accounts::Protocol> {
         self.read(&Self::protocol_pda()).await?.ok_or_else(|| anyhow::anyhow!("the protocol is not initialized"))
     }
 

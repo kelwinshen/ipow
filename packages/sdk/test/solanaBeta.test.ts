@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import anchor from "@coral-xyz/anchor";
 import { Keypair, PublicKey, SystemProgram, Transaction, TransactionInstruction, sendAndConfirmTransaction } from "@solana/web3.js";
 
-import { SOLANA, SolanaBeta, associatedTokenAccount, createAccountIdempotent } from "../src/index.ts";
+import { SOLANA, SolanaBeta, WRAPPED_SOL, associatedTokenAccount, createAccountIdempotent } from "../src/index.ts";
 import { startValidator, type Local } from "./helpers/validator.ts";
 
 const { Wallet } = anchor;
@@ -83,3 +83,47 @@ test("makes a BETA basket of two tokens, prices a mint as the program does, mint
   assert.equal(b.supply, 2n * ONE);
   assert.equal((await balance(user.publicKey, usd)) - usdBefore, 2_000_000n - 10_000n);
 });
+
+test("mints a basket with a wrapped SOL part from plain SOL, defers a part in a burn, collects it and the fees, and unwraps", async () => {
+  const user = local.authority;
+  const { connection } = local;
+  const veth = await token(user, 9, 10n ** 12n);
+  const beta = new SolanaBeta(connection, new Wallet(user));
+  // One BETA holds 0.01 SOL and 0.001 vETH; 1% to mint and to burn.
+  const { basket } = await beta.createBasket({ id: 2, parts: [{ mint: WRAPPED_SOL, amount: 10_000_000n }, { mint: veth.toBase58(), amount: 1_000_000n }], mintFeeBps: 100, burnFeeBps: 100 });
+  const wsol = new PublicKey(WRAPPED_SOL);
+  assert.equal(await beta.tokenBalance(user.publicKey, wsol), 0n);
+
+  // No wrapped SOL held: the mint wraps what it takes.
+  const q = await beta.quoteMint(basket, 2n * ONE);
+  assert.deepEqual([q.need[0], q.fee[0]], [20_000_000n, 200_000n]);
+  await beta.mint(basket, 2n * ONE);
+  assert.equal(await beta.tokenBalance(user.publicKey, wsol), 0n);
+  assert.equal(await beta.betaBalance(basket), 2n * ONE);
+  // The creator's fees, by part.
+  assert.deepEqual(await beta.feesOf(basket), [200_000n, 20_000n, 0n, 0n, 0n, 0n, 0n, 0n]);
+
+  // Burn 1 BETA with vETH deferred: SOL paid now (less 1%), vETH owed.
+  await beta.burn(basket, ONE, [1]);
+  assert.equal(await beta.tokenBalance(user.publicKey, wsol), 10_000_000n - 100_000n);
+  assert.equal(await beta.owed(basket, 1), 1_000_000n);
+  assert.equal(await beta.owed(basket, 0), 0n);
+  const vethBefore = await balance(user.publicKey, veth);
+  await beta.collectOwed(basket, 1);
+  assert.equal((await balance(user.publicKey, veth)) - vethBefore, 1_000_000n - 10_000n);
+  assert.equal(await beta.owed(basket, 1), 0n);
+
+  // The creator collects its SOL fees: the mint's and the burn's.
+  const fees = (await beta.feesOf(basket))[0];
+  assert.equal(fees, 200_000n + 100_000n);
+  await beta.collectFees(basket, 0);
+  assert.equal(await beta.tokenBalance(user.publicKey, wsol), 10_000_000n - 100_000n + fees);
+  assert.equal((await beta.feesOf(basket))[0], 0n);
+
+  // Unwrapping closes the account and returns its SOL.
+  const solBefore = await connection.getBalance(user.publicKey);
+  await beta.unwrapSol();
+  assert.equal(await beta.tokenBalance(user.publicKey, wsol), 0n);
+  assert.ok((await connection.getBalance(user.publicKey)) > solBefore + Number(10_000_000n - 100_000n + fees) - 10_000);
+});
+

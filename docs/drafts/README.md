@@ -19,7 +19,11 @@ for that:
   of stage 7 (the vault across many networks, and what each network
   needs), with recommendations;
   [`ipow-sdk.md`](ipow-sdk.md), the TypeScript SDK that apps such as
-  Greatwall.finance build on.
+  Greatwall.finance build on;
+  [`ipow-conversion-tunnel.md`](ipow-conversion-tunnel.md),
+  conversion between programmable networks: a buy and a sell of
+  Conversion linked by one Bitcoin payment, as the old protocol's tunnel
+  did, with open questions.
   The protocol redesign was approved on 2026-09-28 and moved to
   [`../design/ipow-protocol.md`](../design/ipow-protocol.md). Its build
   plan is [`ipow-build-plan.md`](ipow-build-plan.md).

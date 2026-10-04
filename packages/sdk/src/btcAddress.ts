@@ -4,7 +4,7 @@
 // base58 kinds (1…, 3…). The light client only accepts real Bitcoin, so
 // mainnet only.
 
-import { sha256 } from "ethers";
+import { concat, getBytes, hexlify, sha256 } from "ethers";
 
 const CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
 const BECH32 = 1;
@@ -43,7 +43,10 @@ function convertBits(data: number[], from: number, to: number, pad: boolean): nu
   return out;
 }
 
-const hex = (b: number[] | Uint8Array) => Buffer.from(b).toString("hex");
+const hex = (b: number[] | Uint8Array) => hexlify(Uint8Array.from(b)).slice(2);
+const bytes = (h: string) => getBytes(h.startsWith("0x") ? h : "0x" + h);
+const checksum = (body: Uint8Array) => getBytes(sha256(sha256(body))).subarray(0, 4);
+const same = (a: Uint8Array, b: Uint8Array) => a.length === b.length && a.every((x, i) => x === b[i]);
 
 function segwitScript(address: string): string | null {
   const a = address.toLowerCase();
@@ -58,6 +61,9 @@ function segwitScript(address: string): string | null {
   const program = convertBits(data.slice(1, -6), 5, 8, false);
   if (!program || program.length < 2 || program.length > 40 || version > 16) return null;
   if (version === 0 && program.length !== 20 && program.length !== 32) return null;
+  // Versions above taproot have no spending rules yet, so anyone can spend
+  // such an output: paying one loses the coin. Refuse them.
+  if (version > 1 || (version === 1 && program.length !== 32)) return null;
   const op = version === 0 ? 0 : 0x50 + version;
   return "0x" + hex([op, program.length, ...program]);
 }
@@ -71,11 +77,11 @@ function base58Script(address: string): string | null {
     if (d < 0) return null;
     n = n * 58n + BigInt(d);
   }
-  const raw = Buffer.from(n.toString(16).padStart(50, "0"), "hex");
-  if (raw.length !== 25) return null;
+  const digits = n.toString(16).padStart(50, "0");
+  if (digits.length !== 50) return null;
+  const raw = bytes(digits);
   const body = raw.subarray(0, 21);
-  const sum = Buffer.from(sha256(sha256(body)).slice(2), "hex").subarray(0, 4);
-  if (!sum.equals(raw.subarray(21))) return null;
+  if (!same(checksum(body), raw.subarray(21))) return null;
   const h = hex(body.subarray(1));
   if (body[0] === 0x00) return `0x76a914${h}88ac`; // P2PKH
   if (body[0] === 0x05) return `0xa914${h}87`; // P2SH
@@ -91,7 +97,7 @@ export function addressToScript(address: string): string {
 
 /** The address an output script pays, or null for another kind. */
 export function scriptToAddress(script: string): string | null {
-  const s = Buffer.from(script.replace(/^0x/, ""), "hex");
+  const s = bytes(script);
   const version = s[0] === 0 ? 0 : s[0] >= 0x51 && s[0] <= 0x60 ? s[0] - 0x50 : -1;
   if (version >= 0 && s.length === s[1] + 2 && s[1] >= 2 && s[1] <= 40) {
     const data = [version, ...convertBits([...s.subarray(2)], 8, 5, true)!];
@@ -99,10 +105,10 @@ export function scriptToAddress(script: string): string | null {
     const check = [0, 1, 2, 3, 4, 5].map((i) => (mod >>> (5 * (5 - i))) & 31);
     return "bc1" + [...data, ...check].map((d) => CHARSET[d]).join("");
   }
-  const base58 = (prefix: number, h: Buffer) => {
-    const body = Buffer.concat([Buffer.from([prefix]), h]);
-    const full = Buffer.concat([body, Buffer.from(sha256(sha256(body)).slice(2), "hex").subarray(0, 4)]);
-    let n = BigInt("0x" + full.toString("hex"));
+  const base58 = (prefix: number, h: Uint8Array) => {
+    const body = getBytes(concat([new Uint8Array([prefix]), h]));
+    const full = getBytes(concat([body, checksum(body)]));
+    let n = BigInt(hexlify(full));
     let out = "";
     while (n > 0n) {
       out = B58[Number(n % 58n)] + out;

@@ -21,6 +21,7 @@ use tokio::sync::Mutex;
 use tracing::{info, warn};
 
 use crate::secrets::redact;
+use crate::tunnel::{Promised, TunnelBook};
 use crate::wallet::SharedWallet;
 
 /// Buy: the user pays in one of the 12 blocks after the anchor; a close
@@ -38,6 +39,9 @@ pub const SELL_MARGIN: u32 = 6;
 /// (Conversion's CLOSE_PERIOD).
 pub const CLOSE_PERIOD: i64 = 36 * 3600;
 const PROOF_RANGE: u32 = 25;
+/// A tunnel's sell: the payment is sent only while at least this many of
+/// its payment blocks remain, so it is mined within them.
+pub const WINDOW_MARGIN: u32 = 3;
 
 /// What the operator's tagged transaction must carry for a swap.
 pub enum Plan {
@@ -61,6 +65,11 @@ pub struct Swaps {
     coins: Vec<CoinPrice>,
     /// Keeps the per-swap keys of each network and each Conversion apart.
     key_index: u32,
+    /// The network's name in the settings.
+    network: String,
+    /// The tunnels this node registered: their sells are taken on the terms
+    /// quoted.
+    tunnels: Option<Arc<TunnelBook>>,
     state: Mutex<State>,
 }
 
@@ -94,6 +103,26 @@ pub fn standard_dust(script: &[u8]) -> Option<u64> {
     }
 }
 
+/// Where a sell stands against its tunnel's payment blocks, with Bitcoin's
+/// best block at `best`: a payment sent now is mined at `best + 1` at the
+/// earliest, and is sent only while `WINDOW_MARGIN` blocks remain.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Window {
+    /// No window, or a payment now would land in it.
+    Open,
+    NotYet,
+    Over,
+}
+
+pub fn in_window(window: Option<(u32, u32)>, best: u32) -> Window {
+    match window {
+        None => Window::Open,
+        Some((first, _)) if best + 1 < first => Window::NotYet,
+        Some((_, last)) if best + WINDOW_MARGIN > last => Window::Over,
+        Some(_) => Window::Open,
+    }
+}
+
 /// Whether a swap's price suits the operator: `sats` for `amount` of a coin
 /// with `decimals` places. A sell may pay at most `pay_sats` per whole
 /// coin; a buy must bring at least `ask_sats` per whole coin. Numbers too
@@ -112,7 +141,12 @@ impl Swaps {
     pub fn new(app: Arc<dyn ConversionApp>, coins: Vec<CoinPrice>, network: &str) -> Self {
         let h = ipow_bitcoin::sha256d(format!("{network}/{}", app.application()).as_bytes());
         let key_index = u32::from_le_bytes(h[..4].try_into().unwrap()) & 0x7fff_ffff;
-        Swaps { app, coins, key_index, state: Mutex::new(State::default()) }
+        Swaps { app, coins, key_index, network: network.to_string(), tunnels: None, state: Mutex::new(State::default()) }
+    }
+
+    pub fn with_tunnels(mut self, book: Arc<TunnelBook>) -> Self {
+        self.tunnels = Some(book);
+        self
     }
 
     pub fn is_ours(&self, job: &Job) -> bool {
@@ -145,12 +179,23 @@ impl Swaps {
         })
     }
 
-    /// Whether to take a swap: its price suits this operator, a sell pays a
+    /// Whether to take a swap: its price suits this operator (or it is the
+    /// sell of a tunnel this node opened, on the terms quoted), a sell pays a
     /// script Bitcoin relays at least its dust, and it can take its side on
-    /// top of the swaps it already holds (`job_id`'s own excepted).
+    /// top of the swaps it already holds (`job_id`'s own excepted). A sell
+    /// with a payment window is taken only as a tunnel's this node opened,
+    /// on its terms; a second sell paying a tunnel's address never.
     pub async fn worth_it(&self, job_id: u64, swap: &Swap, wallet: &SharedWallet) -> anyhow::Result<bool> {
+        let promised = match &self.tunnels {
+            Some(book) => book.promised(&self.network, swap).await,
+            None => Promised::No,
+        };
+        if promised == Promised::Refuse {
+            info!(swap = swap.id, "a sell with a payment window that is not a tunnel's on its terms; not taken");
+            return Ok(false);
+        }
         let Some(price) = self.price(swap) else { return Ok(false) };
-        if !price_ok(swap.side, swap.sats, swap.amount, price) {
+        if promised == Promised::No && !price_ok(swap.side, swap.sats, swap.amount, price) {
             return Ok(false);
         }
         let reserved: Vec<Reserve> = self.state.lock().await.reserved.iter().filter(|(j, _)| **j != job_id).map(|(_, r)| r.clone()).collect();
@@ -180,6 +225,11 @@ impl Swaps {
             Side::Buy => Reserve { sats: 0, token: swap.token.clone(), amount: swap.amount },
         };
         self.state.lock().await.reserved.insert(job_id, r);
+        if swap.side == Side::Sell
+            && let Some(book) = &self.tunnels
+        {
+            book.take(&self.network, swap).await;
+        }
     }
 
     pub async fn release(&self, job_id: u64) {
@@ -204,6 +254,31 @@ impl Swaps {
                 if best + SELL_MARGIN >= anchor.height + PROOF_RANGE {
                     warn!(swap = swap.id, "too late to pay the user; sending without the payment");
                     return Ok(Plan::Send { inputs: vec![], outputs: vec![] });
+                }
+                // A tunnel's address is paid once: when another sell took the
+                // tunnel first (or its terms no longer hold), this one goes
+                // out without the payment and its user is refunded.
+                if let Some(book) = &self.tunnels {
+                    match book.promised(&self.network, swap).await {
+                        Promised::Refuse => {
+                            warn!(swap = swap.id, "not a tunnel's sell on its terms, or another took it; sending without the payment");
+                            return Ok(Plan::Send { inputs: vec![], outputs: vec![] });
+                        }
+                        Promised::Yes => book.take(&self.network, swap).await,
+                        Promised::No => {}
+                    }
+                }
+                // A tunnel's leg (T1): the payment counts only in the buy's
+                // payment blocks. Not before they start; and when it could no
+                // longer be mined by their last, it goes out without the
+                // payment, and the user is refunded.
+                match in_window(swap.pay_window, best) {
+                    Window::Open => {}
+                    Window::NotYet => return Ok(Plan::Wait),
+                    Window::Over => {
+                        warn!(swap = swap.id, "too late for the tunnel's payment blocks; sending without the payment");
+                        return Ok(Plan::Send { inputs: vec![], outputs: vec![] });
+                    }
                 }
                 Ok(Plan::Send { inputs: vec![], outputs: vec![(swap.sats, swap.script.clone())] })
             }
@@ -306,7 +381,18 @@ mod tests {
     use super::*;
 
     fn eth() -> CoinPrice {
-        CoinPrice { token: "native".into(), decimals: 18, pay_sats: 3_000_000, ask_sats: 3_100_000 }
+        CoinPrice { token: "native".into(), symbol: None, decimals: 18, pay_sats: 3_000_000, ask_sats: 3_100_000 }
+    }
+
+    #[test]
+    fn pays_a_tunnel_only_inside_its_payment_blocks() {
+        // Payment blocks 101 to 112: from best 100 (mined at 101 at the
+        // earliest) to best 109 (three blocks left).
+        assert_eq!(in_window(None, 500), Window::Open);
+        assert_eq!(in_window(Some((101, 112)), 99), Window::NotYet);
+        assert_eq!(in_window(Some((101, 112)), 100), Window::Open);
+        assert_eq!(in_window(Some((101, 112)), 109), Window::Open);
+        assert_eq!(in_window(Some((101, 112)), 110), Window::Over);
     }
 
     #[test]

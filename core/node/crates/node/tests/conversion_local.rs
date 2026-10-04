@@ -41,7 +41,7 @@ async fn operator(w: &dyn World) -> (Operator, Arc<MemoryBitcoin>, Arc<dyn Conve
     let btc = bitcoin(w.latest_time().await, &wallet);
     let app = w.conversion().await;
     let decimals = w.unit().ilog10() as u8;
-    let coins = vec![CoinPrice { token: "native".into(), decimals, pay_sats: 6_000_000, ask_sats: 4_000_000 }];
+    let coins = vec![CoinPrice { token: "native".into(), symbol: None, decimals, pay_sats: 6_000_000, ask_sats: 4_000_000 }];
     let o = Operator::new(Arc::new(SharedWallet::new(wallet, btc.clone(), 200.0)), 2 * w.unit())
         .with_swaps(Arc::new(Swaps::new(app.clone(), coins, w.operator().name())));
     w.operator().lock_bond(3 * w.unit()).await.unwrap();

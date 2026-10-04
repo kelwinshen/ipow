@@ -154,6 +154,156 @@
       ]
     },
     {
+      "name": "buy_for",
+      "discriminator": [
+        7,
+        232,
+        220,
+        213,
+        123,
+        67,
+        223,
+        248
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "swap",
+          "writable": true
+        },
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "protocol",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                173,
+                211,
+                162,
+                204,
+                92,
+                244,
+                151,
+                148,
+                167,
+                47,
+                74,
+                192,
+                205,
+                126,
+                110,
+                225,
+                68,
+                169,
+                236,
+                243,
+                195,
+                149,
+                250,
+                203,
+                170,
+                54,
+                50,
+                155,
+                197,
+                150,
+                224,
+                231
+              ]
+            }
+          }
+        },
+        {
+          "name": "application"
+        },
+        {
+          "name": "job",
+          "writable": true
+        },
+        {
+          "name": "tag_record",
+          "writable": true
+        },
+        {
+          "name": "protocol_vault",
+          "writable": true
+        },
+        {
+          "name": "protocol_program",
+          "address": "ChYhovM8vm2tuMRaRFn4m6etG979bjixVa71fXBDwjPL"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "mint",
+          "optional": true
+        }
+      ],
+      "args": [
+        {
+          "name": "recipient",
+          "type": "pubkey"
+        },
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "sats",
+          "type": "u64"
+        },
+        {
+          "name": "confirmations",
+          "type": "u16"
+        },
+        {
+          "name": "paid",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "cancel",
       "discriminator": [
         232,
@@ -1771,6 +1921,183 @@
           "type": "u64"
         }
       ]
+    },
+    {
+      "name": "sell_in_window",
+      "discriminator": [
+        254,
+        101,
+        21,
+        104,
+        144,
+        73,
+        189,
+        128
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "swap",
+          "writable": true
+        },
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "protocol",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                173,
+                211,
+                162,
+                204,
+                92,
+                244,
+                151,
+                148,
+                167,
+                47,
+                74,
+                192,
+                205,
+                126,
+                110,
+                225,
+                68,
+                169,
+                236,
+                243,
+                195,
+                149,
+                250,
+                203,
+                170,
+                54,
+                50,
+                155,
+                197,
+                150,
+                224,
+                231
+              ]
+            }
+          }
+        },
+        {
+          "name": "application"
+        },
+        {
+          "name": "job",
+          "writable": true
+        },
+        {
+          "name": "tag_record",
+          "writable": true
+        },
+        {
+          "name": "protocol_vault",
+          "writable": true
+        },
+        {
+          "name": "protocol_program",
+          "address": "ChYhovM8vm2tuMRaRFn4m6etG979bjixVa71fXBDwjPL"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "mint",
+          "optional": true
+        },
+        {
+          "name": "escrow",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "from",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "token_program",
+          "optional": true
+        },
+        {
+          "name": "associated_token_program",
+          "optional": true,
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "sats",
+          "type": "u64"
+        },
+        {
+          "name": "script",
+          "type": "bytes"
+        },
+        {
+          "name": "pay_from",
+          "type": "u32"
+        },
+        {
+          "name": "pay_to",
+          "type": "u32"
+        },
+        {
+          "name": "confirmations",
+          "type": "u16"
+        },
+        {
+          "name": "paid",
+          "type": "u64"
+        }
+      ]
     }
   ],
   "accounts": [
@@ -1910,6 +2237,18 @@
     {
       "code": 6023,
       "name": "NotSlashed"
+    },
+    {
+      "code": 6024,
+      "name": "BadWindow"
+    },
+    {
+      "code": 6025,
+      "name": "PaidOutsideWindow"
+    },
+    {
+      "code": 6026,
+      "name": "ZeroRecipient"
     }
   ],
   "types": [
@@ -2287,6 +2626,19 @@
           {
             "name": "bump",
             "type": "u8"
+          },
+          {
+            "name": "pay_from",
+            "docs": [
+              "Sell in a tunnel only (T1): the Bitcoin blocks its payment must be",
+              "mined in, those of the buy it pays on another network; zero for none.",
+              "A payment proven outside them refunds the user."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "pay_to",
+            "type": "u32"
           }
         ]
       }

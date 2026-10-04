@@ -12,4 +12,5 @@ pub use ipow_protocol_core::secrets;
 pub mod wallet;
 pub mod supervisor;
 pub mod swaps;
+pub mod tunnel;
 pub mod vault;

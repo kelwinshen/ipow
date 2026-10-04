@@ -60,7 +60,8 @@ for (const file of readdirSync(join(here, "..", "deployments")).filter((f) => f.
   }
   if (d.dataFee) parts.push([d.dataFee, "protocol/DataFee.sol", s.dataFee === "op" ? "OpDataFee" : "ArbDataFee"]);
   for (const [address, f, name] of parts) {
-    const a = builtFrom(d.source, f, name);
+    // A contract redeployed alone names its own source (redeploy-conversion.ts).
+    const a = builtFrom(d.sources?.[name] ?? d.source, f, name);
     if (!codeMatches(await p.getCode(address), a.deployedBytecode, a.immutableReferences)) problems.push(`${name} at ${address}: code is not the build's`);
   }
 

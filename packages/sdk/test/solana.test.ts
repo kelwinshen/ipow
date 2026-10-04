@@ -12,6 +12,7 @@ import { startValidator, type Local } from "./helpers/validator.ts";
 const { AnchorProvider, BN, Program, Wallet } = anchor;
 const EVM_VAULT = "0x" + "11".repeat(20);
 const ETHEREUM = 1;
+const BASE = 3;
 let local: Local;
 let connection: Connection;
 let authority: Keypair;
@@ -29,16 +30,19 @@ before(async () => {
   await pr.methods.initializeProtocol().accountsStrict({
     protocol: pda(pr.programId, [Buffer.from("protocol")]), vault: pda(pr.programId, [Buffer.from("vault")]), payer: authority.publicKey, systemProgram: SystemProgram.programId,
   }).rpc();
-  const config = pda(vt.programId, [Buffer.from("config"), Buffer.from([ETHEREUM])]);
-  await vt.methods.initialize(ETHEREUM, Array.from(Buffer.from(EVM_VAULT.slice(2), "hex")), new BN(1_000_000), new BN(10_000_000)).accountsStrict({
-    config,
-    sol: pda(vt.programId, [Buffer.from("asset"), config.toBuffer(), Buffer.from([0, 0, 0, 0])]),
-    application: pda(pr.programId, [Buffer.from("application"), config.toBuffer()]),
-    payer: authority.publicKey,
-    programData: pda(loader, [vt.programId.toBuffer()]),
-    protocolProgram: pr.programId,
-    systemProgram: SystemProgram.programId,
-  }).rpc();
+  // Two pairs, so a reader of one is shown not to see the other's.
+  for (const peer of [ETHEREUM, BASE]) {
+    const config = pda(vt.programId, [Buffer.from("config"), Buffer.from([peer])]);
+    await vt.methods.initialize(peer, Array.from(Buffer.from(EVM_VAULT.slice(2), "hex")), new BN(1_000_000), new BN(10_000_000)).accountsStrict({
+      config,
+      sol: pda(vt.programId, [Buffer.from("asset"), config.toBuffer(), Buffer.from([0, 0, 0, 0])]),
+      application: pda(pr.programId, [Buffer.from("application"), config.toBuffer()]),
+      payer: authority.publicKey,
+      programData: pda(loader, [vt.programId.toBuffer()]),
+      protocolProgram: pr.programId,
+      systemProgram: SystemProgram.programId,
+    }).rpc();
+  }
 });
 
 after(() => local?.stop());
@@ -57,6 +61,18 @@ test("locks SOL for its receipt on Ethereum, in record units, and follows it", a
   // A lock made on Ethereum has no mark here until a claim or attest.
   assert.equal(await vault.evmLockMark(1), null);
   assert.equal(await vault.receiptBalance(authority.publicKey.toBase58(), 0), 0n);
+
+  // The owner's locks in this pair, newest first; one in the Base pair, with
+  // the same id, is not among them. Nobody else has any, and no burn was paid.
+  const second = await vault.lock({ recipient: user, amount: 2_000_000n });
+  const base = await new SolanaVault(connection, BASE, new Wallet(authority)).lock({ recipient: user, amount: 3_000_000n });
+  assert.equal(base.lockId, 1n);
+  const me = authority.publicKey.toBase58();
+  assert.deepEqual((await vault.locksOf(me)).map((x) => [x.lockId, x.amount]), [[second.lockId, 2_000_000n], [lockId, 10_000_000n]]);
+  assert.deepEqual((await vault.locksOf(me, 1)).map((x) => x.lockId), [second.lockId]);
+  assert.deepEqual(await vault.locksOf(Keypair.generate().publicKey.toBase58()), []);
+  assert.deepEqual(await vault.burnsOf(me), []);
+  assert.equal(await vault.evmBurnPaid(1), false);
 });
 
 test("refuses to burn a receipt that does not exist yet", async () => {

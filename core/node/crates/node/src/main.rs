@@ -19,6 +19,7 @@ use ipow_node::vault::{CarriedAsset, Side, VaultGuardian, VaultOperator, VaultOp
 use ipow_protocol_core::vault::VaultApp;
 use ipow_network_svm::conversion::SvmConversion;
 use ipow_node::swaps::Swaps;
+use ipow_node::tunnel::{TunnelBook, TunnelNetwork, Tunnels};
 use ipow_protocol_core::conversion::ConversionApp;
 use ipow_network_svm::chain::Rpc;
 use ipow_network_svm::network::{SvmNetwork, parse_key};
@@ -153,9 +154,16 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let mut pairs: Vec<(Arc<dyn Worker>, Arc<dyn ProtocolNetwork>)> = vec![];
+    // The networks whose Conversion this operator serves, for the tunnel API.
+    let mut tunnel_networks: HashMap<String, TunnelNetwork> = HashMap::new();
+    let tunnel_book = Arc::new(TunnelBook::default());
     let mut kinds: HashMap<String, (Kind, Arc<dyn ProtocolNetwork>)> = HashMap::new();
     for n in &settings.networks {
         let Connected { net: network, conversion, kind } = connect(n)?;
+        if let (Some(app), Some(c)) = (&conversion, &n.conversion) {
+            tunnel_networks.insert(n.name.clone(), TunnelNetwork { app: app.clone(), coins: c.coins.clone() });
+            tunnel_book.add_network(&n.name, app.clone(), network.clone());
+        }
         kinds.insert(n.name.clone(), (kind, network.clone()));
         info!(network = %n.name, address = %network.me(), "connected");
         for role in &settings.roles {
@@ -164,7 +172,7 @@ async fn main() -> anyhow::Result<()> {
                     let wallet = wallet.clone().expect("checked when the settings were read");
                     let mut operator = Operator::new(wallet, amount(n.operator.as_ref().map(|l| &l.max_bid)));
                     if let (Some(app), Some(c)) = (&conversion, &n.conversion) {
-                        operator = operator.with_swaps(Arc::new(Swaps::new(app.clone(), c.coins.clone(), &n.name)));
+                        operator = operator.with_swaps(Arc::new(Swaps::new(app.clone(), c.coins.clone(), &n.name).with_tunnels(tunnel_book.clone())));
                     }
                     Arc::new(operator)
                 }
@@ -211,6 +219,27 @@ async fn main() -> anyhow::Result<()> {
                 pairs.push((Arc::new(g), a.net.clone()));
             }
         }
+    }
+
+    // The tunnel API: an operator's, for the networks it takes swaps on.
+    if let Some(api) = &settings.tunnel_api {
+        anyhow::ensure!(settings.runs(Role::Operator), "the tunnel API needs the operator role");
+        let key = match &api.key_env {
+            Some(name) => {
+                let k = env(name)?;
+                anyhow::ensure!(k.len() >= 16, "the tunnel API's key is too short: at least 16 characters");
+                secrets::hide(&k);
+                Some(k)
+            }
+            None => None,
+        };
+        let wallet = wallet.clone().expect("checked when the settings were read");
+        let tunnels = Arc::new(Tunnels::new(tunnel_networks, api.clone(), key, tunnel_book.clone(), wallet));
+        tokio::spawn(async move {
+            if let Err(e) = tunnels.serve().await {
+                tracing::error!(error = %e, "the tunnel API stopped");
+            }
+        });
     }
 
     let (stop, stopped) = watch::channel(false);

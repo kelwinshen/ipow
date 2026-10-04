@@ -13,7 +13,8 @@ use crate::state::{Config, Side, Swap, SwapState};
 
 /// Sell: gives the user the coin back when the operator did not pay: nobody
 /// took the job, the deadline passed with no proof, the proof was shown
-/// false, or the proven transaction (`raw_tx`) does not pay the user enough.
+/// false, the proven transaction (`raw_tx`) does not pay the user enough,
+/// or, in a tunnel, it was mined outside the payment window.
 /// After a slash, the user also receives this application's share of the
 /// escrow. Anyone may call.
 pub fn handler(ctx: Context<RefundSell>, raw_tx: Vec<u8>) -> Result<()> {
@@ -24,6 +25,9 @@ pub fn handler(ctx: Context<RefundSell>, raw_tx: Vec<u8>) -> Result<()> {
     let refundable = match s {
         Status::Expired | Status::Slashed => true,
         Status::Assigned => now()? > deadline(job)?,
+        // In a tunnel, a payment mined outside the window refunds with no
+        // transaction needed; otherwise one that pays too little does.
+        Status::Proven | Status::Settled if a.swap.outside_window(job.proof_block.height) => true,
         Status::Proven | Status::Settled => {
             require_proven(job, &raw_tx)?;
             !pays_at_least(&raw_tx, &a.swap.script, a.swap.sats)?

@@ -38,6 +38,9 @@ pub struct Swap {
     pub job_id: u64,
     /// Sell: the user's script. Buy: the operator's, once it funded.
     pub script: Vec<u8>,
+    /// Sell in a tunnel only: the Bitcoin blocks its payment must be mined
+    /// in (docs/drafts/ipow-conversion-tunnel.md, T1); `None` otherwise.
+    pub pay_window: Option<(u32, u32)>,
 }
 
 #[async_trait]
@@ -49,6 +52,11 @@ pub trait ConversionApp: Send + Sync {
     async fn swap(&self, id: u64) -> anyhow::Result<Swap>;
     /// How much of `token` (or the coin) this node holds, to supply buys.
     async fn my_balance(&self, token: Option<&str>) -> anyhow::Result<Amount>;
+    /// What a buy opened now pays in job fees, in the network's coin.
+    async fn buy_fees(&self) -> anyhow::Result<Amount>;
+    /// Whether `signature` is `user`'s over `message`, as the network's
+    /// wallets sign a plain message: how a user shows a buy is theirs.
+    fn signed_by(&self, user: &str, message: &str, signature: &str) -> bool;
     /// Buy: locks the coin and names the script the user pays.
     async fn fund(&self, swap_id: u64, script: &[u8]) -> anyhow::Result<()>;
     /// Sell: collects the coin once the proof's lock has ended.

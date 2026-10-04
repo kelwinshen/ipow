@@ -13,6 +13,9 @@ use ipow_protocol_core::types::Amount;
 use crate::contracts::{Conversion, IERC20};
 use crate::network::{EvmNetwork, rejection, send, with_margin};
 
+/// The confirmations of the jobs this node opens (the protocol's default).
+const CONFIRMATIONS: u16 = 6;
+
 pub struct EvmConversion {
     net: Arc<EvmNetwork>,
     address: Address,
@@ -25,6 +28,31 @@ impl EvmConversion {
 
     fn contract(&self) -> Conversion::ConversionInstance<&alloy::providers::DynProvider> {
         Conversion::new(self.address, self.net.provider())
+    }
+}
+
+impl EvmConversion {
+    /// What a job this node opens pays in fees (D138): the commitment fee
+    /// at the network's price of work now, twice (the margin goes to the
+    /// job's operator, D79, which is this node when it takes the job),
+    /// plus the escrow fee. Read with `commitmentFeeAt` and a price this
+    /// node supplies: a call to `feesFor` runs at a price of zero on many
+    /// nodes, and the protocol then refuses the transaction (FeesNotPaid).
+    /// The price is the larger of the base fee and the gas price, so it
+    /// covers the networks that price work either way (D139).
+    async fn fees_now(&self) -> anyhow::Result<U256> {
+        let provider = self.net.provider();
+        let block = provider.get_block_by_number(alloy::eips::BlockNumberOrTag::Latest).await?;
+        let base_fee = block.and_then(|b| b.header.base_fee_per_gas).unwrap_or(0) as u128;
+        let gas_price = provider.get_gas_price().await.unwrap_or(0);
+        let price = U256::from(base_fee.max(gas_price));
+        let protocol = self.net.protocol();
+        let c = self.contract();
+        let fee = protocol.commitmentFeeAt(CONFIRMATIONS, price).call().await?;
+        let (multiple, bps, escrow_bps) = (protocol.MIN_ESCROW_MULTIPLE().call().await?, protocol.BPS().call().await?, c.ESCROW_FEE_BPS().call().await?);
+        let escrow = (multiple * fee).max(U256::from(1));
+        let escrow_fee = escrow * U256::from(escrow_bps) / U256::from(bps);
+        Ok(fee * U256::from(2) + escrow_fee)
     }
 }
 
@@ -76,6 +104,7 @@ impl ConversionApp for EvmConversion {
             sats: s.sats,
             job_id: s.jobId.to::<u64>(),
             script: s.script.to_vec(),
+            pay_window: (s.payFrom != 0).then_some((s.payFrom, s.payTo)),
         })
     }
 
@@ -85,6 +114,17 @@ impl ConversionApp for EvmConversion {
             None => to_amount(self.net.provider().get_balance(me).await?),
             Some(t) => to_amount(IERC20::new(t.parse()?, self.net.provider()).balanceOf(me).call().await?),
         }
+    }
+
+    async fn buy_fees(&self) -> anyhow::Result<Amount> {
+        to_amount(self.fees_now().await?)
+    }
+
+    /// An EIP-191 personal signature (`personal_sign`), hex, 65 bytes.
+    fn signed_by(&self, user: &str, message: &str, signature: &str) -> bool {
+        let Ok(user) = user.parse::<Address>() else { return false };
+        let Ok(sig) = signature.parse::<alloy::primitives::Signature>() else { return false };
+        sig.recover_address_from_msg(message.as_bytes()).is_ok_and(|a| a == user)
     }
 
     async fn fund(&self, swap_id: u64, script: &[u8]) -> anyhow::Result<()> {

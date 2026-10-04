@@ -51,6 +51,40 @@ pub struct Settings {
     /// The protocol's vault (spec section 11), for the pair Ethereum and
     /// Solana: the operator carries records, the guardian checks claims.
     pub vault: Option<VaultSettings>,
+    /// Tunnels between programmable networks (docs/drafts/ipow-conversion-tunnel.md,
+    /// Q6): an HTTP API where an app asks this operator what it trades and
+    /// for a quote, and registers the buy its user opened as a tunnel's.
+    pub tunnel_api: Option<TunnelApiSettings>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TunnelApiSettings {
+    /// Where to listen, e.g. `127.0.0.1:8787`.
+    pub listen: String,
+    /// An environment variable holding a key callers must send in the
+    /// `x-tunnel-key` header: an app's server holds it, browsers do not.
+    /// Without it, anyone who reaches `listen` may ask for quotes.
+    #[serde(default)]
+    pub key_env: Option<String>,
+    /// The most satoshis one tunnel moves (Conversion's cap is 100,000 on
+    /// the test networks).
+    #[serde(default = "default_tunnel_max_sats")]
+    pub max_sats: u64,
+    /// Whether the quote takes the destination buy's job fees, in sats at
+    /// this operator's price for that network's coin, off what the user
+    /// receives (Q5). Off on test networks, whose coins and fees are worth
+    /// nothing: the operator absorbs them.
+    #[serde(default = "default_true")]
+    pub price_fees: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_tunnel_max_sats() -> u64 {
+    100_000
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -187,6 +221,9 @@ pub struct ConversionSettings {
 pub struct CoinPrice {
     /// `native` for the network's own coin, or the token's address.
     pub token: String,
+    /// What apps show it as (ETH, AAPL); the token itself when left out.
+    #[serde(default)]
+    pub symbol: Option<String>,
     /// Decimal places of one whole coin: 18 for ETH, 9 for SOL.
     pub decimals: u8,
     /// Users selling: the most satoshis it pays for one whole coin.

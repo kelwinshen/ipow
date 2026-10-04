@@ -1,0 +1,36 @@
+{
+  "network": "solana-devnet",
+  "operator": "G8vkKtPzQfm8dTVnFcgFis5LgRHqwCk2bT29731sXU6D",
+  "mintAuthority": "D1rbiCRB3pQqcTAu6DEpsteMTiE5cVC9VoRpnQP2ekSy",
+  "vaultPeer": 1,
+  "tokens": {
+    "AAPL": {
+      "mint": "GdxcJMsbUKKYh1G2SrbLCVboVN4ATncJqTqcXXeTAvoc",
+      "name": "Apple (test)",
+      "decimals": 9,
+      "faucet": 5,
+      "vaultAsset": 1
+    },
+    "TSLA": {
+      "mint": "9TdXGr7WSiwYGe5rjsHbiBAfX9EfniEG2ZQUTfPatCj6",
+      "name": "Tesla (test)",
+      "decimals": 9,
+      "faucet": 5,
+      "vaultAsset": 2
+    },
+    "NVDA": {
+      "mint": "8yQPSPY4z2fuWN7499LPT2vdBPfyDnxy4UzQcWMRorSU",
+      "name": "NVIDIA (test)",
+      "decimals": 9,
+      "faucet": 5,
+      "vaultAsset": 3
+    },
+    "GOLD": {
+      "mint": "BoA7deYM6n5wokSmX3q6BsDGJxdNfnRZm1h8QspUAiKA",
+      "name": "Gold, 1 troy ounce (test)",
+      "decimals": 9,
+      "faucet": 1,
+      "vaultAsset": 4
+    }
+  }
+}

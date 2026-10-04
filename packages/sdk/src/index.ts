@@ -3,17 +3,21 @@
 export { NETWORK_NAMES, network, rpcScale, type Deployment, type NetworkName } from "./networks.ts";
 export { priceNow, quoteCheckpoint, type Quote, type QuoteOptions } from "./quote.ts";
 export { STAGES, creditOf, expireJob, findJobTx, getJob, watchJob, withdrawCredit, type JobView, type Stage } from "./jobs.ts";
-export { Bitcoin, EXPLORERS, displayTxid, type BitcoinTx } from "./bitcoin.ts";
+export { Bitcoin, EXPLORERS, displayTxid, stripWitness, type BitcoinTx } from "./bitcoin.ts";
 export { openCheckpoint } from "./checkpoint.ts";
 export {
   burn,
+  burnsOf,
   encodeRecipient,
   getBurn,
   getLock,
   homeAssets,
   lock,
+  locksOf,
   quoteLock,
+  receiptMark,
   receiptTokens,
+  requestPaid,
   type BurnState,
   type HomeAsset,
   type LockQuote,
@@ -30,7 +34,7 @@ export {
   type SolanaWallet,
 } from "./solana.ts";
 export { followLock, type LockJourney } from "./follow.ts";
-export { SolanaBeta, createAccountIdempotent, type SolanaBasket, type SolanaBasketPart, type SolanaMintQuote } from "./solanaBeta.ts";
+export { SolanaBeta, WRAPPED_SOL, createAccountIdempotent, wrapSolInstructions, type SolanaBasket, type SolanaBasketPart, type SolanaMintQuote } from "./solanaBeta.ts";
 export {
   basketKey,
   burn as burnBeta,
@@ -45,7 +49,44 @@ export {
   type MintQuote,
 } from "./beta.ts";
 export { addressToScript, scriptToAddress } from "./btcAddress.ts";
-export { SIDES, SWAP_STATES, buy, cancelBuy, getSwap, quoteSwap, refundSell, sell, type SwapQuote, type SwapView } from "./conversion.ts";
+export { SolanaConversion, quoteSolanaSwap, solanaPaidOutsideWindow, type SolanaSwapQuote, type SolanaSwapStage, type SolanaSwapView } from "./solanaConversion.ts";
+export { merklePath, provePayment, type BitcoinSource, type PaymentProofPlan } from "./paymentProof.ts";
+export {
+  NATIVE,
+  TunnelApi,
+  coinFor,
+  fromUnits,
+  satsFor,
+  sellPaying,
+  toUnits,
+  tunnelMessage,
+  type TunnelAsset,
+  type TunnelAssets,
+  type TunnelQuote,
+  type TunnelRegistration,
+} from "./tunnel.ts";
+export {
+  SIDES,
+  SWAP_STATES,
+  buy,
+  buyFor,
+  cancelBuy,
+  compensate,
+  compensated,
+  completeBuy,
+  completeSell,
+  getSwap,
+  paidOutsideWindow,
+  provenPayment,
+  provenReceipt,
+  quoteSwap,
+  refundSell,
+  sell,
+  sellInWindow,
+  swapsOf,
+  type SwapQuote,
+  type SwapView,
+} from "./conversion.ts";
 export { ABIS } from "./generated/abis.ts";
 export { SOLANA, IDLS } from "./generated/solana.ts";
 export { DEPLOYMENTS } from "./generated/deployments.ts";

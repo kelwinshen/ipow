@@ -16,6 +16,19 @@ use crate::network::SvmNetwork;
 use crate::programs::conversion as cv;
 
 const SYSTEM: Pubkey = anchor_lang::solana_program::system_program::ID;
+/// The confirmations of the jobs this node opens (the protocol's default).
+const CONFIRMATIONS: u16 = 6;
+
+/// What a job opened by this node pays: the commitment fee (fixed by the
+/// confirmations on Solana: the protocol's `commitment_fee_for`), the escrow
+/// fee on the lowest escrow, and half the commitment fee again, which goes
+/// to the job's operator (D79).
+fn paid(confirmations: u16) -> u64 {
+    let window = 25 + confirmations as u64 - 1;
+    let fee = (window + 20) * 5_000 * 3 / 2;
+    let escrow_fee = fee * 5 * 50 / 10_000;
+    fee + escrow_fee + fee / 2
+}
 
 pub struct SvmConversion {
     net: Arc<SvmNetwork>,
@@ -121,6 +134,7 @@ impl ConversionApp for SvmConversion {
             sats: s.sats,
             job_id: s.job_id,
             script: s.script,
+            pay_window: (s.pay_from != 0).then_some((s.pay_from, s.pay_to)),
         })
     }
 
@@ -138,6 +152,17 @@ impl ConversionApp for SvmConversion {
                 }
             }
         }
+    }
+
+    async fn buy_fees(&self) -> anyhow::Result<Amount> {
+        Ok(paid(CONFIRMATIONS) as Amount)
+    }
+
+    /// An ed25519 signature of the message's bytes by the wallet, base58.
+    fn signed_by(&self, user: &str, message: &str, signature: &str) -> bool {
+        let Ok(user) = user.parse::<Pubkey>() else { return false };
+        let Ok(sig) = signature.parse::<solana_sdk::signature::Signature>() else { return false };
+        sig.verify(user.as_ref(), message.as_bytes())
     }
 
     async fn fund(&self, swap_id: u64, script: &[u8]) -> anyhow::Result<()> {

@@ -7,3 +7,6 @@ test-ledger
 .yarn
 .surfpool
 .env
+
+# Devnet-only keys made by scripts (e.g. the mock tokens' mint authority).
+.keys

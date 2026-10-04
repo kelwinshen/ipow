@@ -2,7 +2,7 @@ import { expect } from "chai";
 import { network } from "hardhat";
 
 import { deployNetwork } from "../deploy/deploy.ts";
-import { creditOf, expireJob, withdrawCredit, buy, cancelBuy, getSwap, quoteSwap, refundSell, sell, burn, burnBeta, collectOwed, createBasket, getBasket, mintBeta, quoteMint, displayTxid, encodeRecipient, getJob, getLock, homeAssets, lock, openCheckpoint, quoteCheckpoint, quoteLock } from "../../../packages/sdk/src/index.ts";
+import { swapsOf, creditOf, expireJob, withdrawCredit, buy, cancelBuy, getSwap, quoteSwap, refundSell, sell, burn, burnBeta, collectOwed, createBasket, getBasket, mintBeta, quoteMint, displayTxid, encodeRecipient, getJob, getLock, homeAssets, lock, openCheckpoint, quoteCheckpoint, quoteLock, locksOf, burnsOf, receiptMark, addressToScript, scriptToAddress } from "../../../packages/sdk/src/index.ts";
 
 const { ethers } = await network.create();
 
@@ -48,6 +48,20 @@ describe("The SDK", function () {
     expect(job.times.deadline).to.be.greaterThan(job.times.opened);
   });
 
+  it("refuses Bitcoin addresses whose outputs anyone could spend", async function () {
+    // Segwit v0 and taproot (v1, 32 bytes) are fine.
+    expect(addressToScript("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4")).to.equal("0x0014751e76e8199196d454941c45d1b3a323f1433bd6");
+    expect(addressToScript("bc1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqzk5jj0")).to.match(/^0x5120/);
+    // Well-formed addresses of a version 2 program and of a 20-byte version
+    // 1 program, written from their scripts so their checksums are right.
+    const program = "751e76e8199196d454941c45d1b3a323f1433bd6";
+    for (const script of ["0x5214" + program, "0x5114" + program]) {
+      const address = scriptToAddress(script)!;
+      expect(address).to.match(/^bc1/);
+      expect(() => addressToScript(address)).to.throw(/not a Bitcoin mainnet address/);
+    }
+  });
+
   it("shows a stored txid as explorers do", async function () {
     expect(displayTxid("0x1201426b6f3cd7ffdf9b0a2fa906bf87273a15b0615133e41e9d22d749404dd2")).to.equal(
       "d24d4049d7229d1ee4335161b0153a2787bf06a92f0a9bdfffd73c6f6b420112"
@@ -73,6 +87,18 @@ describe("The SDK", function () {
     expect((await ethers.provider.getBalance(d.vaults[0].home)) - before).to.equal(q.total);
     const l = await getLock(ethers.provider, d, lockId);
     expect([l.stage, l.owner, l.amount, l.fee, l.recipient]).to.deep.equal(["Locked", user.address, q.amount, q.fee, encodeRecipient(2, solana)]);
+
+    // The owner's locks, newest first and at most the limit; none for
+    // another, and no burns yet. A lock from the other network that nothing
+    // has touched has no mark here.
+    const [, other] = await ethers.getSigners();
+    const second = await lock(user, d, await quoteLock(ethers.provider, d, { amount: 10n ** 15n }), solana);
+    await lock(other, d, await quoteLock(ethers.provider, d, { amount: 10n ** 15n }), solana);
+    expect((await locksOf(ethers.provider, d, user.address)).map((x) => x.lockId)).to.deep.equal([second.lockId, lockId]);
+    expect((await locksOf(ethers.provider, d, user.address, 1)).map((x) => x.lockId)).to.deep.equal([second.lockId]);
+    expect((await locksOf(ethers.provider, d, other.address)).map((x) => x.owner)).to.deep.equal([other.address]);
+    expect(await burnsOf(ethers.provider, d, user.address)).to.deep.equal([]);
+    expect(await receiptMark(ethers.provider, d, 1)).to.equal(null);
   });
 
   it("locks a token with its approval, and burns only a receipt that exists", async function () {
@@ -146,9 +172,10 @@ describe("The SDK", function () {
     expect((await getSwap(ethers.provider, d, swapId)).state).to.equal("Refunded");
     // The fees are not in the refund: they return once the job is expired
     // (D61), then withdrawn.
-    expect(await creditOf(ethers.provider, d, user.address)).to.equal(0n);
-    await expireJob(user, d, jobId);
+    // The refund expired the job itself: the fees are in the user's credit,
+    // and expiring it again is refused.
     expect(await creditOf(ethers.provider, d, user.address)).to.equal(q.fees);
+    await expect(expireJob(user, d, jobId)).to.be.revert(ethers);
     await withdrawCredit(user, d);
     // Back to where the user began, but for gas.
     expect(before - (await ethers.provider.getBalance(user.address))).to.be.lessThan(10n ** 15n);
@@ -161,6 +188,11 @@ describe("The SDK", function () {
     await ethers.provider.send("evm_mine", []);
     await cancelBuy(user, d, bought.swapId);
     expect((await getSwap(ethers.provider, d, bought.swapId)).state).to.equal("Cancelled");
+    // The user's swaps, newest first; another user has none.
+    const mine = await swapsOf(ethers.provider, d, user.address);
+    expect(mine.map((x) => [x.id, x.side])).to.deep.equal([[bought.swapId, "Buy"], [swapId, "Sell"]]);
+    const [, other] = await ethers.getSigners();
+    expect(await swapsOf(ethers.provider, d, other.address)).to.deep.equal([]);
   });
 });
 

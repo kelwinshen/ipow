@@ -4,13 +4,14 @@
 // receipt of that network's asset for the asset back, and see whether a lock
 // made there had its receipt issued here. Amounts are in record units.
 
-import anchor from "@coral-xyz/anchor";
+// Imported, not global: in a browser this is the `buffer` package.
+import { Buffer } from "buffer";
+import { AnchorProvider, BN, Program } from "@coral-xyz/anchor";
 import { Connection, Keypair, PublicKey, SystemProgram, Transaction, VersionedTransaction } from "@solana/web3.js";
 import { getAddress } from "ethers";
 
 import { IDLS, SOLANA } from "./generated/solana.ts";
 
-const { AnchorProvider, BN, Program } = anchor;
 
 // From the programs' IDLs.
 const TOKEN_PROGRAM = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
@@ -146,18 +147,36 @@ export class SolanaVault {
   }
 
   async getLock(lockId: bigint | number): Promise<SolanaLockState> {
-    const l = await this.accounts.homeLock.fetch(this.at("home_lock", u64(lockId)));
-    return {
-      lockId: BigInt(lockId),
-      stage: l.returned ? "Returned" : l.feePaid ? "Carried" : "Locked",
-      owner: l.owner.toBase58(),
-      asset: l.asset,
-      amount: big(l.amount),
-      fee: big(l.fee),
-      fastFee: big(l.fastFee),
-      lockedAt: Number(l.lockedAt),
-      recipient: getAddress("0x" + Buffer.from(l.recipient).subarray(12).toString("hex")),
-    };
+    return lockState(BigInt(lockId), await this.accounts.homeLock.fetch(this.at("home_lock", u64(lockId))));
+  }
+
+  /** The locks `owner` made in this pair, newest first, at most `limit`. */
+  async locksOf(owner: string, limit = 50): Promise<SolanaLockState[]> {
+    const all = await this.accounts.homeLock.all([{ memcmp: { offset: OWNER_OFFSET, bytes: new PublicKey(owner).toBase58() } }]);
+    return all
+      .map((a: any) => ({ key: a.publicKey as PublicKey, x: lockState(big(a.account.id), a.account) }))
+      // Every pair's locks share the account type: keep this pair's.
+      .filter((a: any) => a.key.equals(this.at("home_lock", u64(a.x.lockId))))
+      .map((a: any) => a.x as SolanaLockState)
+      .sort((a: SolanaLockState, b: SolanaLockState) => (b.lockId > a.lockId ? 1 : -1))
+      .slice(0, limit);
+  }
+
+  /** The burns `owner` made in this pair, newest first, at most `limit`. */
+  async burnsOf(owner: string, limit = 50): Promise<SolanaBurnState[]> {
+    const all = await this.accounts.request.all([{ memcmp: { offset: OWNER_OFFSET, bytes: new PublicKey(owner).toBase58() } }]);
+    return all
+      .map((a: any) => ({ key: a.publicKey as PublicKey, x: burnState(big(a.account.id), a.account) }))
+      .filter((a: any) => a.key.equals(this.at("request", u64(a.x.requestId))))
+      .map((a: any) => a.x as SolanaBurnState)
+      .sort((a: SolanaBurnState, b: SolanaBurnState) => (b.requestId > a.requestId ? 1 : -1))
+      .slice(0, limit);
+  }
+
+  /** Whether burn `requestId` made on the EVM network was paid here by its
+   *  claim (an attester may have paid it at once before). */
+  async evmBurnPaid(requestId: bigint | number): Promise<boolean> {
+    return (await this.connection.getAccountInfo(this.at("paid", u64(requestId)))) !== null;
   }
 
   /** The receipt here of the EVM network's asset `asset` (its number there). */
@@ -227,8 +246,30 @@ export async function getSolanaBurn(vault: SolanaVault, requestId: bigint | numb
   const r = await (vault.program.account as any).request.fetch(
     PublicKey.findProgramAddressSync([Buffer.from("request"), vault.config.toBuffer(), u64(requestId)], vault.program.programId)[0]
   );
+  return burnState(BigInt(requestId), r);
+}
+
+/** Where a lock's or a burn's owner sits in its account: after the
+ *  discriminator (8), the id (8) and the asset (4). */
+const OWNER_OFFSET = 20;
+
+function lockState(lockId: bigint, l: any): SolanaLockState {
   return {
-    requestId: BigInt(requestId),
+    lockId,
+    stage: l.returned ? "Returned" : l.feePaid ? "Carried" : "Locked",
+    owner: l.owner.toBase58(),
+    asset: l.asset,
+    amount: big(l.amount),
+    fee: big(l.fee),
+    fastFee: big(l.fastFee),
+    lockedAt: Number(l.lockedAt),
+    recipient: getAddress("0x" + Buffer.from(l.recipient).subarray(12).toString("hex")),
+  };
+}
+
+function burnState(requestId: bigint, r: any): SolanaBurnState {
+  return {
+    requestId,
     stage: r.feePaid ? "Carried" : "Burned",
     owner: r.owner.toBase58(),
     asset: r.asset,

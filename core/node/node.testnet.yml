@@ -30,6 +30,20 @@ networks:
     # At most 0.05 ETH of bond locked for one job: a checkpoint's escrow is
     # 5 times its fee, about 0.03 ETH at a base fee of 1 gwei.
     operator: { max_bid: "50000000000000000" }
+    # Conversion with the tunnel (2026-10-03). Test coins have no market,
+    # and Bitcoin only carries the real transaction: fixed, representative
+    # rates, about a tenth of the market's; Greatwall reads them from the
+    # tunnel API's /assets, so a test swap is a few hundred sats.
+    # The RWA tokens are the mock ones of deployments/ethereum-testnet-rwa.json
+    # (2026-10-04), priced per whole token; the operator holds 1,000 of each.
+    conversion:
+      address: "0x5fdFfea2E1e03E6Eb376Aa6d679A4C8b62bf6da1"
+      coins:
+        - { token: native, symbol: ETH, decimals: 18, pay_sats: 300000, ask_sats: 300000 }
+        - { token: "0x9246Ce8312BAB79866125957240Ede78263E10aC", symbol: AAPL, decimals: 18, pay_sats: 2500, ask_sats: 2500 }
+        - { token: "0x12268ABD5814bd53F52E4A7e7dee0978791048f4", symbol: TSLA, decimals: 18, pay_sats: 4000, ask_sats: 4000 }
+        - { token: "0x0352eF8943B606B2613d79634D5876E7D550448B", symbol: NVDA, decimals: 18, pay_sats: 1800, ask_sats: 1800 }
+        - { token: "0x75eddA253800F4718dc71fC255A5A77ff2A9fa0a", symbol: GOLD, decimals: 18, pay_sats: 40000, ask_sats: 40000 }
 
   - name: solana-devnet
     kind: svm
@@ -41,6 +55,12 @@ networks:
     guardian: { max_deposit: "10000000" }
     # At most 0.02 SOL; no bond is locked on Solana yet.
     operator: { max_bid: "20000000" }
+    conversion:
+      address: "9Argk3M83p8t5pWG92PhwEhYzysWt5n82siEWyb29w7D"
+      coins:
+        # SOL only: the node's token buys, and the SDK's token swaps, are not
+        # built on Solana yet (the mock tokens are in testnet-rwa.json).
+        - { token: native, symbol: SOL, decimals: 9, pay_sats: 15000, ask_sats: 15000 }
 
 # The vault pair, left out while the operator first takes jobs: its
 # operator would register a pair chain on Bitcoin at once.
@@ -51,3 +71,17 @@ networks:
 #       vaults: ["0xD18b7d290f8c94fe561710A78F17494ff2520302", "2e1ZUB5eqA6bQfH3f9pbfvibfie7WnvEJeKif53VAm7p"]
 #       journal: testnet-eth-sol.journal
 #       assets: []
+
+# The tunnel API (docs/drafts/ipow-conversion-tunnel.md): only Greatwall's
+# server calls it, with the key (its TUNNEL_API_URL and TUNNEL_API_KEY).
+# At most 2,000 sats a tunnel: the operator pays the BTC first, from a
+# wallet of about 14,000 sats, and keeps about 5,400 for the fee cap above.
+# It opens a tunnel only when the wallet can pay it on top of those open.
+# The user opens each tunnel's buy and pays its job fees; those fees are not
+# priced into the quote: in test ETH they are worth nothing, and at the test
+# rates they would exceed the few hundred sats of a swap.
+tunnel_api:
+  listen: 127.0.0.1:8787
+  key_env: TUNNEL_API_KEY
+  max_sats: 2000
+  price_fees: false

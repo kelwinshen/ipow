@@ -26,4 +26,7 @@ pub enum ConversionError {
     NotAnchored,
     AnchorTooOld,
     NotSlashed,
+    BadWindow,
+    PaidOutsideWindow,
+    ZeroRecipient,
 }

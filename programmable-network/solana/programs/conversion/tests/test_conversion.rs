@@ -190,6 +190,8 @@ struct World {
     stranger: Keypair,
     tip: Ref,
     blocks: std::collections::HashMap<[u8; 32], Vec<[u8; 32]>>,
+    /// Each block's parent, so a walk can follow any stretch of the chain.
+    parents: std::collections::HashMap<[u8; 32], Ref>,
     salt: u32,
     walks: u64,
 }
@@ -209,6 +211,7 @@ impl World {
             stranger: Keypair::new(),
             tip: Ref { hash: [0; 32], height: 0, epoch_time: 0 },
             blocks: Default::default(),
+            parents: Default::default(),
             salt: 0,
             walks: 0,
         };
@@ -393,6 +396,7 @@ impl World {
         ix.accounts.push(AccountMeta::new(node_pda(&r), false));
         self.send(ix, &[&payer]).unwrap();
         self.blocks.insert(r.hash, txids);
+        self.parents.insert(r.hash, on);
         if parent.is_none() {
             self.tip = r;
         }
@@ -594,9 +598,14 @@ impl World {
             path.push(self.add(&[], None));
         }
         let tip = self.tip;
-        let mut to_proof: Vec<Ref> = blocks.iter().rev().cloned().collect();
-        to_proof.insert(0, proof_block);
-        to_proof.push(anchor);
+        // From the proof back to the anchor, through every block between,
+        // whoever mined them (in a tunnel, the other leg's blocks too).
+        let _ = &blocks;
+        let mut to_proof = vec![proof_block];
+        while to_proof.last().unwrap().hash != anchor.hash {
+            let parent = self.parents[&to_proof.last().unwrap().hash];
+            to_proof.push(parent);
+        }
         let walk_to_proof = self.walk(proof_block, anchor, &to_proof);
         let to_tip: Vec<Ref> = path.iter().rev().cloned().collect();
         let walk_to_tip = self.walk(tip, proof_block, &to_tip);
@@ -1127,4 +1136,195 @@ fn gives_the_operator_the_coin_back_36_hours_after_its_deadline_when_nothing_was
     let before = w.balance(&w.operator.pubkey());
     w.reclaim(id).unwrap();
     assert_eq!(w.balance(&w.operator.pubkey()), before + SOL);
+}
+
+// ---------------------------------------------------------------------
+// Tunnels between programmable networks (T1, T2)
+// ---------------------------------------------------------------------
+
+impl World {
+    /// A sell paying `script`, whose payment counts only in Bitcoin blocks `from` to `to`.
+    fn sell_in_window(&mut self, script: &[u8], from: u32, to: u32) -> Result<u64, String> {
+        let id = self.swap_count() + 1;
+        let (swap, job, tag_record) = self.open_accounts(id);
+        let user = self.user.insecure_clone();
+        let ix = self.ix(
+            conversion::ID,
+            conversion::client::accounts::Sell {
+                config: config(),
+                swap,
+                user: user.pubkey(),
+                protocol: pr(&[b"protocol"]),
+                application: pr(&[b"application", config().as_ref()]),
+                job,
+                tag_record,
+                protocol_vault: pr(&[b"vault"]),
+                protocol_program: ipow_protocol::ID,
+                system_program: SYSTEM,
+                mint: None,
+                escrow: None,
+                from: None,
+                token_program: None,
+                associated_token_program: None,
+            },
+            conversion::client::args::SellInWindow { amount: SOL, sats: 5_000_000, script: script.to_vec(), pay_from: from, pay_to: to, confirmations: 6, paid: FEES },
+        );
+        self.send(ix, &[&user])?;
+        Ok(id)
+    }
+
+    /// A buy opened by `opener` for `recipient`.
+    fn buy_for(&mut self, opener: &Keypair, recipient: Pubkey) -> Result<u64, String> {
+        let id = self.swap_count() + 1;
+        let (swap, job, tag_record) = self.open_accounts(id);
+        let ix = self.ix(
+            conversion::ID,
+            conversion::client::accounts::Buy {
+                config: config(),
+                swap,
+                user: opener.pubkey(),
+                protocol: pr(&[b"protocol"]),
+                application: pr(&[b"application", config().as_ref()]),
+                job,
+                tag_record,
+                protocol_vault: pr(&[b"vault"]),
+                protocol_program: ipow_protocol::ID,
+                system_program: SYSTEM,
+                mint: None,
+            },
+            conversion::client::args::BuyFor { recipient, amount: SOL, sats: 5_000_000, confirmations: 6, paid: FEES },
+        );
+        self.send(ix, &[opener])?;
+        Ok(id)
+    }
+
+    fn complete_buy_at(&mut self, swap_id: u64, receipt: &[u8], payment: &[u8], vout: u32) -> Result<(), String> {
+        let s = self.swap(swap_id);
+        let caller = self.stranger.insecure_clone();
+        let ix = self.ix(
+            conversion::ID,
+            conversion::client::accounts::CompleteBuy { swap: swap_pda(swap_id), job: job_pda(s.job_id), user: s.user, mint: None, escrow: None, to: None, token_program: None },
+            conversion::client::args::CompleteBuy { receipt_raw: receipt.to_vec(), payment_raw: payment.to_vec(), vout },
+        );
+        self.send(ix, &[&caller])
+    }
+}
+
+#[test]
+fn completes_a_sell_whose_payment_is_mined_inside_its_window() {
+    let mut w = World::new();
+    let h = w.tip.height;
+    // The duty anchors at h + 1 and its transaction lands at h + 2.
+    let id = w.sell_in_window(&USER_SCRIPT, h + 2, h + 13).unwrap();
+    w.win(id);
+    let (_, _, tagged, proof_block) = w.duty(id, &[], &[(5_000_000, &USER_SCRIPT)], &[]);
+    assert_eq!(proof_block.height, h + 2);
+    w.after_lock(w.swap(id).job_id);
+    let op = w.operator.pubkey();
+    let before = w.balance(&op);
+    w.complete_sell(id, &tagged).unwrap();
+    assert_eq!(w.balance(&op), before + SOL);
+}
+
+#[test]
+fn refunds_the_user_when_the_payment_is_mined_outside_the_window() {
+    let mut w = World::new();
+    let h = w.tip.height;
+    let id = w.sell_in_window(&USER_SCRIPT, h + 2, h + 3).unwrap();
+    w.win(id);
+    // Three blocks before the transaction: it lands at h + 5, after the window.
+    let (_, _, tagged, _) = w.duty(id, &[vec![], vec![], vec![]], &[(5_000_000, &USER_SCRIPT)], &[]);
+    w.after_lock(w.swap(id).job_id);
+    expect_err(w.complete_sell(id, &tagged), "PaidOutsideWindow");
+    let before = w.balance(&w.user.pubkey());
+    w.refund_sell(id, &[]).unwrap();
+    assert_eq!(w.balance(&w.user.pubkey()), before + SOL);
+}
+
+#[test]
+fn counts_a_payment_in_the_windows_first_or_last_block_and_not_one_block_either_side() {
+    // The duty's transaction lands at h + 2 in each case.
+    for (from, to, inside) in [(2, 2, true), (1, 2, true), (2, 9, true), (3, 9, false), (1, 1, false)] {
+        let mut w = World::new();
+        let h = w.tip.height;
+        let id = w.sell_in_window(&USER_SCRIPT, h + from, h + to).unwrap();
+        w.win(id);
+        let (_, _, tagged, proof_block) = w.duty(id, &[], &[(5_000_000, &USER_SCRIPT)], &[]);
+        assert_eq!(proof_block.height, h + 2);
+        w.after_lock(w.swap(id).job_id);
+        if inside {
+            expect_err(w.refund_sell(id, &tagged), "NotRefundable");
+            let op = w.operator.pubkey();
+            let before = w.balance(&op);
+            w.complete_sell(id, &tagged).unwrap();
+            assert_eq!(w.balance(&op), before + SOL);
+        } else {
+            expect_err(w.complete_sell(id, &tagged), "PaidOutsideWindow");
+            let before = w.balance(&w.user.pubkey());
+            w.refund_sell(id, &[]).unwrap();
+            assert_eq!(w.balance(&w.user.pubkey()), before + SOL);
+        }
+    }
+}
+
+#[test]
+fn does_not_refund_a_sell_paid_in_full_inside_its_window() {
+    let mut w = World::new();
+    let h = w.tip.height;
+    let id = w.sell_in_window(&USER_SCRIPT, h + 2, h + 13).unwrap();
+    w.win(id);
+    let (_, _, tagged, _) = w.duty(id, &[], &[(5_000_000, &USER_SCRIPT)], &[]);
+    expect_err(w.refund_sell(id, &tagged), "NotRefundable");
+    w.after_lock(w.swap(id).job_id);
+    expect_err(w.refund_sell(id, &tagged), "NotRefundable");
+    assert!(w.refund_sell(id, &[]).is_err());
+}
+
+#[test]
+fn refuses_a_window_that_starts_at_zero_or_ends_before_it_starts() {
+    let mut w = World::new();
+    expect_err(w.sell_in_window(&USER_SCRIPT, 0, 10), "BadWindow");
+    expect_err(w.sell_in_window(&USER_SCRIPT, 10, 9), "BadWindow");
+}
+
+#[test]
+fn opens_a_buy_for_a_recipient_the_opener_paying_the_fees() {
+    let mut w = World::new();
+    let stranger = w.stranger.insecure_clone();
+    expect_err(w.buy_for(&stranger, Pubkey::default()), "ZeroRecipient");
+    let user = w.user.pubkey();
+    let id = w.buy_for(&stranger, user).unwrap();
+    assert_eq!(w.swap(id).user, user);
+}
+
+#[test]
+fn links_a_buy_and_a_sell_with_one_bitcoin_payment_both_complete() {
+    let mut w = World::new();
+    // The buy: the operator opens it for the user, wins, anchors and locks 1 SOL at its new script.
+    let op = w.operator.insecure_clone();
+    let user = w.user.pubkey();
+    let buy_id = w.buy_for(&op, user).unwrap();
+    let buy_job = w.win(buy_id);
+    let anchor = w.add(&[], None);
+    w.anchor(buy_job, anchor).unwrap();
+    let script = operator_script(buy_id);
+    w.fund(buy_id, &script, &op).unwrap();
+
+    // The sell pays the buy's script within the buy's payment blocks.
+    let sell_id = w.sell_in_window(&script, anchor.height + 1, anchor.height + 12).unwrap();
+    w.win(sell_id);
+    let (_, _, sold, proof_block) = w.duty(sell_id, &[], &[(5_000_000, &script)], &[]);
+    assert!(proof_block.height >= anchor.height + 1 && proof_block.height <= anchor.height + 12);
+
+    // The buy's receipt spends that payment: output 2 of the sell's transaction.
+    let (_, _, receipt, _) = w.duty(buy_id, &[], &[], &[(sha256d(&sold), 2)]);
+    let before = w.balance(&user);
+    w.complete_buy_at(buy_id, &receipt, &sold, 2).unwrap();
+    assert_eq!(w.balance(&user), before + SOL);
+
+    // The sell's operator is paid once its lock ends.
+    w.after_lock(w.swap(sell_id).job_id);
+    let before = w.balance(&op.pubkey());
+    w.complete_sell(sell_id, &sold).unwrap();
+    assert_eq!(w.balance(&op.pubkey()), before + SOL);
 }

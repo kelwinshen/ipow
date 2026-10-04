@@ -10,7 +10,20 @@ use crate::state::{Config, Side, Swap, SwapState};
 
 /// Sell: locks `amount` of SOL, or of `mint`'s token, for at least `sats`
 /// paid to `script`. `paid` lamports pay the job's fees.
-pub fn handler(mut ctx: Context<Sell>, amount: u64, sats: u64, script: Vec<u8>, confirmations: u16, paid: u64) -> Result<()> {
+pub fn handler(ctx: Context<Sell>, amount: u64, sats: u64, script: Vec<u8>, confirmations: u16, paid: u64) -> Result<()> {
+    sell(ctx, amount, sats, script, (0, 0), confirmations, paid)
+}
+
+/// A sell as one leg of a tunnel (T1): its payment counts only when mined in
+/// Bitcoin blocks `pay_from` to `pay_to`, the payment blocks of the buy on
+/// another network that `script` is the operator's address of. A payment
+/// proven in another block refunds the user.
+pub fn in_window(ctx: Context<Sell>, amount: u64, sats: u64, script: Vec<u8>, pay_from: u32, pay_to: u32, confirmations: u16, paid: u64) -> Result<()> {
+    require!(pay_from != 0 && pay_to >= pay_from, ConversionError::BadWindow);
+    sell(ctx, amount, sats, script, (pay_from, pay_to), confirmations, paid)
+}
+
+fn sell(mut ctx: Context<Sell>, amount: u64, sats: u64, script: Vec<u8>, window: (u32, u32), confirmations: u16, paid: u64) -> Result<()> {
     require!(amount > 0 && sats > 0, ConversionError::InvalidAmount);
     require!(!script.is_empty() && script.len() <= MAX_SCRIPT_LENGTH, ConversionError::InvalidScript);
     let a = &mut ctx.accounts;
@@ -57,6 +70,8 @@ pub fn handler(mut ctx: Context<Sell>, amount: u64, sats: u64, script: Vec<u8>, 
     s.sats = sats;
     s.job_id = job_id;
     s.script = script;
+    s.pay_from = window.0;
+    s.pay_to = window.1;
     s.bump = ctx.bumps.swap;
     Ok(())
 }

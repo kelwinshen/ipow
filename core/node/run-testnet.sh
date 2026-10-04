@@ -15,4 +15,9 @@ export SOLANA_KEY
 # The operator wallet's Bitcoin key, read from the old operator's .env.
 BTC_WALLET_KEY=$(grep -E '^OPERATOR_BTC_WALLET_PRIVATE_KEY=' ../operator/.env | head -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
 export BTC_WALLET_KEY
+# The tunnel API's key, shared with Greatwall's server: this package's
+# git-ignored .env.
+# Missing, the node says so itself rather than this script stopping silently.
+TUNNEL_API_KEY=$( (grep -E '^TUNNEL_API_KEY=' .env 2>/dev/null || true) | head -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
+export TUNNEL_API_KEY
 exec cargo run -q -p ipow-node -- --settings node.testnet.yml "$@"

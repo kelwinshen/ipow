@@ -70,7 +70,20 @@ contract Conversion is ReentrancyGuard {
         /// Sell: the user's script, to be paid. Buy: the operator's script,
         /// set when it locks the coin.
         bytes script;
+        /// Sell in a tunnel only: the Bitcoin blocks its payment must be
+        /// mined in, those of the buy it pays on another network; zero for
+        /// none. A payment proven outside them refunds the user.
+        uint32 payFrom;
+        uint32 payTo;
+        /// Buy only: the user's own Bitcoin script, as they named it when
+        /// they opened the buy, so an app can show where they said they
+        /// would pay from. Anyone may pay a buy, from anywhere: this is a
+        /// note, not a rule. Empty when not given.
+        bytes userScript;
     }
+
+    /// The longest user script a buy keeps: the longest standard one is 34 bytes.
+    uint256 private constant MAX_USER_SCRIPT = 40;
 
     /// @notice The challenge period of a close: the one kind of claim.
     uint32 public constant CLOSE_PERIOD = 36 hours;
@@ -112,6 +125,9 @@ contract Conversion is ReentrancyGuard {
 
     event Sold(uint256 indexed swapId, uint256 indexed jobId, address indexed user, address token, uint256 amount, uint64 sats, bytes script);
     event Bought(uint256 indexed swapId, uint256 indexed jobId, address indexed user, address token, uint256 amount, uint64 sats);
+    /// @notice A sell whose payment must be mined in these Bitcoin blocks:
+    /// one leg of a tunnel (docs/drafts/ipow-conversion-tunnel.md, T1).
+    event PaymentWindow(uint256 indexed swapId, uint32 payFrom, uint32 payTo);
     event Funded(uint256 indexed swapId, address indexed operator, bytes script);
     event Completed(uint256 indexed swapId, address indexed to);
     event Refunded(uint256 indexed swapId);
@@ -142,6 +158,9 @@ contract Conversion is ReentrancyGuard {
     error AnchorTooOld();
     error NotSlashed();
     error WrongCoin();
+    error BadWindow();
+    error PaidOutsideWindow();
+    error ZeroRecipient();
 
     /// @param coin_ The network's coin: zero for a native coin, else the token
     /// the protocol takes (D136).
@@ -202,6 +221,39 @@ contract Conversion is ReentrancyGuard {
         uint16 confirmations,
         uint256 fees
     ) external payable nonReentrant returns (uint256 swapId) {
+        return _sell(token, amount, sats, script, 0, 0, confirmations, fees);
+    }
+
+    /// @notice A sell as one leg of a tunnel (T1): as `sell`, but its payment
+    /// counts only when mined in Bitcoin blocks `payFrom` to `payTo`, the
+    /// payment blocks of the buy on another network that `script` is the
+    /// operator's address of. A payment proven in another block refunds the
+    /// user, so the user never pays for a buy that will not count it.
+    function sellInWindow(
+        address token,
+        uint256 amount,
+        uint64 sats,
+        bytes calldata script,
+        uint32 payFrom,
+        uint32 payTo,
+        uint16 confirmations,
+        uint256 fees
+    ) external payable nonReentrant returns (uint256 swapId) {
+        if (payFrom == 0 || payTo < payFrom) revert BadWindow();
+        swapId = _sell(token, amount, sats, script, payFrom, payTo, confirmations, fees);
+        emit PaymentWindow(swapId, payFrom, payTo);
+    }
+
+    function _sell(
+        address token,
+        uint256 amount,
+        uint64 sats,
+        bytes calldata script,
+        uint32 payFrom,
+        uint32 payTo,
+        uint16 confirmations,
+        uint256 fees
+    ) private returns (uint256 swapId) {
         if (amount == 0 || sats == 0) revert InvalidAmount();
         if (script.length == 0 || script.length > MAX_SCRIPT_LENGTH) revert InvalidScript();
         if (token == address(0)) {
@@ -219,6 +271,8 @@ contract Conversion is ReentrancyGuard {
         s.amount = amount;
         s.sats = sats;
         s.script = script;
+        s.payFrom = payFrom;
+        s.payTo = payTo;
         s.jobId = _openJob(swapId, confirmations, 0, fees);
         emit Sold(swapId, s.jobId, msg.sender, token, amount, sats, script);
     }
@@ -233,6 +287,7 @@ contract Conversion is ReentrancyGuard {
         iPoWProtocol.Duty memory duty = _provenDuty(s.jobId, rawTx);
         if (duty.slashed) revert NotProven();
         if (block.timestamp < duty.lockEnd || protocol.openChallengesOf(s.jobId) != 0) revert LockNotEnded();
+        if (_outsideWindow(s, duty)) revert PaidOutsideWindow();
         if (!BitcoinPaymentLib.paysAtLeast(rawTx, s.script, s.sats)) revert NotPaid();
 
         s.state = State.Done;
@@ -243,8 +298,9 @@ contract Conversion is ReentrancyGuard {
 
     /// @notice Gives the user their coin back when the operator did not pay:
     /// nobody took the job, the deadline passed with no proof, the proof was
-    /// shown false, or the proven transaction does not pay the user enough
-    /// (then `rawTx` is that transaction). Anyone may call.
+    /// shown false, the proven transaction does not pay the user enough
+    /// (then `rawTx` is that transaction), or, in a tunnel, it was mined
+    /// outside the payment window (`rawTx` not needed). Anyone may call.
     function refundSell(uint256 swapId, bytes calldata rawTx) external nonReentrant {
         Swap storage s = _swaps[swapId];
         if (s.side != Side.Sell || s.state != State.Open) revert WrongState();
@@ -257,8 +313,12 @@ contract Conversion is ReentrancyGuard {
         } else if (status == iPoWProtocol.JobStatus.Assigned) {
             refundable = block.timestamp > protocol.deadlineOf(jobId);
         } else if (status == iPoWProtocol.JobStatus.Proven || status == iPoWProtocol.JobStatus.Settled) {
-            _provenDuty(jobId, rawTx);
-            refundable = !BitcoinPaymentLib.paysAtLeast(rawTx, s.script, s.sats);
+            if (_outsideWindow(s, protocol.getDuty(jobId))) {
+                refundable = true;
+            } else {
+                _provenDuty(jobId, rawTx);
+                refundable = !BitcoinPaymentLib.paysAtLeast(rawTx, s.script, s.sats);
+            }
         }
         if (!refundable) revert NotRefundable();
 
@@ -266,6 +326,7 @@ contract Conversion is ReentrancyGuard {
         emit Refunded(swapId);
         _send(s.token, s.user, s.amount);
         if (status == iPoWProtocol.JobStatus.Slashed) _compensate(swapId, s);
+        _expireIfUntaken(jobId, status);
     }
 
     /// @notice Passes on to the swap's user this application's share of its
@@ -285,10 +346,35 @@ contract Conversion is ReentrancyGuard {
     /// @notice Asks for `amount` of `token` (zero for a native coin) for
     /// `sats` paid on Bitcoin, and pays `fees` for its job in the network's
     /// coin (D138).
-    function buy(address token, uint256 amount, uint64 sats, uint16 confirmations, uint256 fees)
+    /// @param userScript The user's own Bitcoin output script, kept for apps
+    /// to show (empty for none); payments are accepted from anywhere.
+    function buy(address token, uint256 amount, uint64 sats, bytes calldata userScript, uint16 confirmations, uint256 fees)
         external
         payable
         nonReentrant
+        returns (uint256 swapId)
+    {
+        if (userScript.length > MAX_USER_SCRIPT) revert InvalidScript();
+        swapId = _buy(msg.sender, token, amount, sats, confirmations, fees);
+        _swaps[swapId].userScript = userScript;
+    }
+
+    /// @notice A buy whose coin goes to `recipient`, the caller paying the
+    /// fees (T2, D21): an operator opens the buy of a tunnel for the user,
+    /// who then signs only on the other network. The recipient may also be
+    /// the caller.
+    function buyFor(address recipient, address token, uint256 amount, uint64 sats, uint16 confirmations, uint256 fees)
+        external
+        payable
+        nonReentrant
+        returns (uint256 swapId)
+    {
+        if (recipient == address(0)) revert ZeroRecipient();
+        return _buy(recipient, token, amount, sats, confirmations, fees);
+    }
+
+    function _buy(address recipient, address token, uint256 amount, uint64 sats, uint16 confirmations, uint256 fees)
+        private
         returns (uint256 swapId)
     {
         if (amount == 0 || sats == 0) revert InvalidAmount();
@@ -299,12 +385,12 @@ contract Conversion is ReentrancyGuard {
         Swap storage s = _swaps[swapId];
         s.side = Side.Buy;
         s.state = State.Open;
-        s.user = msg.sender;
+        s.user = recipient;
         s.token = token;
         s.amount = amount;
         s.sats = sats;
         s.jobId = _openJob(swapId, confirmations, CLOSE, fees);
-        emit Bought(swapId, s.jobId, msg.sender, token, amount, sats);
+        emit Bought(swapId, s.jobId, recipient, token, amount, sats);
     }
 
     /// @notice The operator of the job locks the coin the user will receive,
@@ -351,6 +437,15 @@ contract Conversion is ReentrancyGuard {
         }
         s.state = State.Cancelled;
         emit Cancelled(swapId);
+        _expireIfUntaken(s.jobId, status);
+    }
+
+    /// @dev A job nobody took expires with its fees back to their payer's
+    /// credit (D61). Anyone may expire it, so this does, with the swap's
+    /// end: one transaction for the user instead of two. The credit is the
+    /// payer's to withdraw from the protocol.
+    function _expireIfUntaken(uint256 jobId, iPoWProtocol.JobStatus status) private {
+        if (status == iPoWProtocol.JobStatus.Expired && !protocol.getJob(jobId).feesReturned) protocol.expire(jobId);
     }
 
     /// @notice Gives the user the coin once the operator's proven
@@ -475,6 +570,14 @@ contract Conversion is ReentrancyGuard {
         // escrow is zero, which the protocol refuses (D55).
         if (escrow == 0) escrow = 1;
         escrowFee = (escrow * ESCROW_FEE_BPS) / protocol.BPS();
+    }
+
+    /// @dev Whether a tunnel's sell was proven by a transaction mined
+    /// outside its payment window (T1). A sell with no window never is.
+    function _outsideWindow(Swap storage s, iPoWProtocol.Duty memory duty) private view returns (bool) {
+        if (s.payFrom == 0) return false;
+        uint256 h = duty.proofBlock.height;
+        return h < s.payFrom || h > s.payTo;
     }
 
     function _openJob(uint256 swapId, uint16 confirmations, uint16 claimKind, uint256 fees) private returns (uint256) {
