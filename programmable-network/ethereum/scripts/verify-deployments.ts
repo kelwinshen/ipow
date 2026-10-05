@@ -47,7 +47,7 @@ for (const file of readdirSync(join(here, "..", "deployments")).filter((f) => f.
     : s.scaledBuild ? ["protocol/iPoWProtocol.sol", s.scaledBuild.name]
     : ["protocol/iPoWProtocol.sol", "iPoWProtocolNative"];
   const vaultName = s.coin.kind === "token" ? ["protocol/iPoWVaultToken.sol", "iPoWVaultToken"] : ["protocol/iPoWVault.sol", "iPoWVaultNative"];
-  const parts: [string, string, string][] = [
+  const parts: [string, string, string, string?][] = [
     [d.lightClient, "protocol/iPoWLightClient.sol", "iPoWLightClient"],
     [d.protocol, protocolName[0], protocolName[1]],
     [d.conversion, "apps/Conversion.sol", "Conversion"],
@@ -56,12 +56,15 @@ for (const file of readdirSync(join(here, "..", "deployments")).filter((f) => f.
     [d.receiptsFactory, "protocol/vault/VaultFactories.sol", "VaultReceiptsFactory"],
   ];
   for (const v of d.vaults) {
-    parts.push([v.vault, vaultName[0], vaultName[1]], [v.home, "protocol/vault/VaultHome.sol", "VaultHome"], [v.receipts, "protocol/vault/VaultReceipts.sol", "VaultReceipts"]);
+    // A pair added later (deploy-pair.ts) names the source its vault was
+    // built from, and has factories of its own.
+    parts.push([v.vault, vaultName[0], vaultName[1], v.source], [v.home, "protocol/vault/VaultHome.sol", "VaultHome", v.source], [v.receipts, "protocol/vault/VaultReceipts.sol", "VaultReceipts", v.source]);
+    if (v.homeFactory) parts.push([v.homeFactory, "protocol/vault/VaultFactories.sol", "VaultHomeFactory", v.source], [v.receiptsFactory, "protocol/vault/VaultFactories.sol", "VaultReceiptsFactory", v.source]);
   }
   if (d.dataFee) parts.push([d.dataFee, "protocol/DataFee.sol", s.dataFee === "op" ? "OpDataFee" : "ArbDataFee"]);
-  for (const [address, f, name] of parts) {
+  for (const [address, f, name, own] of parts) {
     // A contract redeployed alone names its own source (redeploy-conversion.ts).
-    const a = builtFrom(d.sources?.[name] ?? d.source, f, name);
+    const a = builtFrom(own ?? d.sources?.[name] ?? d.source, f, name);
     if (!codeMatches(await p.getCode(address), a.deployedBytecode, a.immutableReferences)) problems.push(`${name} at ${address}: code is not the build's`);
   }
 
@@ -81,10 +84,13 @@ for (const file of readdirSync(join(here, "..", "deployments")).filter((f) => f.
   if (s.scaledBuild) checks.push(["protocol's work scale", await protocol.WORK_SCALE(), s.scaledBuild.workScale]);
   // Parts made before their vault (since 2026-10-03): the factories
   // recorded making them.
-  const homeFactory = at(d.homeFactory, "protocol/vault/VaultFactories.sol", "VaultHomeFactory");
-  const receiptsFactory = at(d.receiptsFactory, "protocol/vault/VaultFactories.sol", "VaultReceiptsFactory");
   for (const v of d.vaults) {
-    if (d.vaultParts !== "made by the vault") {
+    // A vault's factories: the network's, or its own for a pair added later.
+    const homeFactoryAddress = v.homeFactory ?? d.homeFactory;
+    const receiptsFactoryAddress = v.receiptsFactory ?? d.receiptsFactory;
+    const homeFactory = at(homeFactoryAddress, "protocol/vault/VaultFactories.sol", "VaultHomeFactory");
+    const receiptsFactory = at(receiptsFactoryAddress, "protocol/vault/VaultFactories.sol", "VaultReceiptsFactory");
+    if (d.vaultParts !== "made by the vault" || v.homeFactory) {
       checks.push(["parts made by the factories", `${await homeFactory.made(v.home)},${await receiptsFactory.made(v.receipts)}`, "true,true"]);
     }
     const vault = at(v.vault, vaultName[0], vaultName[1]);
@@ -93,7 +99,7 @@ for (const file of readdirSync(join(here, "..", "deployments")).filter((f) => f.
       ["vault's networks", `${await vault.here()},${await vault.peer()}`, `${s.number},${v.peer}`],
       ["vault's peer vault", (await vault.peerVault()).toLowerCase(), v.peerVault.toLowerCase()],
       ["vault's parts", `${getAddress(await vault.home())},${getAddress(await vault.receipts())}`, `${v.home},${v.receipts}`],
-      ["vault's factories", `${await vault.homeFactory()},${await vault.receiptsFactory()}`, `${d.homeFactory},${d.receiptsFactory}`],
+      ["vault's factories", `${await vault.homeFactory()},${await vault.receiptsFactory()}`, `${homeFactoryAddress},${receiptsFactoryAddress}`],
       ["vault's amounts", `${await vault.deposit()},${await vault.minCertifyingEscrow()}`, `${s.vault.testnet!.deposit},${s.vault.testnet!.minCertifyingEscrow}`],
     );
   }

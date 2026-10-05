@@ -7,7 +7,7 @@ import anchor from "@coral-xyz/anchor";
 import { Keypair, PublicKey, SystemProgram, Transaction, TransactionInstruction, sendAndConfirmTransaction } from "@solana/web3.js";
 
 import { SOLANA, SolanaBeta, WRAPPED_SOL, associatedTokenAccount, createAccountIdempotent } from "../src/index.ts";
-import { startValidator, type Local } from "./helpers/validator.ts";
+import { TOKEN_METADATA, startValidator, type Local } from "./helpers/validator.ts";
 
 const { Wallet } = anchor;
 const TOKEN_PROGRAM = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
@@ -49,7 +49,7 @@ const balance = async (owner: PublicKey, mint: PublicKey) =>
   BigInt((await local.connection.getTokenAccountBalance(associatedTokenAccount(owner, mint))).value.amount);
 
 before(async () => {
-  local = await startValidator(18999, { [SOLANA.programs.betaBasket]: "beta_basket" });
+  local = await startValidator(18999, { [SOLANA.programs.betaBasket]: "beta_basket", [TOKEN_METADATA.id]: TOKEN_METADATA.file });
 });
 after(() => local?.stop());
 
@@ -59,7 +59,13 @@ test("makes a BETA basket of two tokens, prices a mint as the program does, mint
   const usd = await token(user, 6, 10n ** 12n);
   const beta = new SolanaBeta(local.connection, new Wallet(user));
   // One BETA holds 0.001 vETH and 2 USD; 0.5% to mint and to burn.
-  const { basket } = await beta.createBasket({ id: 1, parts: [{ mint: veth.toBase58(), amount: 1_000_000n }, { mint: usd.toBase58(), amount: 2_000_000n }], mintFeeBps: 50, burnFeeBps: 50 });
+  const { basket } = await beta.createBasket({ id: 1, name: "Test Basket", symbol: "TBSK", parts: [{ mint: veth.toBase58(), amount: 1_000_000n }, { mint: usd.toBase58(), amount: 2_000_000n }], mintFeeBps: 50, burnFeeBps: 50 });
+
+  // Named by its creator (E4), in its Token Metadata account.
+  const named = await beta.getBasket(basket);
+  assert.equal(named.name, "Test Basket");
+  assert.equal(named.symbol, "TBSK");
+  assert.equal(named.uri, "");
 
   // A first mint is a whole number of BETA.
   await assert.rejects(beta.quoteMint(basket, ONE + 1n), /whole number/);
@@ -90,7 +96,7 @@ test("mints a basket with a wrapped SOL part from plain SOL, defers a part in a 
   const veth = await token(user, 9, 10n ** 12n);
   const beta = new SolanaBeta(connection, new Wallet(user));
   // One BETA holds 0.01 SOL and 0.001 vETH; 1% to mint and to burn.
-  const { basket } = await beta.createBasket({ id: 2, parts: [{ mint: WRAPPED_SOL, amount: 10_000_000n }, { mint: veth.toBase58(), amount: 1_000_000n }], mintFeeBps: 100, burnFeeBps: 100 });
+  const { basket } = await beta.createBasket({ id: 2, name: "Test Basket", symbol: "TBSK", parts: [{ mint: WRAPPED_SOL, amount: 10_000_000n }, { mint: veth.toBase58(), amount: 1_000_000n }], mintFeeBps: 100, burnFeeBps: 100 });
   const wsol = new PublicKey(WRAPPED_SOL);
   assert.equal(await beta.tokenBalance(user.publicKey, wsol), 0n);
 

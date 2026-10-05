@@ -120,3 +120,12 @@ from anywhere, and nothing checks the payment against it. Built and
 tested on EVM networks; the Solana program is unchanged (buys into Solana
 are not open to users yet). Live at the next Conversion redeploy, with
 the one-transaction close above.
+
+## 2026-10-04: a buy carries a memo for operators
+
+Beside its user script, a buy keeps a memo (`buy`'s `memo`, at most 128
+bytes), written by the user's app for operators and not read by the
+contract. A tunnel's buy names in it the sale that will pay it (the
+SDK's `tunnelMemo`), so an operator reading new buys promises that sale
+with no further word from the user: a tunnel is one transaction. Built
+and tested on EVM networks; the Solana program is unchanged.

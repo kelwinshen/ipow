@@ -10,8 +10,15 @@ import { ABIS } from "./generated/abis.ts";
 import { rpcScale, type Deployment } from "./networks.ts";
 
 export type BasketPart = {
-  /** Zero for the network's coin. */
+  /** Zero for the network's coin, and for a receipt the vault has not made yet (E5). */
   token: string;
+  /** For a part that is another network's asset: the vault's receipts
+   *  contract and that asset's number there (E5); zero otherwise. */
+  receipts: string;
+  asset: number;
+  /** False while a receipt part's receipt is not made: nothing can be minted
+   *  until the asset is bridged here. */
+  made: boolean;
   /** What one whole BETA holds of it when the basket is new. */
   amount: bigint;
   /** What the basket holds of it for its holders now. */
@@ -29,9 +36,18 @@ export type Basket = {
   burnFeeBps: number;
   /** The basket's BETA token. */
   beta: string;
+  /** The token's name and symbol, the creator's (E4). */
+  name: string;
+  symbol: string;
+  /** The token's metadata URI (E4): JSON with a description and an image;
+   *  empty when the creator gave none. */
+  uri: string;
   supply: bigint;
   parts: BasketPart[];
 };
+
+/** The limits of a basket's naming (BetaBaskets.MAX_NAME, MAX_SYMBOL, MAX_URI), in bytes. */
+export const BASKET_NAMING = { name: 64, symbol: 16, uri: 2048 } as const;
 
 export type MintQuote = {
   key: string;
@@ -50,15 +66,29 @@ export async function basketKey(provider: Provider, d: Deployment, creator: stri
   return baskets(d, provider).basketKey(creator, id);
 }
 
-/** Creates basket `id` of the signer, with its parts and fees (at most 1%
- *  each, fixed for good). */
+/** A part as the creator names it: a token here (`token`, zero for the
+ *  coin), or another network's asset as the vault's receipt of it, made or
+ *  not yet (`receipts` and `asset`, E5). */
+export type BasketPartSpec = { token?: string; receipts?: string; asset?: number; amount: bigint };
+
+/** Creates basket `id` of the signer: its token's name and symbol, a
+ *  metadata URI (JSON with a description and an image; may be empty), its
+ *  parts and fees (at most 1% each, fixed for good). */
 export async function createBasket(
   signer: Signer,
   d: Deployment,
-  options: { id: bigint | number; parts: { token: string; amount: bigint }[]; mintFeeBps?: number; burnFeeBps?: number }
+  options: { id: bigint | number; name: string; symbol: string; uri?: string; parts: BasketPartSpec[]; mintFeeBps?: number; burnFeeBps?: number }
 ): Promise<{ key: string; beta: string; txHash: string }> {
   const c = baskets(d, signer);
-  const tx = await c.createBasket(options.id, options.parts.map((p) => p.token), options.parts.map((p) => p.amount), options.mintFeeBps ?? 0, options.burnFeeBps ?? 0);
+  const tx = await c.createBasket(
+    options.id,
+    options.name,
+    options.symbol,
+    options.uri ?? "",
+    options.parts.map((p) => ({ token: p.token ?? ZeroAddress, receipts: p.receipts ?? ZeroAddress, asset: p.asset ?? 0, amount: p.amount })),
+    options.mintFeeBps ?? 0,
+    options.burnFeeBps ?? 0
+  );
   const receipt = await tx.wait();
   for (const log of receipt.logs) {
     if (log.address.toLowerCase() !== d.betaBaskets.toLowerCase()) continue;
@@ -72,8 +102,12 @@ export async function getBasket(provider: Provider, d: Deployment, key: string):
   const c = baskets(d, provider);
   const b = await c.getBasket(key);
   if (b.creator === ZeroAddress) throw new Error(`${d.name}: no basket ${key}`);
-  const held: bigint[] = await Promise.all(b.parts.map((_: unknown, i: number) => c.held(key, i)));
-  const supply: bigint = await new Contract(b.beta, ["function totalSupply() view returns (uint256)"], provider).totalSupply();
+  // A receipt part not made yet has no holding to read (PartNotMadeYet).
+  const tokens: string[] = await Promise.all(b.parts.map((_: unknown, i: number) => c.partToken(key, i)));
+  const made = b.parts.map((p: any, i: number) => p.receipts === ZeroAddress || tokens[i] !== ZeroAddress);
+  const held: bigint[] = await Promise.all(b.parts.map((_: unknown, i: number) => (made[i] ? c.held(key, i) : Promise.resolve(0n))));
+  const token = new Contract(b.beta, ["function totalSupply() view returns (uint256)", "function name() view returns (string)", "function symbol() view returns (string)"], provider);
+  const [supply, name, symbol]: [bigint, string, string] = await Promise.all([token.totalSupply(), token.name(), token.symbol()]);
   return {
     key,
     creator: b.creator,
@@ -82,8 +116,11 @@ export async function getBasket(provider: Provider, d: Deployment, key: string):
     mintFeeBps: Number(b.mintFeeBps),
     burnFeeBps: Number(b.burnFeeBps),
     beta: b.beta,
+    name,
+    symbol,
+    uri: b.uri ?? "",
     supply,
-    parts: b.parts.map((p: any, i: number) => ({ token: p.token, amount: p.amount, held: held[i], owed: p.owed })),
+    parts: b.parts.map((p: any, i: number) => ({ token: tokens[i], receipts: p.receipts, asset: Number(p.asset), made: made[i], amount: p.amount, held: held[i], owed: p.owed })),
   };
 }
 

@@ -1,17 +1,18 @@
-// The tunnel's helpers that need no network: the message a registration is
-// signed with (the node's `tunnel_message` has the same words), amounts in
-// smallest units, and estimates at an operator's prices.
+// The tunnel's helpers that need no network: the buy's memo that names the
+// sale (the node's `parse_memo` reads the same words), amounts in smallest
+// units, and estimates at an operator's prices.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { coinFor, fromUnits, satsFor, toUnits, tunnelMessage, type TunnelAsset } from "../src/index.ts";
+import { coinFor, fromUnits, parseTunnelMemo, satsFor, toUnits, tunnelMemo, type TunnelAsset } from "../src/index.ts";
 
-test("the registration message is the node's, word for word", () => {
-  assert.equal(
-    tunnelMessage({ to: "ethereum-sepolia", swapId: 8n, from: "solana-devnet", fromToken: "native", amountIn: 60000000n }),
-    "iPoW tunnel: buy 8 on ethereum-sepolia; sell 60000000 of native on solana-devnet"
-  );
+test("a tunnel's terms go into the buy's memo and come back", () => {
+  const memo = tunnelMemo("solana-devnet", "native", 60000000n);
+  assert.equal(memo, "ipow-tunnel/1 solana-devnet native 60000000");
+  assert.deepEqual(parseTunnelMemo(memo), { from: "solana-devnet", fromToken: "native", amountIn: 60000000n });
+  assert.equal(parseTunnelMemo("hello"), null);
+  assert.equal(parseTunnelMemo("ipow-tunnel/2 a b 1"), null);
 });
 
 test("amounts to and from smallest units, without floating point", () => {

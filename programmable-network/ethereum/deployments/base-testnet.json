@@ -5,8 +5,8 @@
   "lightClient": "0x10C9C79C8c46c1f9f07D7A258Bbd42B4ED6f973E",
   "dataFee": "0x15390C4901e11D3732489825c2FBa33A2E3e5b37",
   "protocol": "0x2Dd456fCe7B3574AbD76b2899d3106CaB6ff5b9B",
-  "conversion": "0x6CCCA5c12689DC5d14F8C540c7c0C9a20731e8C1",
-  "betaBaskets": "0xf35A1C4A9dE7B7FffF62c7cEfda2ac91a71cB6cc",
+  "conversion": "0x07eFF65A853f36cBA8FEFbC495eb6A0D98d26a75",
+  "betaBaskets": "0xB6C7e5Db33F34D86102C8Df0AcACAd7052699162",
   "homeFactory": "0x01BE560A22e91201C9414b634f0a61085F84dD08",
   "receiptsFactory": "0x4265A27605cDd45b69d36f17635Bad03351387e6",
   "vaults": [
@@ -16,6 +16,39 @@
       "vault": "0x4cFD981522F31A4dc12Aeb433907ebc3CBD37A55",
       "home": "0xA1C38ee95A97d8F8355313c3De4D1C914B04693c",
       "receipts": "0xD0bE0340C8cB132D8AF1765Af0d7358Af434984c"
+    },
+    {
+      "peer": 1,
+      "peerVault": "0x0000000000000000000000007901fd0a77124eba55cb4599f67b0405f43e00c3",
+      "vault": "0xCe6Cda46Ac4d02c6BbB3613de07821e0fd80b313",
+      "home": "0x5D0174Bd9f6d10840d4d9FEeA2CcBdBbAb5777C8",
+      "receipts": "0x54BC75a61D3F0D213F0828755Ef6E7ef1f2422c6",
+      "homeFactory": "0x4F479930C9f65FA41bb9aBF09bCaE668e0857DFE",
+      "receiptsFactory": "0x46bC1Efc370FDe6945014a52756E75f919AD8067",
+      "source": "current",
+      "at": "2026-10-05T13:53:21.288Z"
+    },
+    {
+      "peer": 4,
+      "peerVault": "0x0000000000000000000000003221102ac4159048960e061fc0adb81de3133496",
+      "vault": "0xCA92aED3Bbb8Bab3e877Bf3092924aD51B2a00d4",
+      "home": "0x2E3Fe0bF1955188Da561EAb643f15bcd413A1512",
+      "receipts": "0x38E0Bf6cFcc850430D51f8b3E899e9F225aA8d5D",
+      "homeFactory": "0xD44a36ac5549EbE7c7A54642104867539b2d01A1",
+      "receiptsFactory": "0xE610e70B799b3d169BeA946a9029655226985805",
+      "source": "current",
+      "at": "2026-10-05T14:27:56.465Z"
+    },
+    {
+      "peer": 7,
+      "peerVault": "0x000000000000000000000000afc5e11a1e2a0443248844757c9a2256da5a742a",
+      "vault": "0xA4F697D5ED3Bcb96CA147c13a157779daE11d2aa",
+      "home": "0x74C2Bce2f8d7657d407AA01b28a40De592f6880C",
+      "receipts": "0x02FdE8720777E07D5C40BAAA048C1C398C4573eC",
+      "homeFactory": "0x840ba28Ca3edDB6F8934529F56d8cf55357b13b9",
+      "receiptsFactory": "0xc6d84d6bE65567a5f54f1dc92f378421EeB6b45A",
+      "source": "current",
+      "at": "2026-10-05T14:32:04.221Z"
     }
   ],
   "deployer": "0x9784B80BC7b95753f2a2732649F3a1136b4c2BF1",
@@ -25,11 +58,13 @@
   "at": "2026-10-02T14:28:10.904Z",
   "source": "a9493c7",
   "vaultParts": "made by the vault",
-  "previousConversion": "0x6c5d75F830C002f4B73b4625F3E2bFaeC50b5D2E",
+  "previousConversion": "0x8A5EB387b8b1CBd5cBAFBE2088aCE6d589eb4F59",
   "unusedConversions": [
     "0xCA39c4e5d4f938A380E61475bF4CeF8D1B7d6190"
   ],
   "sources": {
-    "Conversion": "current"
-  }
+    "Conversion": "current",
+    "BetaBaskets": "current"
+  },
+  "previousBetaBaskets": "0x6B70Af8a21a16F0c36dF37Ff1BAC581Cd3894Cb7"
 }

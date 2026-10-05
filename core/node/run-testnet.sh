@@ -8,6 +8,8 @@ set -euo pipefail
 cd "$(dirname "$0")"
 set -a
 . ../../programmable-network/ethereum/.env
+# The other EVM test networks' endpoints and keys: each package's own .env.
+for n in base hyperliquid robinhood; do . "../../programmable-network/$n/.env"; done
 set +a
 export SOLANA_RPC_URL=https://api.devnet.solana.com
 SOLANA_KEY=$(cat "$HOME/.config/solana/id.json")

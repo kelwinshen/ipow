@@ -20,6 +20,9 @@ const SYSTEM: Pubkey = anchor_lang::solana_program::system_program::ID;
 const TOKEN: Pubkey = anchor_spl::token::ID;
 const TOKEN22: Pubkey = anchor_spl::token_2022::ID;
 const ATA: Pubkey = anchor_spl::associated_token::ID;
+/// Token Metadata, as the program names it (its id and seed are not in the IDL).
+const METADATA_PROGRAM: Pubkey = Pubkey::from_str_const("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s");
+const METADATA_SEED: &[u8] = b"metadata";
 const CAN_FREEZE: u8 = 1;
 const CAN_MOVE: u8 = 4;
 
@@ -29,6 +32,10 @@ fn bk(seeds: &[&[u8]]) -> Pubkey {
 fn basket_pda(creator: &Pubkey, id: u64) -> Pubkey {
     bk(&[b"basket", creator.as_ref(), &id.to_le_bytes()])
 }
+fn metadata_pda(mint: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(&[METADATA_SEED, METADATA_PROGRAM.as_ref(), mint.as_ref()], &METADATA_PROGRAM).0
+}
+
 fn beta_pda(basket: &Pubkey) -> Pubkey {
     bk(&[b"beta", basket.as_ref()])
 }
@@ -62,7 +69,12 @@ struct World {
 
 impl World {
     fn new() -> Self {
-        let mut ctx = AnchorLiteSVM::build_with_programs(&[(beta_basket::ID, include_bytes!("../../../target/deploy/beta_basket.so"))]);
+        // Token Metadata, as deployed (fixtures/mpl_token_metadata.so, dumped
+        // from mainnet on 2026-10-05): a basket's token is named through it.
+        let mut ctx = AnchorLiteSVM::build_with_programs(&[
+            (beta_basket::ID, include_bytes!("../../../target/deploy/beta_basket.so")),
+            (METADATA_PROGRAM, include_bytes!("fixtures/mpl_token_metadata.so")),
+        ]);
         let creator = ctx.svm.create_funded_account(100 * SOL).unwrap();
         let user = ctx.svm.create_funded_account(100 * SOL).unwrap();
         let wsol = litesvm_token::CreateMint::new(&mut ctx.svm, &creator).decimals(9).send().unwrap();
@@ -123,6 +135,12 @@ impl World {
         mint.pubkey()
     }
 
+    fn send_all(&mut self, ixs: Vec<Instruction>, signers: &[&Keypair]) -> Result<(), String> {
+        self.ctx.svm.expire_blockhash();
+        let r = self.ctx.execute_instructions(ixs, signers).unwrap();
+        if r.is_success() { Ok(()) } else { Err(r.logs().join("\n")) }
+    }
+
     fn send(&mut self, ix: Instruction, signers: &[&Keypair]) -> Result<(), String> {
         self.ctx.svm.expire_blockhash();
         // A basket of many parts needs more than Solana's default 200,000
@@ -154,6 +172,10 @@ impl World {
     }
 
     fn create(&mut self, id: u64, parts: Vec<(Pubkey, u64)>, mint_fee_bps: u16, burn_fee_bps: u16) -> Result<Pubkey, String> {
+        self.create_named(id, "Test Basket", "TBSK", "data:application/json,{}", parts, mint_fee_bps, burn_fee_bps)
+    }
+
+    fn create_named(&mut self, id: u64, name: &str, symbol: &str, uri: &str, parts: Vec<(Pubkey, u64)>, mint_fee_bps: u16, burn_fee_bps: u16) -> Result<Pubkey, String> {
         let creator = self.creator.insecure_clone();
         let basket = basket_pda(&creator.pubkey(), id);
         let mints: Vec<Pubkey> = parts.iter().map(|(m, _)| *m).collect();
@@ -162,12 +184,17 @@ impl World {
                 basket,
                 beta: beta_pda(&basket),
                 fees: fees_pda(&basket, &creator.pubkey()),
+                metadata: metadata_pda(&beta_pda(&basket)),
                 creator: creator.pubkey(),
                 token_program: TOKEN,
                 system_program: SYSTEM,
+                metadata_program: METADATA_PROGRAM,
             },
             beta_basket::client::args::CreateBasket {
                 id,
+                name: name.to_string(),
+                symbol: symbol.to_string(),
+                uri: uri.to_string(),
                 parts: parts
                     .into_iter()
                     .map(|(mint, amount)| beta_basket::types::Part { mint, amount, token_program: Pubkey::default(), decimals: 0, powers: 0, owed: 0 })
@@ -204,10 +231,12 @@ impl World {
         let user = self.user.pubkey();
         let mut out = vec![];
         for p in &b.parts {
+            // A pending part (E5) has no program recorded: the client knows it.
+            let program = if p.token_program == Pubkey::default() { self.programs[&p.mint] } else { p.token_program };
             out.push(AccountMeta::new_readonly(p.mint, false));
-            out.push(AccountMeta::new(ata(basket, &p.mint, &p.token_program), false));
-            out.push(AccountMeta::new(ata(&user, &p.mint, &p.token_program), false));
-            out.push(AccountMeta::new_readonly(p.token_program, false));
+            out.push(AccountMeta::new(ata(basket, &p.mint, &program), false));
+            out.push(AccountMeta::new(ata(&user, &p.mint, &program), false));
+            out.push(AccountMeta::new_readonly(program, false));
         }
         out
     }
@@ -373,8 +402,10 @@ fn refuses_bad_baskets() {
     expect_err(w.create(1, nine, 0, 0), "BadParts");
     expect_err(w.create(1, vec![(wsol, ONE)], 101, 0), "FeeTooHigh");
     expect_err(w.create(1, vec![(wsol, ONE)], 0, 101), "FeeTooHigh");
-    // Not a mint at all.
-    expect_err(w.create(1, vec![(Pubkey::new_unique(), ONE)], 0, 0), "BadMint");
+    // An account that holds data but is no mint (a token account) is
+    // refused; one that does not exist is a receipt not made yet (E5).
+    let not_a_mint = ata(&w.user.pubkey(), &wsol, &TOKEN);
+    expect_err(w.create(1, vec![(not_a_mint, ONE)], 0, 0), "BadMint");
     // A token that takes a fee on transfer breaks the accounting: refused.
     let with_fee = w.mint22(false, true);
     expect_err(w.create(1, vec![(with_fee, ONE)], 0, 0), "BadMint");
@@ -745,4 +776,67 @@ fn hands_the_fee_on_to_any_receiver_that_can_collect() {
     let veth = w.veth;
     expect_err(w.collect_fees(&basket, &creator, 0, ata(&creator.pubkey(), &veth, &TOKEN)), "WrongAccount");
     w.collect_fees(&basket, &creator, 0, ata(&creator.pubkey(), &wsol, &TOKEN)).unwrap();
+}
+
+/// The name, symbol and URI a Token Metadata account holds (fixed-width, NUL-padded).
+fn read_metadata(data: &[u8]) -> (String, String, String) {
+    let mut at = 1 + 32 + 32;
+    let mut str = |width: usize| {
+        let len = u32::from_le_bytes(data[at..at + 4].try_into().unwrap()) as usize;
+        let v = String::from_utf8(data[at + 4..at + 4 + len].to_vec()).unwrap().trim_end_matches('\0').to_string();
+        at += 4 + width;
+        v
+    };
+    (str(32), str(10), str(200))
+}
+
+#[test]
+fn names_the_token_as_its_creator_does_and_refuses_bad_names() {
+    let mut w = World::new();
+    let basket = w.create_named(9, "Gold & Treasuries", "GTB", "data:application/json,{\"description\":\"x\"}", vec![(w.wsol, ONE)], 25, 50).unwrap();
+    let meta = w.ctx.svm.get_account(&metadata_pda(&beta_pda(&basket))).expect("a metadata account");
+    assert_eq!(meta.owner, METADATA_PROGRAM);
+    assert_eq!(read_metadata(&meta.data), ("Gold & Treasuries".into(), "GTB".into(), "data:application/json,{\"description\":\"x\"}".into()));
+    // Immutable, with the basket as its update authority: Metadata V1 is
+    // key (1), update authority (32), mint (32), the three strings (36, 14,
+    // 204), the seller fee (2), creators None (1), primary sale (1), mutable (1).
+    assert_eq!(meta.data[0], 4, "a MetadataV1 account");
+    assert_eq!(Pubkey::new_from_array(meta.data[1..33].try_into().unwrap()), basket);
+    assert_eq!(meta.data[323], 0, "immutable");
+    // The program's own refusals, before Token Metadata sees anything.
+    expect_err(w.create_named(10, "", "X", "", vec![(w.wsol, ONE)], 0, 0), "BadMetadata");
+    expect_err(w.create_named(10, "N", "", "", vec![(w.wsol, ONE)], 0, 0), "BadMetadata");
+    expect_err(w.create_named(10, &"n".repeat(33), "X", "", vec![(w.wsol, ONE)], 0, 0), "BadMetadata");
+    expect_err(w.create_named(10, "N", &"s".repeat(11), "", vec![(w.wsol, ONE)], 0, 0), "BadMetadata");
+    expect_err(w.create_named(10, "N", "X", &"u".repeat(201), vec![(w.wsol, ONE)], 0, 0), "BadMetadata");
+    w.create_named(10, &"n".repeat(32), &"s".repeat(10), &"u".repeat(200), vec![(w.wsol, ONE)], 0, 0).unwrap();
+}
+
+#[test]
+fn takes_a_part_whose_mint_is_not_made_yet_and_mints_once_it_is() {
+    let mut w = World::new();
+    // A receipt the vault has not made: its address is known, its account empty.
+    let future = Keypair::new();
+    let basket = w.create(11, vec![(w.wsol, ONE), (future.pubkey(), ONE)], 0, 0).unwrap();
+    let b = w.basket(&basket);
+    assert_eq!(b.parts[1].token_program, Pubkey::default(), "pending");
+    assert_eq!(b.parts[1].decimals, 0);
+    // Nothing can be minted while it is not made.
+    w.programs.insert(future.pubkey(), TOKEN);
+    expect_err(w.mint(&basket, ONE), "PartNotMadeYet");
+    // The vault makes it (here, the test): a classic mint of 9 decimals, the user funded.
+    let creator = w.creator.insecure_clone();
+    let rent = w.ctx.svm.minimum_balance_for_rent_exemption(82);
+    let create = anchor_lang::solana_program::system_instruction::create_account(&creator.pubkey(), &future.pubkey(), rent, 82, &TOKEN);
+    let mut init = vec![20u8, 9]; // InitializeMint2, 9 decimals, the creator its authority, no freeze authority
+    init.extend_from_slice(creator.pubkey().as_ref());
+    init.push(0);
+    let init = Instruction { program_id: TOKEN, accounts: vec![AccountMeta::new(future.pubkey(), false)], data: init };
+    w.send_all(vec![create, init], &[&creator, &future]).unwrap();
+    w.fund(&future.pubkey(), 10 * ONE);
+    w.mint(&basket, ONE).unwrap();
+    let b = w.basket(&basket);
+    assert_eq!(b.parts[1].token_program, TOKEN, "read when first minted");
+    assert_eq!(b.parts[1].decimals, 9);
+    assert_eq!(w.user_has(&future.pubkey()), 9 * ONE);
 }

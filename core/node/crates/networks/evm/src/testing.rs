@@ -376,6 +376,6 @@ impl World for EvmWorld {
 
     async fn user_buy(&self, amount: Amount, sats: u64) {
         let c = crate::contracts::Conversion::new(self.conversion, &self.user);
-        c.buy(Address::ZERO, U256::from(amount), sats, Bytes::new(), 6, U256::from(ETH / 10)).value(U256::from(ETH / 10)).gas(2_000_000).send().await.unwrap().get_receipt().await.unwrap();
+        c.buy(Address::ZERO, U256::from(amount), sats, Bytes::new(), Bytes::new(), 6, U256::from(ETH / 10)).value(U256::from(ETH / 10)).gas(2_000_000).send().await.unwrap().get_receipt().await.unwrap();
     }
 }

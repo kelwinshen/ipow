@@ -23,12 +23,17 @@ pair on Solana is the account `Gyhrq1CzHyU9BfECK5G8RW4ho75oaRPqMngXYYvLuduL`.
 | Protocol | `0x2Dd456fCe7B3574AbD76b2899d3106CaB6ff5b9B` |
 | Reader of the data price (D135) | `0x15390C4901e11D3732489825c2FBa33A2E3e5b37` |
 | Conversion | `0x6c5d75F830C002f4B73b4625F3E2bFaeC50b5D2E` |
-| BETA (`BetaBaskets`) | `0xf35A1C4A9dE7B7FffF62c7cEfda2ac91a71cB6cc` |
+| BETA (`BetaBaskets`), named baskets and parts named before bridged (E4, E5), 2026-10-05 | `0xB6C7e5Db33F34D86102C8Df0AcACAd7052699162` |
+| BETA, the E4-only build of the same morning (its baskets stay there) | `0x6B70Af8a21a16F0c36dF37Ff1BAC581Cd3894Cb7` |
+| BETA, the build of 2026-10-02 (its baskets stay there) | `0xf35A1C4A9dE7B7FffF62c7cEfda2ac91a71cB6cc` |
 | Vault home factory | `0x01BE560A22e91201C9414b634f0a61085F84dD08` |
 | Vault receipts factory | `0x4265A27605cDd45b69d36f17635Bad03351387e6` |
 | Vault paired with Solana | `0x4cFD981522F31A4dc12Aeb433907ebc3CBD37A55` |
 | Its home part | `0xA1C38ee95A97d8F8355313c3De4D1C914B04693c` |
 | Its receipts part | `0xD0bE0340C8cB132D8AF1765Af0d7358Af434984c` |
+| Vault paired with HyperEVM testnet (2026-10-05) | `0xA4F697D5ED3Bcb96CA147c13a157779daE11d2aa`; home `0x74C2Bce2f8d7657d407AA01b28a40De592f6880C`, receipts `0x02FdE8720777E07D5C40BAAA048C1C398C4573eC`, its factories `0x840ba28Ca3edDB6F8934529F56d8cf55357b13b9` and `0xc6d84d6bE65567a5f54f1dc92f378421EeB6b45A` |
+| Vault paired with Robinhood testnet (2026-10-05) | `0xCA92aED3Bbb8Bab3e877Bf3092924aD51B2a00d4`; home `0x2E3Fe0bF1955188Da561EAb643f15bcd413A1512`, receipts `0x38E0Bf6cFcc850430D51f8b3E899e9F225aA8d5D`, its factories `0xD44a36ac5549EbE7c7A54642104867539b2d01A1` and `0xE610e70B799b3d169BeA946a9029655226985805` |
+| Vault paired with Sepolia (2026-10-05) | `0xCe6Cda46Ac4d02c6BbB3613de07821e0fd80b313`; home `0x5D0174Bd9f6d10840d4d9FEeA2CcBdBbAb5777C8`, receipts `0x54BC75a61D3F0D213F0828755Ef6E7ef1f2422c6`, its factories `0x4F479930C9f65FA41bb9aBF09bCaE668e0857DFE` and `0x46bC1Efc370FDe6945014a52756E75f919AD8067` |
 
 ## Setup
 

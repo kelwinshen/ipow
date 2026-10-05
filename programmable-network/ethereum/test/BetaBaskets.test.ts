@@ -23,8 +23,14 @@ async function setup() {
 
 type Ctx = Awaited<ReturnType<typeof setup>>;
 
+/** A basket's naming for the tests: the creator's name and symbol, and a URI. */
+const NAMED = ["Test Basket", "TBSK", "data:application/json,{}"] as const;
+
+/** Parts as the contract takes them: tokens here (E5's receipts are named in their own tests). */
+const specs = (tokens: string[], amounts: bigint[]) => tokens.map((token, i) => ({ token, receipts: ZERO, asset: 0, amount: amounts[i] }));
+
 async function create(ctx: Ctx, id: number, tokens: string[], amounts: bigint[], mintFee: number, burnFee: number) {
-  await ctx.app.connect(ctx.creator).createBasket(id, tokens, amounts, mintFee, burnFee);
+  await ctx.app.connect(ctx.creator).createBasket(id, ...NAMED, specs(tokens, amounts), mintFee, burnFee);
   const key = await ctx.app.basketKey(ctx.creator.address, id);
   const b = await ctx.app.getBasket(key);
   const beta = await ethers.getContractAt("BetaBasket", b.beta);
@@ -124,11 +130,93 @@ describe("BetaBaskets", function () {
     const key = await app.basketKey(creator.address, 7);
     const code = (await ethers.getContractFactory("BetaBasket")).bytecode;
     const predicted = ethers.getCreate2Address(await app.getAddress(), key, ethers.keccak256(code));
-    await app.connect(creator).createBasket(7, [v], [ONE], 0, 0);
+    await app.connect(creator).createBasket(7, ...NAMED, specs([v], [ONE]), 0, 0);
     expect((await app.getBasket(key)).beta).to.equal(predicted);
-    await expect(app.connect(creator).createBasket(7, [ZERO], [ETH], 0, 0)).to.be.revert(ethers);
+    await expect(app.connect(creator).createBasket(7, ...NAMED, specs([ZERO], [ETH]), 0, 0)).to.be.revert(ethers);
     // Another creator's number 7 is another basket.
-    await app.connect(other).createBasket(7, [ZERO], [ETH], 0, 0);
+    await app.connect(other).createBasket(7, ...NAMED, specs([ZERO], [ETH]), 0, 0);
+  });
+
+  it("names the token as its creator does, keeps the metadata URI, and refuses bad names (E4)", async function () {
+    const { app, vsol, creator } = await setup();
+    const v = await vsol.getAddress();
+    const c = app.connect(creator);
+    await expect(c.createBasket(3, "Gold & Treasuries", "GTB", "data:application/json,{\"description\":\"x\"}", specs([v], [ONE]), 25, 50))
+      .to.emit(app, "BasketCreated")
+      .withArgs(await app.basketKey(creator.address, 3), creator.address, 3, (a: string) => a !== ZERO, "Gold & Treasuries", "GTB", "data:application/json,{\"description\":\"x\"}", 25, 50);
+    const key = await app.basketKey(creator.address, 3);
+    const b = await app.getBasket(key);
+    const beta = await ethers.getContractAt("BetaBasket", b.beta);
+    expect(await beta.name()).to.equal("Gold & Treasuries");
+    expect(await beta.symbol()).to.equal("GTB");
+    expect(await beta.decimals()).to.equal(9);
+    expect(b.uri).to.equal("data:application/json,{\"description\":\"x\"}");
+    // Nothing is left for the next creation to read.
+    expect(await app.creatingName()).to.equal("");
+    expect(await app.creatingSymbol()).to.equal("");
+    // Limits: a name and a symbol of 1 to 64 and 16 bytes, a URI of at most 2,048.
+    await expect(c.createBasket(4, "", "X", "", specs([v], [ONE]), 0, 0)).to.be.revertedWithCustomError(app, "BadMetadata");
+    await expect(c.createBasket(4, "N", "", "", specs([v], [ONE]), 0, 0)).to.be.revertedWithCustomError(app, "BadMetadata");
+    await expect(c.createBasket(4, "n".repeat(65), "X", "", specs([v], [ONE]), 0, 0)).to.be.revertedWithCustomError(app, "BadMetadata");
+    await expect(c.createBasket(4, "N", "s".repeat(17), "", specs([v], [ONE]), 0, 0)).to.be.revertedWithCustomError(app, "BadMetadata");
+    await expect(c.createBasket(4, "N", "X", "u".repeat(2049), specs([v], [ONE]), 0, 0)).to.be.revertedWithCustomError(app, "BadMetadata");
+    await c.createBasket(4, "n".repeat(64), "s".repeat(16), "u".repeat(2048), specs([v], [ONE]), 0, 0);
+    // The same id with another name is still the same address: refused.
+    await expect(c.createBasket(3, "Another", "AN", "", specs([ZERO], [ETH]), 0, 0)).to.be.revert(ethers);
+  });
+
+  it("takes a part that is a receipt not made yet, and mints once the vault has made it (E5)", async function () {
+    const { app, vsol, creator, user } = await setup();
+    const v = await vsol.getAddress();
+    const mock = await ethers.deployContract("MockReceipts");
+    const receipts = await mock.getAddress();
+    const c = app.connect(creator);
+    // ETH, plus the peer's asset 1 as a receipt, named before it exists.
+    await c.createBasket(5, ...NAMED, [{ token: ZERO, receipts: ZERO, asset: 0, amount: ETH }, { token: ZERO, receipts, asset: 1, amount: ONE }], 0, 0);
+    const key = await app.basketKey(creator.address, 5);
+    let b = await app.getBasket(key);
+    expect(b.parts[1].token).to.equal(ZERO);
+    expect(b.parts[1].receipts).to.equal(receipts);
+    expect(b.parts[1].asset).to.equal(1);
+    expect(await app.partToken(key, 0)).to.equal(ZERO);
+    expect(await app.partToken(key, 1)).to.equal(ZERO);
+    // Nothing can be priced or minted while the receipt is not made.
+    await expect(app.held(key, 1)).to.be.revertedWithCustomError(app, "PartNotMadeYet");
+    await expect(app.mintCost(key, ONE)).to.be.revertedWithCustomError(app, "PartNotMadeYet");
+    await expect(app.connect(user).mint(key, ONE, { value: ETH })).to.be.revertedWithCustomError(app, "PartNotMadeYet");
+    // The vault makes it (here, the mock): vSOL. The part resolves on use.
+    await mock.make(1, v);
+    expect(await app.partToken(key, 1)).to.equal(v);
+    const [need] = await app.mintCost(key, ONE);
+    expect(need[1]).to.equal(ONE);
+    await app.connect(user).mint(key, ONE, { value: ETH });
+    b = await app.getBasket(key);
+    expect(b.parts[1].token).to.equal(v);
+    expect(await app.held(key, 1)).to.equal(ONE);
+    const beta = await ethers.getContractAt("BetaBasket", b.beta);
+    expect(await beta.balanceOf(user.address)).to.equal(ONE);
+    await app.connect(user).burn(key, ONE, 0, user.address);
+    expect(await vsol.balanceOf(user.address)).to.equal(100n * ONE);
+    // A receipt made already resolves at creation.
+    await c.createBasket(6, ...NAMED, [{ token: ZERO, receipts, asset: 1, amount: ONE }], 0, 0);
+    expect((await app.getBasket(await app.basketKey(creator.address, 6))).parts[0].token).to.equal(v);
+  });
+
+  it("refuses bad receipt parts (E5)", async function () {
+    const { app, vsol, creator } = await setup();
+    const v = await vsol.getAddress();
+    const mock = await ethers.deployContract("MockReceipts");
+    const receipts = await mock.getAddress();
+    const c = app.connect(creator);
+    // A receipts contract with no code; a receipt part naming a token too.
+    await expect(c.createBasket(1, ...NAMED, [{ token: ZERO, receipts: creator.address, asset: 1, amount: ONE }], 0, 0)).to.be.revertedWithCustomError(app, "BadParts");
+    await expect(c.createBasket(1, ...NAMED, [{ token: v, receipts, asset: 1, amount: ONE }], 0, 0)).to.be.revertedWithCustomError(app, "BadParts");
+    // The same asset twice, and a made receipt also named as a token.
+    await expect(c.createBasket(1, ...NAMED, [{ token: ZERO, receipts, asset: 1, amount: ONE }, { token: ZERO, receipts, asset: 1, amount: ONE }], 0, 0)).to.be.revertedWithCustomError(app, "BadParts");
+    await mock.make(2, v);
+    await expect(c.createBasket(1, ...NAMED, [{ token: v, receipts: ZERO, asset: 0, amount: ONE }, { token: ZERO, receipts, asset: 2, amount: ONE }], 0, 0)).to.be.revertedWithCustomError(app, "BadParts");
+    // ETH twice.
+    await expect(c.createBasket(1, ...NAMED, [{ token: ZERO, receipts: ZERO, asset: 0, amount: ETH }, { token: ZERO, receipts: ZERO, asset: 0, amount: ETH }], 0, 0)).to.be.revertedWithCustomError(app, "BadParts");
   });
 
   it("rounds in the basket's favour", async function () {
@@ -182,17 +270,17 @@ describe("BetaBaskets", function () {
     const { app, vsol, creator } = ctx;
     const v = await vsol.getAddress();
     const c = app.connect(creator);
-    await expect(c.createBasket(1, [], [], 0, 0)).to.be.revertedWithCustomError(app, "BadParts");
-    await expect(c.createBasket(1, [v, v], [ONE, ONE], 0, 0)).to.be.revertedWithCustomError(app, "BadParts");
-    await expect(c.createBasket(1, [v], [0], 0, 0)).to.be.revertedWithCustomError(app, "BadParts");
-    await expect(c.createBasket(1, [v, ZERO], [ONE], 0, 0)).to.be.revertedWithCustomError(app, "BadParts");
+    await expect(c.createBasket(1, ...NAMED, specs([], []), 0, 0)).to.be.revertedWithCustomError(app, "BadParts");
+    await expect(c.createBasket(1, ...NAMED, specs([v, v], [ONE, ONE]), 0, 0)).to.be.revertedWithCustomError(app, "BadParts");
+    await expect(c.createBasket(1, ...NAMED, specs([v], [0]), 0, 0)).to.be.revertedWithCustomError(app, "BadParts");
+    await expect(c.createBasket(1, ...NAMED, [{ token: v, receipts: ZERO, asset: 0, amount: ONE }, { token: ZERO, receipts: ZERO, asset: 0, amount: 0n }], 0, 0)).to.be.revertedWithCustomError(app, "BadParts");
     const nine = await Promise.all(Array.from({ length: 9 }, () => ethers.deployContract("MockToken", ["T", "T", 9])));
-    await expect(c.createBasket(1, await Promise.all(nine.map((t) => t.getAddress())), nine.map(() => 1n), 0, 0)).to.be.revertedWithCustomError(app, "BadParts");
-    await expect(c.createBasket(1, [v], [ONE], 101, 0)).to.be.revertedWithCustomError(app, "FeeTooHigh");
-    await expect(c.createBasket(1, [v], [ONE], 0, 101)).to.be.revertedWithCustomError(app, "FeeTooHigh");
+    await expect(c.createBasket(1, ...NAMED, specs(await Promise.all(nine.map((t) => t.getAddress())), nine.map(() => 1n)), 0, 0)).to.be.revertedWithCustomError(app, "BadParts");
+    await expect(c.createBasket(1, ...NAMED, specs([v], [ONE]), 101, 0)).to.be.revertedWithCustomError(app, "FeeTooHigh");
+    await expect(c.createBasket(1, ...NAMED, specs([v], [ONE]), 0, 101)).to.be.revertedWithCustomError(app, "FeeTooHigh");
     // Not a token at all: an account with no code.
-    await expect(c.createBasket(1, [creator.address], [ONE], 0, 0)).to.be.revertedWithCustomError(app, "BadParts");
-    await c.createBasket(1, [v], [ONE], 100, 100);
+    await expect(c.createBasket(1, ...NAMED, specs([creator.address], [ONE]), 0, 0)).to.be.revertedWithCustomError(app, "BadParts");
+    await c.createBasket(1, ...NAMED, specs([v], [ONE]), 100, 100);
   });
 
   it("refuses a token that takes a fee on transfer when minting", async function () {

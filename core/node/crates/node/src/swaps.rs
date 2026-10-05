@@ -67,7 +67,7 @@ pub struct Swaps {
     key_index: u32,
     /// The network's name in the settings.
     network: String,
-    /// The tunnels this node registered: their sells are taken on the terms
+    /// The tunnels this node promised: their sells are taken on the terms
     /// quoted.
     tunnels: Option<Arc<TunnelBook>>,
     state: Mutex<State>,
@@ -198,6 +198,14 @@ impl Swaps {
         if promised == Promised::No && !price_ok(swap.side, swap.sats, swap.amount, price) {
             return Ok(false);
         }
+        // A buy whose memo names a tunnel: taken only when its sale can be
+        // promised (it is, once the bid is in: `reserve`).
+        if swap.side == Side::Buy
+            && let Some(book) = &self.tunnels
+            && !book.can_take_buy(&self.network, swap, wallet).await
+        {
+            return Ok(false);
+        }
         let reserved: Vec<Reserve> = self.state.lock().await.reserved.iter().filter(|(j, _)| **j != job_id).map(|(_, r)| r.clone()).collect();
         Ok(match swap.side {
             Side::Sell => {
@@ -225,10 +233,11 @@ impl Swaps {
             Side::Buy => Reserve { sats: 0, token: swap.token.clone(), amount: swap.amount },
         };
         self.state.lock().await.reserved.insert(job_id, r);
-        if swap.side == Side::Sell
-            && let Some(book) = &self.tunnels
-        {
-            book.take(&self.network, swap).await;
+        if let Some(book) = &self.tunnels {
+            match swap.side {
+                Side::Sell => book.take(&self.network, swap).await,
+                Side::Buy => book.promise_buy(&self.network, swap).await,
+            }
         }
     }
 

@@ -110,7 +110,7 @@ async function setup() {
   await protocol.connect(operator).registerChainHead(block, first, merkle(ids, index).siblings, index, 0, 1);
 
   // A funded buy: the user asks 1 ETH for 0.05 BTC, the operator wins, anchors and locks it.
-  await conversion.connect(user).buy(ethers.ZeroAddress, ETH, 5_000_000n, "0x", 6, FEES, { value: FEES, gasLimit: GAS });
+  await conversion.connect(user).buy(ethers.ZeroAddress, ETH, 5_000_000n, "0x", "0x", 6, FEES, { value: FEES, gasLimit: GAS });
   const jobId = (await conversion.getSwap(1n)).jobId;
   await protocol.connect(operator).bid(jobId, await protocol.minimumBidOf(jobId));
   await mineAt((await latestTime()) + 61);

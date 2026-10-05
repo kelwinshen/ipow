@@ -14,14 +14,20 @@ const deploy = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "
 
 export type Local = { connection: Connection; authority: Keypair; stop(): void };
 
-/** Starts a validator with `programs` (id → build name in target/deploy). */
+/** Metaplex Token Metadata, as deployed: a basket's token is named through
+ *  it. Dumped from mainnet on 2026-10-05 into the basket program's test
+ *  fixtures. */
+export const TOKEN_METADATA = { id: "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s", file: join(deploy, "..", "..", "programs", "beta-basket", "tests", "fixtures", "mpl_token_metadata.so") };
+
+/** Starts a validator with `programs` (id → build name in target/deploy, or
+ *  a path to a .so). */
 export async function startValidator(port: number, programs: Record<string, string>): Promise<Local> {
   const dir = mkdtempSync(join(tmpdir(), "ipow-sdk-validator-"));
   const authority = Keypair.generate();
   const auth = join(dir, "authority.json");
   writeFileSync(auth, JSON.stringify(Array.from(authority.secretKey)));
   const args = ["--reset", "--ledger", join(dir, "ledger"), "--rpc-port", String(port), "--faucet-port", String(port + 101)];
-  for (const [id, name] of Object.entries(programs)) args.push("--upgradeable-program", id, join(deploy, `${name}.so`), auth);
+  for (const [id, name] of Object.entries(programs)) args.push("--upgradeable-program", id, name.endsWith(".so") ? name : join(deploy, `${name}.so`), auth);
   const log = join(dir, "validator.log");
   const validator: ChildProcess = spawn("solana-test-validator", args, { detached: true, stdio: ["ignore", openSync(log, "w"), openSync(log, "a")] });
   const connection = new Connection(`http://127.0.0.1:${port}`, "confirmed");

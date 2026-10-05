@@ -1,17 +1,14 @@
 //! The tunnel API (docs/drafts/ipow-conversion-tunnel.md, Q6): an app asks
 //! this operator what it trades and for a quote between two programmable
 //! networks; its user then opens the tunnel's buy on the destination, paying
-//! its job fees (Q5), and the app registers that buy here. The node's
-//! operator takes the buy as any other: it wins it, locks the coin and names
-//! the address the user's sell on the source network will pay, and takes
-//! that sell on the terms quoted (Q7).
+//! its job fees (Q5), with the sale's terms in the buy's memo (the SDK's
+//! `tunnelMemo`). The node's operator reads the memo as it considers the
+//! buy (`TunnelBook::consider_buy`): on its terms and within its means it
+//! promises the sale (Q7), then takes the buy as any other, locks the coin
+//! and names the address the sale on the source network will pay.
 //!
 //!   GET  /assets
 //!   GET  /quote?from=<network>&fromToken=<native|address>&amount=<smallest units>&to=<network>&token=<native|address>
-//!   POST /register  {"to", "swapId", "from", "fromToken", "amountIn", "signature"}
-//!
-//! A registration is signed by the buy's owner (the wallet that opened it),
-//! over `tunnel_message`: nobody else can set the terms of their tunnel.
 //!
 //! Prices are this operator's own (its settings' coins): what it pays for a
 //! coin sold on the source network, and what it asks for a coin bought on
@@ -23,7 +20,7 @@ use std::sync::{Arc, Mutex as SyncMutex};
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
-use http_body_util::{BodyExt, Full, Limited};
+use http_body_util::Full;
 use hyper::body::{Bytes, Incoming};
 use hyper::service::service_fn;
 use hyper::{Method, Request, Response, StatusCode};
@@ -32,7 +29,6 @@ use ipow_protocol_core::conversion::{ConversionApp, Side, Swap, SwapState};
 use ipow_protocol_core::network::ProtocolNetwork;
 use ipow_protocol_core::settings::{CoinPrice, TunnelApiSettings};
 use ipow_protocol_core::types::Amount;
-use serde::Deserialize;
 use serde_json::{json, Value};
 use tokio::sync::Mutex;
 use tracing::{info, warn};
@@ -44,8 +40,6 @@ use crate::wallet::SharedWallet;
 /// The fewest sats a tunnel moves: the largest standard dust limit (a
 /// pay-to-public-key-hash output), so the sell's payment is always relayed.
 const DUST: u64 = 546;
-/// The largest request body read.
-const MAX_BODY: usize = 4096;
 /// How long one connection may stay open.
 const CONNECTION_TIME: Duration = Duration::from_secs(180);
 /// How long a tunnel's promise is kept at most: its buy's auction and
@@ -59,7 +53,7 @@ pub struct TunnelNetwork {
     pub coins: Vec<CoinPrice>,
 }
 
-/// A tunnel this operator registered: the sell it promised to take.
+/// A tunnel this operator promised: the sell it will take.
 #[derive(Clone, Debug)]
 struct Promise {
     from: String,
@@ -82,11 +76,11 @@ struct Promise {
 pub enum Promised {
     /// Not a tunnel's sell: judged by its price.
     No,
-    /// The sell of a tunnel this operator registered, on the terms it
+    /// The sell of a tunnel this operator promised, on the terms it
     /// quoted: taken whatever the price is now.
     Yes,
     /// Never taken: a sell with a payment window that is not the sell of a
-    /// tunnel this node registered on its terms (a late payment would refund
+    /// tunnel this node promised on its terms (a late payment would refund
     /// it and leave the operator's BTC paid), or a second sell paying a
     /// tunnel's address (the buy is completed once).
     Refuse,
@@ -107,20 +101,57 @@ impl Anchors for NetworkAnchors {
     }
 }
 
-/// A network the book reads: its Conversion, and its protocol for the buys'
-/// anchors.
+/// A network the book reads: its Conversion, its protocol for the buys'
+/// anchors, and this operator's prices there.
 struct BookNetwork {
     app: Arc<dyn ConversionApp>,
     anchors: Arc<dyn Anchors>,
+    coins: Vec<CoinPrice>,
 }
 
-/// The tunnels this node registered, shared by the API and the operator on
+/// What a buy's memo says of a tunnel.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Memo {
+    /// No tunnel memo: an ordinary buy.
+    None,
+    /// A tunnel's terms (the SDK's `tunnelMemo`): the source network, the
+    /// coin sold there (`None` for its own), the amount in.
+    Tunnel(String, Option<String>, Amount),
+    /// Claims to be a tunnel's, but cannot be read: a version this node does
+    /// not know, or malformed. Its user expects a tunnel, so the buy is not
+    /// taken as an ordinary one.
+    Unreadable,
+}
+
+/// A buy's memo, as the SDK writes it: `ipow-tunnel/1 <source network>
+/// <native|token> <amount in>`, single spaces, decimal digits.
+pub fn parse_memo(memo: &[u8]) -> Memo {
+    let Ok(text) = std::str::from_utf8(memo) else { return Memo::Unreadable };
+    if !text.starts_with("ipow-tunnel/") {
+        return Memo::None;
+    }
+    let words: Vec<&str> = text.split(' ').collect();
+    if words.len() != 4 || words[0] != "ipow-tunnel/1" || words[1].is_empty() || words[2].is_empty() {
+        return Memo::Unreadable;
+    }
+    let digits = !words[3].is_empty() && words[3].bytes().all(|b| b.is_ascii_digit());
+    match (digits, words[3].parse::<Amount>()) {
+        (true, Ok(amount_in)) => Memo::Tunnel(words[1].to_string(), token_of(Some(words[2])).map(str::to_string), amount_in),
+        _ => Memo::Unreadable,
+    }
+}
+
+/// The tunnels this node promised, shared by the API and the operator on
 /// every network. Kept in memory: after a restart a tunnel's sell is
 /// refused, and its user refunded.
-#[derive(Default)]
 pub struct TunnelBook {
     networks: SyncMutex<HashMap<String, Arc<BookNetwork>>>,
     promises: SyncMutex<Vec<Promise>>,
+    /// The most sats one tunnel moves.
+    max_sats: u64,
+    /// One buy considered at a time: the balances it checks then count
+    /// what the one before promised.
+    considering: Mutex<()>,
 }
 
 /// A buy's payment blocks: the 12 after its job's anchor.
@@ -130,12 +161,95 @@ async fn pay_blocks(n: &BookNetwork, buy: &Swap) -> Option<(u32, u32)> {
 }
 
 impl TunnelBook {
-    pub fn add_network(&self, name: &str, app: Arc<dyn ConversionApp>, net: Arc<dyn ProtocolNetwork>) {
-        self.add(name, app, Arc::new(NetworkAnchors(net)));
+    pub fn new(max_sats: u64) -> Self {
+        TunnelBook { networks: SyncMutex::new(HashMap::new()), promises: SyncMutex::new(vec![]), max_sats, considering: Mutex::new(()) }
     }
 
-    fn add(&self, name: &str, app: Arc<dyn ConversionApp>, anchors: Arc<dyn Anchors>) {
-        self.networks.lock().unwrap().insert(name.to_string(), Arc::new(BookNetwork { app, anchors }));
+    pub fn add_network(&self, name: &str, app: Arc<dyn ConversionApp>, net: Arc<dyn ProtocolNetwork>, coins: Vec<CoinPrice>) {
+        self.add(name, app, Arc::new(NetworkAnchors(net)), coins);
+    }
+
+    fn add(&self, name: &str, app: Arc<dyn ConversionApp>, anchors: Arc<dyn Anchors>, coins: Vec<CoinPrice>) {
+        self.networks.lock().unwrap().insert(name.to_string(), Arc::new(BookNetwork { app, anchors, coins }));
+    }
+
+    /// Whether this operator can take `buy`, on `network`, as a tunnel's: its
+    /// memo names a sale this operator serves, at its prices for both legs,
+    /// within `max_sats`, and within what it can fund and pay (the BTC for
+    /// the sale, on top of the tunnels still live). A buy with no tunnel
+    /// memo is nobody's tunnel: true, and judged as any buy. Refused, the
+    /// buy is left to expire. The promise itself is made once the node has
+    /// bid (`promise_buy`), so a bid that does not happen leaves none.
+    pub async fn can_take_buy(&self, network: &str, buy: &Swap, wallet: &SharedWallet) -> bool {
+        let (from, token_in, amount_in) = match parse_memo(&buy.memo) {
+            Memo::None => return true,
+            Memo::Unreadable => {
+                warn!(network, swap = buy.id, "tunnel: the buy's memo claims a tunnel this node cannot read; not taken");
+                return false;
+            }
+            Memo::Tunnel(from, token_in, amount_in) => (from, token_in, amount_in),
+        };
+        if buy.side != Side::Buy || !matches!(buy.state, SwapState::Open | SwapState::Funded) {
+            return false;
+        }
+        let refuse = |why: &str| {
+            warn!(network, swap = buy.id, from = %from, why, "tunnel: the buy's memo names a sale this operator will not take");
+            false
+        };
+        if from == network {
+            return refuse("a tunnel is between two networks");
+        }
+        let (Some(to), Some(src)) = (self.network(network), self.network(&from)) else { return refuse("a network this operator does not serve") };
+        if buy.sats < DUST || buy.sats > self.max_sats {
+            return refuse("sats outside this operator's range");
+        }
+        let (Some(to_price), Some(from_price)) = (coin(&to.coins, buy.token.as_deref()), coin(&src.coins, token_in.as_deref())) else {
+            return refuse("a coin this operator does not trade");
+        };
+        if !price_ok(Side::Buy, buy.sats, buy.amount, to_price) || !price_ok(Side::Sell, buy.sats, amount_in, from_price) {
+            return refuse("not at this operator's prices");
+        }
+        let _one_at_a_time = self.considering.lock().await;
+        if self.has(network, buy.id) {
+            return true;
+        }
+        match wallet.can_pay_sats(buy.sats.saturating_add(self.promised_sats().await)).await {
+            Ok(true) => {}
+            Ok(false) => return refuse("the Bitcoin wallet cannot pay for another tunnel now"),
+            Err(_) => return refuse("the Bitcoin wallet could not be read"),
+        }
+        if buy.state == SwapState::Open {
+            let Ok(have) = to.app.my_balance(buy.token.as_deref()).await else { return refuse("the balance could not be read") };
+            let need = buy.amount.saturating_add(buy.amount / 20).saturating_add(self.promised_out(network, buy.token.as_deref()).await);
+            if have < need {
+                return refuse("too little of the coin to lock");
+            }
+        }
+        true
+    }
+
+    /// Promises the sale of `buy`, on `network`, once this node has bid on
+    /// the buy (`can_take_buy` said yes just before). Nothing for a buy
+    /// with no tunnel memo, or one promised already.
+    pub async fn promise_buy(&self, network: &str, buy: &Swap) {
+        let Memo::Tunnel(from, token_in, amount_in) = parse_memo(&buy.memo) else { return };
+        let _one_at_a_time = self.considering.lock().await;
+        if self.has(network, buy.id) {
+            return;
+        }
+        self.promise(Promise {
+            from: from.clone(),
+            token_in,
+            amount_in,
+            sats: buy.sats,
+            to: network.to_string(),
+            token: buy.token.clone(),
+            amount_out: buy.amount,
+            buy_id: buy.id,
+            until: Instant::now() + PROMISE_TIME,
+            sell_id: None,
+        });
+        info!(network, swap = buy.id, from = %from, sats = buy.sats, "tunnel: the buy's sale is promised");
     }
 
     fn network(&self, name: &str) -> Option<Arc<BookNetwork>> {
@@ -259,9 +373,6 @@ pub struct Tunnels {
     book: Arc<TunnelBook>,
     /// The operator's Bitcoin wallet: it pays each tunnel's sell first.
     wallet: Arc<SharedWallet>,
-    /// One tunnel registered at a time: the balances it checks then count
-    /// what the one before promised.
-    registering: Mutex<()>,
 }
 
 /// A quote: the sats between the two networks, and what the user receives.
@@ -297,27 +408,6 @@ pub fn quote(from: &CoinPrice, amount_in: Amount, to: &CoinPrice, fee_sats: u64)
     (amount_out > 0).then_some(Quote { sats, amount_out })
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct RegisterRequest {
-    /// The destination network and the buy the user opened there.
-    to: String,
-    swap_id: u64,
-    /// The source network, and what is sold there.
-    from: String,
-    #[serde(default)]
-    from_token: Option<String>,
-    amount_in: String,
-    /// The buy's owner's signature over `tunnel_message`.
-    signature: String,
-}
-
-/// What the buy's owner signs to register a tunnel: the same words in the
-/// app (tunnel.ts) and here.
-pub fn tunnel_message(to: &str, swap_id: u64, from: &str, from_token: &str, amount_in: &str) -> String {
-    format!("iPoW tunnel: buy {swap_id} on {to}; sell {amount_in} of {from_token} on {from}")
-}
-
 /// Two tokens as a network writes them: EVM addresses in any case, others
 /// exactly; `None` is the network's own coin.
 fn same_token(a: Option<&str>, b: Option<&str>) -> bool {
@@ -350,7 +440,7 @@ fn bad(m: &str) -> Failure {
 
 impl Tunnels {
     pub fn new(networks: HashMap<String, TunnelNetwork>, settings: TunnelApiSettings, key: Option<String>, book: Arc<TunnelBook>, wallet: Arc<SharedWallet>) -> Self {
-        Tunnels { networks, settings, key, book, wallet, registering: Mutex::new(()) }
+        Tunnels { networks, settings, key, book, wallet }
     }
 
     /// Serves the API until the process stops.
@@ -386,10 +476,6 @@ impl Tunnels {
             _ if !allowed => Err((StatusCode::UNAUTHORIZED, "a key is needed".to_string())),
             (Method::GET, "/assets") => Ok(self.assets()),
             (Method::GET, "/quote") => self.quote(&query).await,
-            (Method::POST, "/register") => match Limited::new(req.into_body(), MAX_BODY).collect().await {
-                Ok(body) => self.register(&body.to_bytes()).await,
-                Err(_) => Err(bad("unreadable or too large body")),
-            },
             _ => Err((StatusCode::NOT_FOUND, "no such route".to_string())),
         };
         let (status, body) = match result {
@@ -473,83 +559,16 @@ impl Tunnels {
         let token = token_of(q.get("token").copied());
         let from_token = token_of(q.get("fromToken").copied());
         let quote = self.quote_for(from, from_token, amount, to, token).await?;
-        Ok(json!({ "sats": quote.sats, "amountOut": quote.amount_out.to_string() }))
-    }
-
-    /// Takes a buy the user opened on the destination as a tunnel's: on
-    /// this operator's terms for both legs, within its means, and not
-    /// registered before. From then on its sell is promised (Q7).
-    async fn register(&self, body: &[u8]) -> Result<Value, Failure> {
-        let r: RegisterRequest = serde_json::from_slice(body).map_err(|e| bad(&format!("bad request: {e}")))?;
-        let to = self.networks.get(&r.to).ok_or_else(|| bad("this operator does not serve that network"))?;
-        let from = self.networks.get(&r.from).ok_or_else(|| bad("this operator does not serve that network"))?;
-        if r.from == r.to {
-            return Err(bad("a tunnel is between two networks"));
-        }
-        let from_token = token_of(r.from_token.as_deref());
-        let amount_in: Amount = r.amount_in.parse().map_err(|_| bad("amountIn must be a whole number"))?;
-        let buy = to.app.swap(r.swap_id).await.map_err(|_| bad("no such swap on that network"))?;
-        if buy.side != Side::Buy || !matches!(buy.state, SwapState::Open | SwapState::Funded) {
-            return Err(bad("that swap is not an open buy"));
-        }
-        // Only the buy's owner sets its tunnel's terms.
-        let message = tunnel_message(&r.to, r.swap_id, &r.from, r.from_token.as_deref().unwrap_or("native"), &r.amount_in);
-        if !to.app.signed_by(&buy.user, &message, &r.signature) {
-            return Err((StatusCode::FORBIDDEN, "the signature is not the buy's owner's".to_string()));
-        }
-        if buy.sats < DUST || buy.sats > self.settings.max_sats {
-            return Err(bad(&format!("a tunnel is {DUST} to {} sats", self.settings.max_sats)));
-        }
-        // Both legs at this operator's prices now: what the buy asks of it,
-        // and what the sell will pay it.
-        let to_price = coin(&to.coins, buy.token.as_deref()).ok_or_else(|| bad("this operator does not sell that token"))?;
-        let from_price = coin(&from.coins, from_token).ok_or_else(|| bad("this operator does not buy that coin"))?;
-        if !price_ok(Side::Buy, buy.sats, buy.amount, to_price) || !price_ok(Side::Sell, buy.sats, amount_in, from_price) {
-            return Err((StatusCode::CONFLICT, "not at this operator's price any more: it will not take this tunnel".to_string()));
-        }
-        let _one_at_a_time = self.registering.lock().await;
-        // Registered again by its owner: the terms are the newest, unless a
-        // sell was already bid on for the old ones.
-        if self.book.has(&r.to, r.swap_id) {
-            let taken = self.book.open_promises().into_iter().any(|x| x.to == r.to && x.buy_id == r.swap_id && x.sell_id.is_some());
-            if taken {
-                return Err((StatusCode::CONFLICT, "a sell for this tunnel was already taken on its earlier terms".to_string()));
-            }
-            self.book.promises.lock().unwrap().retain(|x| !(x.to == r.to && x.buy_id == r.swap_id));
-        }
-        // The BTC to pay the sell with, on top of the tunnels still live.
-        let btc_ok = self
-            .wallet
-            .can_pay_sats(buy.sats.saturating_add(self.book.promised_sats().await))
-            .await
-            .map_err(|_| (StatusCode::BAD_GATEWAY, "could not read the Bitcoin wallet; try again".to_string()))?;
-        if !btc_ok {
-            return Err((StatusCode::SERVICE_UNAVAILABLE, "this operator's Bitcoin wallet cannot pay for another tunnel now".to_string()));
-        }
-        // The coin to lock, with a twentieth more as the operator keeps, on
-        // top of what it promised to buys it has not funded yet.
-        if buy.state == SwapState::Open {
-            let token = buy.token.as_deref();
-            let have = to.app.my_balance(token).await.map_err(|_| (StatusCode::BAD_GATEWAY, "could not read the balance; try again".to_string()))?;
-            let need = buy.amount.saturating_add(buy.amount / 20).saturating_add(self.book.promised_out(&r.to, token).await);
-            if have < need {
-                return Err((StatusCode::SERVICE_UNAVAILABLE, "this operator holds too little of that coin now".to_string()));
-            }
-        }
-        self.book.promise(Promise {
-            from: r.from.clone(),
-            token_in: from_token.map(str::to_string),
-            amount_in,
-            sats: buy.sats,
-            to: r.to.clone(),
-            token: buy.token.clone(),
-            amount_out: buy.amount,
-            buy_id: r.swap_id,
-            until: Instant::now() + PROMISE_TIME,
-            sell_id: None,
-        });
-        info!(from = %r.from, network = %r.to, swap = r.swap_id, sats = buy.sats, "tunnel: the user's buy registered; its sell is promised");
-        Ok(json!({ "network": r.to, "swapId": r.swap_id, "sats": buy.sats, "amountOut": buy.amount.to_string() }))
+        // Whether this operator could take the tunnel now: the BTC for its
+        // sale on top of the tunnels still live, and the coin to lock. The
+        // app refuses to go on when not, before the user pays a fee.
+        let btc = self.wallet.can_pay_sats(quote.sats.saturating_add(self.book.promised_sats().await)).await.unwrap_or(false);
+        let to_net = &self.networks[to];
+        let coin_ok = match to_net.app.my_balance(token).await {
+            Ok(have) => have >= quote.amount_out.saturating_add(quote.amount_out / 20).saturating_add(self.book.promised_out(to, token).await),
+            Err(_) => false,
+        };
+        Ok(json!({ "sats": quote.sats, "amountOut": quote.amount_out.to_string(), "canTake": btc && coin_ok }))
     }
 }
 
@@ -626,9 +645,6 @@ mod tests {
         async fn buy_fees(&self) -> anyhow::Result<Amount> {
             Ok(0)
         }
-        fn signed_by(&self, _: &str, _: &str, _: &str) -> bool {
-            true
-        }
         async fn fund(&self, _: u64, _: &[u8]) -> anyhow::Result<()> {
             unimplemented!()
         }
@@ -654,7 +670,7 @@ mod tests {
     }
 
     fn swap(id: u64, side: Side, state: SwapState, amount: Amount, sats: u64, script: &[u8], window: Option<(u32, u32)>) -> Swap {
-        Swap { id, side, state, user: "u".into(), token: None, amount, sats, job_id: id, script: script.to_vec(), pay_window: window }
+        Swap { id, side, state, user: "u".into(), token: None, amount, sats, job_id: id, script: script.to_vec(), pay_window: window, memo: vec![] }
     }
 
     #[tokio::test]
@@ -662,10 +678,10 @@ mod tests {
         let s = [0x00, 0x14, 7, 7];
         let w = Some((101, 112));
         let sell = |id, amount, sats, script: &[u8], window| swap(id, Side::Sell, SwapState::Open, amount, sats, script, window);
-        let book = TunnelBook::default();
+        let book = TunnelBook::new(100_000);
         let a = Arc::new(Swaps(SyncMutex::new(vec![sell(9, 1_000, 50_000, &s, w), sell(10, 1_000, 50_000, &s, w)])));
-        book.add("a", a.clone(), Arc::new(At100));
-        book.add("b", Arc::new(Swaps(SyncMutex::new(vec![swap(4, Side::Buy, SwapState::Funded, 10, 50_000, &s, None)]))), Arc::new(At100));
+        book.add("a", a.clone(), Arc::new(At100), vec![]);
+        book.add("b", Arc::new(Swaps(SyncMutex::new(vec![swap(4, Side::Buy, SwapState::Funded, 10, 50_000, &s, None)]))), Arc::new(At100), vec![]);
         book.promise(Promise {
             from: "a".into(),
             token_in: None,
@@ -682,7 +698,17 @@ mod tests {
         assert!(!book.has("b", 5));
         assert_eq!(book.promised_sats().await, 50_000);
         assert_eq!(book.promised_out("b", None).await, 0);
-        assert_eq!(tunnel_message("b", 4, "a", "native", "1000"), "iPoW tunnel: buy 4 on b; sell 1000 of native on a");
+        assert_eq!(parse_memo(b"ipow-tunnel/1 solana-devnet native 60000000"), Memo::Tunnel("solana-devnet".into(), None, 60_000_000));
+        assert_eq!(parse_memo(b"ipow-tunnel/1 a 0xAb 7"), Memo::Tunnel("a".into(), Some("0xAb".into()), 7));
+        assert_eq!(parse_memo(b""), Memo::None);
+        assert_eq!(parse_memo(b"hello"), Memo::None);
+        // Claims a tunnel but cannot be read: another version, an extra word,
+        // a sign, a number too large, two spaces.
+        assert_eq!(parse_memo(b"ipow-tunnel/2 a native 7"), Memo::Unreadable);
+        assert_eq!(parse_memo(b"ipow-tunnel/1 a native 7 extra"), Memo::Unreadable);
+        assert_eq!(parse_memo(b"ipow-tunnel/1 a native +7"), Memo::Unreadable);
+        assert_eq!(parse_memo(b"ipow-tunnel/1 a native 99999999999999999999999999999999999999999"), Memo::Unreadable);
+        assert_eq!(parse_memo(b"ipow-tunnel/1 a  native 7"), Memo::Unreadable);
         // A plain sell elsewhere: judged by its price. A sell with a window
         // that is no tunnel of this node's: refused.
         assert_eq!(book.promised("a", &sell(9, 1_000, 50_000, &[1], None)).await, Promised::No);

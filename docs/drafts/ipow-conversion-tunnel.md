@@ -4,8 +4,8 @@
 2026-10-03, not deployed:** T1 and T2 in the Conversion
 contract and program, with tests; T3 in the SDK on EVM networks
 (`provePayment`), not on Solana; T4 in the node (the tunnel API, the
-promise to a registered buy's sell, the sell's window), its token buys on
-Solana not yet; T5 in Greatwall's
+promise to a tunnel buy's sell, read from the buy's memo, the sell's
+window), its token buys on Solana not yet; T5 in Greatwall's
 Convert between EVM networks, and from Solana into them; into Solana it
 waits for T3 there (Q3: a buy opens to testers only with the user's own
 proof). Live once each network's Conversion is redeployed (the Solana
@@ -46,7 +46,7 @@ client checks.
 | Step | Who | Where | What happens |
 |---|---|---|---|
 | 1 | The user's app | | Asks an operator for a tunnel: SOL amount, AAPL wanted, the sats between them |
-| 2 | The user, one signature | Ethereum | Opens the buy at the quote (`buy`: the AAPL to themselves, paying the job's fees, Q5) and registers it with the operator, signed as its owner |
+| 2 | The user, one signature | Ethereum | Opens the buy at the quote (`buy`: the AAPL to themselves, paying the job's fees, Q5), its memo naming the SOL sale that will pay it |
 | 2b | The operator | Ethereum | Wins the buy, locks the AAPL and names S (`fund`). The buy's payment blocks are now fixed: the 12 after its anchor |
 | 3 | The user's app | Ethereum, read only | Checks the funded buy: for this user, the AAPL amount, S, the payment blocks |
 | 4 | The user, one signature | Solana | Sells SOL for at least the buy's sats, paid to S, mined no later than the buy's last payment block (T1) |
@@ -80,8 +80,8 @@ or by the user's own proof.
 | T1 | A sell may name a latest Bitcoin block for its payment. `completeSell` refuses a proven transaction in a later block (`Duty.proofBlock.height`), and `refundSell` refunds it. Zero keeps today's behaviour | Conversion, EVM and Solana |
 | T2 | A buy may name its recipient: the coin goes to them, the fees are the opener's (`buyFor`). Built, then set aside by Q5: the user opens their own buy and pays its fees; `buyFor` stays in the contract and program for an operator that wants to open buys for its users | Conversion, EVM and Solana |
 | T3 | The user's own payment proof (D10), which Conversion already accepts (`proveMyPayment`), built in the SDK: the payment's block stored in the light client, and a walk of blocks on top | SDK |
-| T4 | The operator's node runs tunnels: lists what it trades, answers a request with a quote, registers the user's buy and promises its sell (Q7), funds the buy, takes the sell, pays S, proves both | Node |
-| T5 | Greatwall's Convert: any asset on any network into any other; a tunnel is the buy's signature, then the sell's once the funded buy is shown | Greatwall, SDK |
+| T4 | The operator's node runs tunnels: lists what it trades, answers a request with a quote, reads the user's buy's memo and promises its sell (Q7), funds the buy, takes the sell, pays S, proves both | Node |
+| T5 | Greatwall's Convert: any asset on any network into any other; a tunnel is the buy's transaction, then the sell's once the funded buy is shown | Greatwall, SDK |
 
 The old protocol did not need T1 and T2: one fixed operator ran both legs,
 so they lined up by themselves. With an auction per job, each leg may have
@@ -89,7 +89,7 @@ its own operator, and the contract keeps them in line.
 
 ## Asking for a tunnel
 
-The node serves `GET /assets`, `GET /quote` and `POST /register`
+The node serves `GET /assets` and `GET /quote`
 (`core/node/crates/node/src/tunnel.rs`). `/assets` lists what the operator
 trades on each network (the coin and the tokens, with a symbol, decimals
 and its prices in sats): the app's token pickers and estimates come from
@@ -103,19 +103,22 @@ transaction): a tenth of the market, and the mock RWA tokens of
 The API is not for browsers: with `tunnel_api.key_env` set, a caller
 sends the key in `x-tunnel-key`. Greatwall calls it from its server
 (`/api/tunnel`), which holds the key. The SDK's `tunnel.ts` is the
-client (`TunnelApi`), the registration's message (`tunnelMessage`), the
-estimates at the operator's prices, and `sellPaying`, which finds the
-sale that pays a funded buy's address on the source network: the two
-legs are linked from the chain, not from an app's own record.
+client (`TunnelApi`), the buy's memo (`tunnelMemo`), the estimates at
+the operator's prices, and `sellPaying`, which finds the sale that pays a
+funded buy's address on the source network: the two legs are linked from
+the chain, not from an app's own record.
 
-A tunnel is asked for in three steps: the app takes a quote; the user
-opens the buy on the destination at that quote, with their own wallet and
-fees (`buy`, the amount to their own address); the app registers the buy
-with the node, signed by the wallet that opened it (`tunnel_message`), so
-only the buy's owner sets its tunnel's terms; the node reads the buy on
-chain and takes it as a tunnel's when it is at the operator's prices for
-both legs, within `max_sats`, and within what the operator can fund and
-pay. The owner may register again with other terms until a sell is taken. From then on the buy's sell is
+A tunnel is asked for in two steps, one signature: the app takes a quote
+(which also says whether the operator could take the tunnel now, so the
+user pays no fee for nothing); the user opens the buy on the destination
+at that quote, with their own wallet and fees (`buy`, the amount to their
+own address), with the sale's terms in the buy's memo (the SDK's
+`tunnelMemo`: the source network, the coin sold, the amount). The node
+reads the memo as it considers the buy and takes it as a tunnel's when it
+is at the operator's prices for both legs, within `max_sats`, and within
+what the operator can fund and pay; refused, the buy is left to expire,
+and the user ends it in one transaction. The terms are the buy's owner's
+by construction: nobody else can write its memo. From then on the buy's sell is
 promised (Q7). A buy the node refuses is an ordinary buy, ended by its own
 rules. Before the user signs the sell, the app checks the funded buy
 against its record (the recipient, the coin, the amount, the sats) and

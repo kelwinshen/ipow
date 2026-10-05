@@ -1,10 +1,11 @@
 // A tunnel: a conversion between two programmable networks, as two swaps of
 // Conversion linked by one Bitcoin payment (docs/drafts/ipow-conversion-tunnel.md).
 // An operator's node serves the tunnel API: what it trades and at what
-// price, a quote, and the registration of the buy the user opened. This is
-// the client of that API, the message a registration is signed with, the
-// arithmetic of an estimate at the operator's prices, and the search that
-// links a funded buy to the sale paying its address on the source network.
+// price, and a quote. The user's buy carries the tunnel's terms in its memo
+// (`tunnelMemo`), which the operator reads from the chain. This is the
+// client of that API, the memo, the arithmetic of an estimate at the
+// operator's prices, and the search that links a funded buy to the sale
+// paying its address on the source network.
 
 import type { Provider } from "ethers";
 
@@ -34,22 +35,27 @@ export type TunnelAssets = {
   maxSats: bigint;
 };
 
-export type TunnelQuote = { sats: bigint; amountOut: bigint };
-
-export type TunnelRegistration = {
-  /** The destination network (the node's name) and the buy the user opened there. */
-  to: string;
-  swapId: bigint | number;
-  /** The source network and what is sold there, in smallest units. */
-  from: string;
-  fromToken: string;
-  amountIn: bigint;
+export type TunnelQuote = {
+  sats: bigint;
+  amountOut: bigint;
+  /** Whether the operator could take the tunnel now (the BTC for its sale,
+   *  the coin to lock); absent from an older node. */
+  canTake?: boolean;
 };
 
-/** What the buy's owner signs to register a tunnel: the same words in the
- *  node (`tunnel_message`), so nobody else can set the tunnel's terms. */
-export function tunnelMessage(r: TunnelRegistration): string {
-  return `iPoW tunnel: buy ${r.swapId} on ${r.to}; sell ${r.amountIn} of ${r.fromToken} on ${r.from}`;
+/** A tunnel's terms as the buy's memo, read by operators from the chain:
+ *  the sale that will pay the buy, on the source network (the node's name
+ *  for it), of `amountIn` (smallest units) of `fromToken`. The buy's own
+ *  owner wrote it with the buy, so nobody else sets the terms. Single
+ *  spaces and decimal digits: a node refuses any other spelling. */
+export function tunnelMemo(from: string, fromToken: string, amountIn: bigint): string {
+  return `ipow-tunnel/1 ${from} ${fromToken} ${amountIn}`;
+}
+
+/** The terms a tunnel memo names, or null for a memo that is not one. */
+export function parseTunnelMemo(memo: string): { from: string; fromToken: string; amountIn: bigint } | null {
+  const m = /^ipow-tunnel\/1 (\S+) (\S+) (\d+)$/.exec(memo.trim());
+  return m ? { from: m[1], fromToken: m[2], amountIn: BigInt(m[3]) } : null;
 }
 
 /** The operator node's tunnel API, at `base`: the node itself, or a server
@@ -93,20 +99,8 @@ export class TunnelApi {
    *  on `from`: the sats between the networks, and `token` on `to`. */
   async quote(from: string, fromToken: string, amountIn: bigint, to: string, token = NATIVE): Promise<TunnelQuote> {
     const q = new URLSearchParams({ from, fromToken, amount: amountIn.toString(), to, token });
-    const r = await this.call<{ sats: number; amountOut: string }>(`/quote?${q}`);
-    return { sats: BigInt(r.sats), amountOut: BigInt(r.amountOut) };
-  }
-
-  /** Registers the buy the user opened, with the owner's `signature` over
-   *  `tunnelMessage(r)`: from then on the operator takes its sale at the
-   *  terms it quoted. */
-  async register(r: TunnelRegistration, signature: string): Promise<TunnelQuote> {
-    const out = await this.call<{ sats: number; amountOut: string }>("/register", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ to: r.to, swapId: Number(r.swapId), from: r.from, fromToken: r.fromToken, amountIn: r.amountIn.toString(), signature }),
-    });
-    return { sats: BigInt(out.sats), amountOut: BigInt(out.amountOut) };
+    const r = await this.call<{ sats: number; amountOut: string; canTake?: boolean }>(`/quote?${q}`);
+    return { sats: BigInt(r.sats), amountOut: BigInt(r.amountOut), canTake: r.canTake };
   }
 }
 

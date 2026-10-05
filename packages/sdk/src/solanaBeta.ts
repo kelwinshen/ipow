@@ -19,8 +19,51 @@ const ONE = 1_000_000_000n;
 export const WRAPPED_SOL = "So11111111111111111111111111111111111111112";
 const BPS = 10_000n;
 
-export type SolanaBasketPart = { mint: string; amount: bigint; tokenProgram: string; decimals: number; held: bigint; owed: bigint };
-export type SolanaBasket = { address: string; creator: string; id: bigint; feeTo: string; mintFeeBps: number; burnFeeBps: number; beta: string; supply: bigint; parts: SolanaBasketPart[] };
+export type SolanaBasketPart = {
+  mint: string;
+  amount: bigint;
+  tokenProgram: string;
+  decimals: number;
+  /** False while the part is a receipt the vault has not made yet (E5):
+   *  nothing can be minted until the asset is bridged here. */
+  made: boolean;
+  held: bigint;
+  owed: bigint;
+};
+export type SolanaBasket = {
+  address: string;
+  creator: string;
+  id: bigint;
+  feeTo: string;
+  mintFeeBps: number;
+  burnFeeBps: number;
+  beta: string;
+  /** The token's name, symbol and metadata URI, the creator's (E4), from
+   *  its Token Metadata account; "BETA", "BETA" and "" for a basket of the
+   *  program's first build, which had none. */
+  name: string;
+  symbol: string;
+  uri: string;
+  supply: bigint;
+  parts: SolanaBasketPart[];
+};
+/** The limits of a basket's naming on Solana (Token Metadata's), in bytes. */
+export const SOLANA_BASKET_NAMING = { name: 32, symbol: 10, uri: 200 } as const;
+/** Metaplex Token Metadata, where a token's name, symbol and image are read from. */
+export const METADATA_PROGRAM = new PublicKey("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s");
+const TOKEN_2022_PROGRAM = new PublicKey("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb");
+export const metadataAddress = (mint: PublicKey) => PublicKey.findProgramAddressSync([Buffer.from("metadata"), METADATA_PROGRAM.toBuffer(), mint.toBuffer()], METADATA_PROGRAM)[0];
+/** The name, symbol and URI a Token Metadata account holds (fixed-width, NUL-padded). */
+export function parseMetadata(data: Buffer): { name: string; symbol: string; uri: string } {
+  let at = 1 + 32 + 32;
+  const str = (width: number) => {
+    const len = data.readUInt32LE(at);
+    const v = data.subarray(at + 4, at + 4 + len).toString("utf8").replace(/\0+$/, "");
+    at += 4 + width;
+    return v;
+  };
+  return { name: str(32), symbol: str(10), uri: str(200) };
+}
 export type SolanaMintQuote = { basket: string; amount: bigint; need: bigint[]; fee: bigint[] };
 
 const divUp = (a: bigint, b: bigint) => (a + b - 1n) / b;
@@ -80,13 +123,33 @@ export class SolanaBeta {
 
   /** Creates basket `id` of the wallet, its parts SPL tokens, with what one
    *  whole BETA holds of each, and fees of at most 1% each. */
-  async createBasket(options: { id: bigint | number; parts: { mint: string; amount: bigint }[]; mintFeeBps?: number; burnFeeBps?: number }): Promise<{ basket: string; beta: string; signature: string }> {
+  /** Creates basket `id` of the wallet: its token's name, symbol and
+   *  metadata URI (in a Token Metadata account, fixed for good), its parts
+   *  and fees. */
+  async createBasket(options: {
+    id: bigint | number;
+    name: string;
+    symbol: string;
+    uri?: string;
+    /** A part is a mint here; `pending` names a receipt the vault has not
+     *  made yet (E5), whose mint account may not exist. Any other mint
+     *  must exist: a typed address that does not would otherwise become a
+     *  basket that can never mint. */
+    parts: { mint: string; amount: bigint; pending?: boolean }[];
+    mintFeeBps?: number;
+    burnFeeBps?: number;
+  }): Promise<{ basket: string; beta: string; signature: string }> {
     const creator = this.wallet.publicKey;
     const basket = this.basketAddress(creator, options.id);
+    const beta = this.betaMint(basket);
+    for (const p of options.parts) {
+      if (p.pending) continue;
+      if ((await this.connection.getAccountInfo(new PublicKey(p.mint))) === null) throw new Error(`no mint at ${p.mint}; a receipt not made yet is named with pending: true`);
+    }
     const parts = options.parts.map((p) => ({ mint: new PublicKey(p.mint), amount: new BN(p.amount.toString()), tokenProgram: PublicKey.default, decimals: 0, powers: 0, owed: new BN(0) }));
     const signature = await this.program.methods
-      .createBasket(new BN(BigInt(options.id).toString()), parts, options.mintFeeBps ?? 0, options.burnFeeBps ?? 0)
-      .accountsStrict({ basket, beta: this.betaMint(basket), fees: this.feesRecord(basket, creator), creator, tokenProgram: TOKEN_PROGRAM, systemProgram: SystemProgram.programId })
+      .createBasket(new BN(BigInt(options.id).toString()), options.name, options.symbol, options.uri ?? "", parts, options.mintFeeBps ?? 0, options.burnFeeBps ?? 0)
+      .accountsStrict({ basket, beta, fees: this.feesRecord(basket, creator), metadata: metadataAddress(beta), creator, tokenProgram: TOKEN_PROGRAM, systemProgram: SystemProgram.programId, metadataProgram: METADATA_PROGRAM })
       .remainingAccounts(parts.map((p) => ({ pubkey: p.mint, isSigner: false, isWritable: false })))
       .rpc();
     return { basket: basket.toBase58(), beta: this.betaMint(basket).toBase58(), signature };
@@ -96,20 +159,41 @@ export class SolanaBeta {
     const key = new PublicKey(address);
     const b: any = await (this.program.account as any).basket.fetch(key);
     const supply = big((await this.connection.getTokenSupply(b.beta)).value.amount);
+    const meta = await this.connection.getAccountInfo(metadataAddress(b.beta));
+    const { name, symbol, uri } = meta ? parseMetadata(meta.data) : { name: "BETA", symbol: "BETA", uri: "" };
     const parts: SolanaBasketPart[] = [];
     for (const p of b.parts) {
-      const held = associatedTokenAddress(key, p.mint, p.tokenProgram);
-      const info = await this.connection.getAccountInfo(held);
-      const balance = info ? big((await this.connection.getTokenAccountBalance(held)).value.amount) : 0n;
-      parts.push({ mint: p.mint.toBase58(), amount: big(p.amount), tokenProgram: p.tokenProgram.toBase58(), decimals: p.decimals, held: balance - big(p.owed), owed: big(p.owed) });
+      // A pending part (E5) has no token program recorded yet: once its mint
+      // exists, the chain says which program and decimals, and the first
+      // mint records them.
+      let tokenProgram: PublicKey = p.tokenProgram;
+      let decimals: number = p.decimals;
+      let made = !tokenProgram.equals(PublicKey.default);
+      if (!made) {
+        const mintInfo = await this.connection.getAccountInfo(p.mint);
+        if (mintInfo && (mintInfo.owner.equals(TOKEN_PROGRAM) || mintInfo.owner.equals(TOKEN_2022_PROGRAM))) {
+          tokenProgram = mintInfo.owner;
+          decimals = (await this.connection.getTokenSupply(p.mint)).value.decimals;
+          made = true;
+        }
+      }
+      let balance = 0n;
+      if (made) {
+        const held = associatedTokenAddress(key, p.mint, tokenProgram);
+        const info = await this.connection.getAccountInfo(held);
+        balance = info ? big((await this.connection.getTokenAccountBalance(held)).value.amount) : 0n;
+      }
+      parts.push({ mint: p.mint.toBase58(), amount: big(p.amount), tokenProgram: tokenProgram.toBase58(), decimals, made, held: balance - big(p.owed), owed: big(p.owed) });
     }
-    return { address, creator: b.creator.toBase58(), id: big(b.id), feeTo: b.feeTo.toBase58(), mintFeeBps: b.mintFeeBps, burnFeeBps: b.burnFeeBps, beta: b.beta.toBase58(), supply, parts };
+    return { address, creator: b.creator.toBase58(), id: big(b.id), feeTo: b.feeTo.toBase58(), mintFeeBps: b.mintFeeBps, burnFeeBps: b.burnFeeBps, beta: b.beta.toBase58(), name, symbol, uri, supply, parts };
   }
 
   /** What minting `amount` BETA takes, by part, as the program prices it:
    *  rounded up, the creator's fee on top, rounded up too. */
   async quoteMint(address: string, amount: bigint): Promise<SolanaMintQuote> {
     const b = await this.getBasket(address);
+    const unmade = b.parts.find((p) => !p.made);
+    if (unmade) throw new Error(`part ${unmade.mint} is a receipt the vault has not made yet: bridge the asset here first`);
     if (b.supply === 0n && amount % ONE !== 0n) throw new Error("the first mint of a basket is a whole number of BETA");
     const need = b.parts.map((p) => (b.supply === 0n ? divUp(amount * p.amount, ONE) : divUp(amount * p.held, b.supply)));
     const fee = need.map((n) => divUp(n * BigInt(b.mintFeeBps), BPS));

@@ -34,8 +34,9 @@ export {
   type SolanaWallet,
 } from "./solana.ts";
 export { followLock, type LockJourney } from "./follow.ts";
-export { SolanaBeta, WRAPPED_SOL, createAccountIdempotent, wrapSolInstructions, type SolanaBasket, type SolanaBasketPart, type SolanaMintQuote } from "./solanaBeta.ts";
+export { METADATA_PROGRAM, SOLANA_BASKET_NAMING, SolanaBeta, WRAPPED_SOL, createAccountIdempotent, metadataAddress, parseMetadata, wrapSolInstructions, type SolanaBasket, type SolanaBasketPart, type SolanaMintQuote } from "./solanaBeta.ts";
 export {
+  BASKET_NAMING,
   basketKey,
   burn as burnBeta,
   collectFees,
@@ -46,6 +47,7 @@ export {
   quoteMint,
   type Basket,
   type BasketPart,
+  type BasketPartSpec,
   type MintQuote,
 } from "./beta.ts";
 export { addressToScript, scriptToAddress } from "./btcAddress.ts";
@@ -59,11 +61,11 @@ export {
   satsFor,
   sellPaying,
   toUnits,
-  tunnelMessage,
+  tunnelMemo,
+  parseTunnelMemo,
   type TunnelAsset,
   type TunnelAssets,
   type TunnelQuote,
-  type TunnelRegistration,
 } from "./tunnel.ts";
 export {
   SIDES,

@@ -1,0 +1,29 @@
+{
+  "network": "tempo-testnet",
+  "chainId": 42431,
+  "minter": "0x9784B80BC7b95753f2a2732649F3a1136b4c2BF1",
+  "operator": "0x9784B80BC7b95753f2a2732649F3a1136b4c2BF1",
+  "tokens": {
+    "EURC": {
+      "address": "0x15390C4901e11D3732489825c2FBa33A2E3e5b37",
+      "name": "EURC (Tempo Testnet Greatwall)",
+      "decimals": 18,
+      "faucet": "100",
+      "vaultAsset": 1
+    },
+    "USDY": {
+      "address": "0xf35A1C4A9dE7B7FffF62c7cEfda2ac91a71cB6cc",
+      "name": "Ondo U.S. Dollar Yield (Tempo Testnet Greatwall)",
+      "decimals": 18,
+      "faucet": "100",
+      "vaultAsset": 2
+    },
+    "syrupUSDC": {
+      "address": "0x4cFD981522F31A4dc12Aeb433907ebc3CBD37A55",
+      "name": "Syrup USDC (Tempo Testnet Greatwall)",
+      "decimals": 18,
+      "faucet": "100",
+      "vaultAsset": 3
+    }
+  }
+}

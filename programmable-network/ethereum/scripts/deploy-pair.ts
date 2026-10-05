@@ -1,0 +1,241 @@
+// Adds a vault pair between two EVM test networks that already run the
+// protocol (D132): one vault on each, each naming the other's. The two
+// vaults name each other at deployment, so the second's address is
+// predicted from its deployer's nonce before the first is deployed (spec
+// Build status, row 7), and read back once it is.
+//
+// Each side gets factories of today's build first: the live factories were
+// deployed from a9493c7, before the parts were made ahead of their vault,
+// and today's vault asks its factories whether they `made` its parts, which
+// those cannot answer. The pair's vault records its own factories, and
+// verify-deployments.ts checks it against them and against today's build
+// (`source: "current"`; the next change to the vault needs a
+// `deployments/source-<commit>/` snapshot for this pair, as a9493c7 has).
+//
+// The keys and endpoints are the network packages'
+// (programmable-network/<network>/.env); the same deployer on both. Run from
+// programmable-network/ethereum after `npx hardhat compile`:
+//
+//   node scripts/deploy-pair.ts <networkA> <networkB> [--big-blocks] [--dry]
+//
+// Order: B's factories; B's vault address predicted from one settled nonce
+// and both of B's parts simulated; A's factories, parts and vault naming
+// the predicted B; B's nonce checked unmoved; B's parts and vault naming
+// A's. Both records are written only when both vaults exist. Send nothing
+// else from the deployer on B meanwhile: its nonce fixes B's address.
+
+import { Contract, ContractFactory, FetchRequest, JsonRpcProvider, Wallet, ZeroAddress, formatEther, getAddress, getCreateAddress, parseEther, zeroPadValue } from "ethers";
+import { readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { codeMatches } from "../deploy/deploy.ts";
+import { NETWORKS, type NetworkSettings } from "../deploy/networks.ts";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const args = process.argv.slice(2);
+const [nameA, nameB] = args.filter((a) => !a.startsWith("--"));
+const dry = args.includes("--dry");
+const bigBlocks = args.includes("--big-blocks");
+if (!nameA || !nameB || nameA === nameB) throw new Error("usage: deploy-pair.ts <networkA> <networkB>");
+/** The least a side should hold: the parts and the vault take about 12M gas. */
+const MIN_BALANCE = parseEther("0.01");
+const WAIT_MS = 180_000;
+
+const artifact = (file: string, name: string) => JSON.parse(readFileSync(join(here, "..", "artifacts", "contracts", file, `${name}.json`), "utf8"));
+const FACTORIES = "protocol/vault/VaultFactories.sol";
+const VAULT = "protocol/iPoWVault.sol";
+
+type Side = { name: string; s: NetworkSettings; provider: JsonRpcProvider; wallet: Wallet; file: string; d: any; coin: string };
+
+async function side(name: string): Promise<Side> {
+  const s = NETWORKS[name];
+  if (!s || !s.rpcEnv.testnet) throw new Error(`${name}: a network from deploy/networks.ts that has a test network`);
+  if (s.sender) throw new Error(`${name} deploys through its own sender (${s.sender}); not built here`);
+  if (s.coin.kind !== "native") throw new Error(`${name}: a token-coin network's vault is not built here`);
+  if (s.bigBlocks && !dry && !bigBlocks) throw new Error(`${name}: deploying needs big blocks; switch the deployer's address to them, then pass --big-blocks`);
+  const vars: Record<string, string> = {};
+  for (const line of readFileSync(join(here, "..", "..", name, ".env"), "utf8").split("\n")) {
+    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*"?([^"\n]*)"?/);
+    if (m) vars[m[1]] = m[2].trim();
+  }
+  const request = new FetchRequest(vars[s.rpcEnv.testnet]);
+  request.setHeader("user-agent", "ipow-deploy-pair");
+  const provider = new JsonRpcProvider(request, undefined, { staticNetwork: true });
+  const key = vars[s.keyEnv.testnet];
+  const wallet = new Wallet(key.startsWith("0x") ? key : "0x" + key, provider);
+  const chainId = Number((await provider.getNetwork()).chainId);
+  if (chainId !== s.chainId.testnet) throw new Error(`${name}: chain ${chainId} is not its test network (${s.chainId.testnet})`);
+  const file = join(here, "..", "deployments", `${name}-testnet.json`);
+  const d = JSON.parse(readFileSync(file, "utf8"));
+  const balance = await provider.getBalance(wallet.address);
+  if (!dry && balance < MIN_BALANCE) throw new Error(`${name}: the deployer holds ${formatEther(balance)} of the coin; at least ${formatEther(MIN_BALANCE)} is needed`);
+  return { name, s, provider, wallet, file, d, coin: ZeroAddress };
+}
+
+const A = await side(nameA);
+const B = await side(nameB);
+if (A.wallet.address !== B.wallet.address) throw new Error("the two networks' deployers differ; this script predicts the second vault from one deployer's nonce");
+for (const x of [A, B]) {
+  const other = x === A ? B : A;
+  if (x.d.vaults.some((v: any) => v.peer === other.s.number)) throw new Error(`${x.name} already has a vault paired with ${other.name}`);
+}
+
+/** Fees on a big-block network, capped at twice the big-block price now. */
+const fees = async (x: Side) => {
+  if (!x.s.bigBlocks) return {};
+  const price = BigInt(await x.provider.send("eth_bigBlockGasPrice", []));
+  return { maxFeePerGas: price * 2n, maxPriorityFeePerGas: 0n };
+};
+const asBytes32 = (address: string) => zeroPadValue(getAddress(address), 32);
+
+/** Reads until an endpoint behind the deployment agrees, as deploy.ts does. */
+async function settle<T>(read: () => Promise<T>, ok: (v: T) => boolean): Promise<T> {
+  let v!: T;
+  let error: unknown;
+  let read_ = false;
+  for (let i = 0; i < 15; i++) {
+    try {
+      v = await read();
+      read_ = true;
+      if (ok(v)) return v;
+    } catch (e) {
+      error = e;
+    }
+    await new Promise((r) => setTimeout(r, 2_000));
+  }
+  if (!read_) throw error;
+  return v;
+}
+async function expectEqual(what: string, read: () => Promise<unknown>, want: unknown) {
+  const norm = (x: unknown) => String(x).toLowerCase();
+  const got = await settle(read, (v) => norm(v) === norm(want));
+  if (norm(got) !== norm(want)) throw new Error(`${what}: read ${got}, expected ${want}`);
+}
+
+/** The deployer's nonce on `x`, settled: the same from the pending and the
+ *  latest view, three reads in a row, since an endpoint's pool can lag. */
+async function settledNonce(x: Side): Promise<number> {
+  let last = -1;
+  let agreed = 0;
+  for (let i = 0; i < 30; i++) {
+    const [pending, latest] = await Promise.all([x.provider.getTransactionCount(x.wallet.address, "pending"), x.provider.getTransactionCount(x.wallet.address, "latest")]);
+    if (pending === latest && pending === last) agreed++;
+    else agreed = 0;
+    last = pending === latest ? pending : -1;
+    if (agreed >= 2) return pending;
+    await new Promise((r) => setTimeout(r, 1_500));
+  }
+  throw new Error(`${x.name}: the deployer's nonce would not settle (a transaction of its own still pending?)`);
+}
+const createAt = (x: Side, nonce: number) => getCreateAddress({ from: x.wallet.address, nonce });
+
+/** Deploys, then reads the code at the address back from the network. */
+async function deploy(x: Side, file: string, name: string, args: unknown[]) {
+  const a = artifact(file, name);
+  const c = await new ContractFactory(a.abi, a.bytecode, x.wallet).deploy(...args, await fees(x));
+  await c.deploymentTransaction()!.wait(1, WAIT_MS);
+  const address = getAddress(await c.getAddress());
+  const code = await settle(() => x.provider.getCode(address), (cd) => codeMatches(cd, a.deployedBytecode, a.immutableReferences));
+  if (!codeMatches(code, a.deployedBytecode, a.immutableReferences)) throw new Error(`${x.name}: the code at ${address} is not the build's ${name}`);
+  console.log(`${x.name}: ${name} ${address}`);
+  return { address, contract: new Contract(address, a.abi, x.wallet) };
+}
+
+/** Factories of today's build on `x`, for this pair's vault. */
+async function deployFactories(x: Side) {
+  const home = await deploy(x, FACTORIES, "VaultHomeFactory", [(x.s.coin as { decimals: number }).decimals]);
+  await expectEqual(`${x.name}: home factory's native decimals`, async () => await home.contract.nativeDecimals(), (x.s.coin as { decimals: number }).decimals);
+  const receipts = await deploy(x, FACTORIES, "VaultReceiptsFactory", []);
+  return { home, receipts };
+}
+
+type Factories = Awaited<ReturnType<typeof deployFactories>>;
+
+/** Simulates both parts of `x`'s vault at `core` for `peer`: what the real
+ *  calls will make, refused before anything is spent elsewhere. */
+async function simulateParts(x: Side, f: Factories, peer: Side, core: string) {
+  const madeHome = getAddress(await f.home.contract.make.staticCall(core, x.s.number, peer.s.number, x.coin));
+  const madeReceipts = getAddress(await f.receipts.contract.make.staticCall(core, x.s.number, peer.s.number));
+  return { madeHome, madeReceipts };
+}
+
+/** Makes the vault of `x` paired with `peer`, its parts first, at `core`
+ *  (the deployer's nonce must be `nonce` now); the vault names `peerVault`. */
+async function deployVault(x: Side, f: Factories, peer: Side, core: string, nonce: number, peerVault: string) {
+  const now = await settledNonce(x);
+  if (now !== nonce) throw new Error(`${x.name}: the deployer's nonce is ${now}, not ${nonce}: the vault would not land at ${core}`);
+  const amounts = x.s.vault.testnet!;
+  const { madeHome, madeReceipts } = await simulateParts(x, f, peer, core);
+  await (await f.home.contract.make(core, x.s.number, peer.s.number, x.coin, await fees(x))).wait(1, WAIT_MS);
+  // Anyone may make a part, so the one made is read back: the address a
+  // simulation gave before the transaction could be another caller's.
+  await expectEqual(`${x.name}: home part made`, async () => await f.home.contract.made(madeHome), true);
+  const homePart = new Contract(madeHome, artifact("protocol/vault/VaultHome.sol", "VaultHome").abi, x.provider);
+  await expectEqual(`${x.name}: home part's vault and pair`, async () => `${await homePart.core()},${await homePart.here()},${await homePart.peer()},${(await homePart.getAsset(0)).token}`, `${core},${x.s.number},${peer.s.number},${x.coin}`);
+  await (await f.receipts.contract.make(core, x.s.number, peer.s.number, await fees(x))).wait(1, WAIT_MS);
+  await expectEqual(`${x.name}: receipts part made`, async () => await f.receipts.contract.made(madeReceipts), true);
+  const receiptsPart = new Contract(madeReceipts, artifact("protocol/vault/VaultReceipts.sol", "VaultReceipts").abi, x.provider);
+  await expectEqual(`${x.name}: receipts part's vault and pair`, async () => `${await receiptsPart.core()},${await receiptsPart.here()},${await receiptsPart.peer()}`, `${core},${x.s.number},${peer.s.number}`);
+  console.log(`${x.name}: VaultHome ${madeHome}, VaultReceipts ${madeReceipts}`);
+  const common = [x.d.protocol, x.s.number, peer.s.number, peerVault, amounts.deposit, amounts.minCertifyingEscrow, f.home.address, f.receipts.address, madeHome, madeReceipts];
+  const vault = await deploy(x, VAULT, "iPoWVaultNative", common);
+  if (vault.address !== core) throw new Error(`${x.name}: the vault is at ${vault.address}, its parts were made for ${core}`);
+  const v = vault.contract;
+  await expectEqual(`${x.name}: vault's networks`, async () => `${await v.here()},${await v.peer()}`, `${x.s.number},${peer.s.number}`);
+  await expectEqual(`${x.name}: vault's peer vault`, async () => (await v.peerVault()).toLowerCase(), peerVault.toLowerCase());
+  await expectEqual(`${x.name}: vault's protocol`, async () => await v.protocol(), x.d.protocol);
+  await expectEqual(`${x.name}: vault's amounts`, async () => `${await v.deposit()},${await v.minCertifyingEscrow()}`, `${amounts.deposit},${amounts.minCertifyingEscrow}`);
+  await expectEqual(`${x.name}: vault's factories`, async () => `${await v.homeFactory()},${await v.receiptsFactory()}`, `${f.home.address},${f.receipts.address}`);
+  await expectEqual(`${x.name}: vault's parts`, async () => `${getAddress(await v.home())},${getAddress(await v.receipts())}`, `${madeHome},${madeReceipts}`);
+  for (const [part, file, name] of [[madeHome, "protocol/vault/VaultHome.sol", "VaultHome"], [madeReceipts, "protocol/vault/VaultReceipts.sol", "VaultReceipts"]] as const) {
+    const a = artifact(file, name);
+    const code = await settle(() => x.provider.getCode(part), (cd) => codeMatches(cd, a.deployedBytecode, a.immutableReferences));
+    if (!codeMatches(code, a.deployedBytecode, a.immutableReferences)) throw new Error(`${x.name}: the code at ${part} is not the build's ${name}`);
+  }
+  console.log(`${x.name}: vault ${vault.address} read back`);
+  return { peer: peer.s.number, peerVault, vault: vault.address, home: madeHome, receipts: madeReceipts, homeFactory: f.home.address, receiptsFactory: f.receipts.address, source: "current" };
+}
+
+console.log(`${A.name} (chain ${A.s.chainId.testnet}) and ${B.name} (chain ${B.s.chainId.testnet}): deployer ${A.wallet.address}${dry ? " (dry run)" : ""}`);
+if (dry) {
+  const nA = await settledNonce(A);
+  const nB = await settledNonce(B);
+  console.log(`  with factories first on each side: ${A.name}'s vault at ${createAt(A, nA + 4)}, ${B.name}'s at ${createAt(B, nB + 4)}`);
+  process.exit(0);
+}
+
+// B first: its factories, then its vault's address from one settled nonce,
+// and both of its parts simulated, before anything is spent on A.
+const fB = await deployFactories(B);
+const nonceB = await settledNonce(B);
+const coreB = createAt(B, nonceB + 2);
+await simulateParts(B, fB, A, coreB);
+console.log(`${B.name}: its vault will be ${coreB}; both parts simulate`);
+
+// A: its factories, parts and vault, naming B's vault to come.
+const fA = await deployFactories(A);
+const nonceA = await settledNonce(A);
+const coreA = createAt(A, nonceA + 2);
+let recordA: Awaited<ReturnType<typeof deployVault>>;
+try {
+  recordA = await deployVault(A, fA, B, coreA, nonceA, asBytes32(coreB));
+} catch (e) {
+  throw new Error(`${A.name}: its vault was not deployed (${(e as Error).message}); nothing is recorded, ${B.name} only has new factories ${fB.home.address} and ${fB.receipts.address}`);
+}
+
+// B: its parts and vault at the predicted address, naming A's vault.
+let recordB: Awaited<ReturnType<typeof deployVault>>;
+try {
+  recordB = await deployVault(B, fB, A, coreB, nonceB, asBytes32(recordA.vault));
+} catch (e) {
+  throw new Error(
+    `${B.name}: its vault was not deployed at ${coreB} (${(e as Error).message}). ${A.name}'s vault ${recordA.vault} (parts ${recordA.home}, ${recordA.receipts}; factories ${recordA.homeFactory}, ${recordA.receiptsFactory}) names ${coreB}, which may now never hold a vault: it is not recorded, and a new run makes a new pair`
+  );
+}
+A.d.vaults.push({ ...recordA, at: new Date().toISOString() });
+B.d.vaults.push({ ...recordB, at: new Date().toISOString() });
+writeFileSync(A.file, JSON.stringify(A.d, null, 2) + "\n");
+writeFileSync(B.file, JSON.stringify(B.d, null, 2) + "\n");
+console.log(`wrote ${A.file} and ${B.file}`);
+console.log(`pair ${A.name}–${B.name}: ${recordA.vault} names ${recordB.vault}, and back`);

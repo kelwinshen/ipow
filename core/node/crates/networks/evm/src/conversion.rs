@@ -105,6 +105,7 @@ impl ConversionApp for EvmConversion {
             job_id: s.jobId.to::<u64>(),
             script: s.script.to_vec(),
             pay_window: (s.payFrom != 0).then_some((s.payFrom, s.payTo)),
+            memo: s.memo.to_vec(),
         })
     }
 
@@ -118,13 +119,6 @@ impl ConversionApp for EvmConversion {
 
     async fn buy_fees(&self) -> anyhow::Result<Amount> {
         to_amount(self.fees_now().await?)
-    }
-
-    /// An EIP-191 personal signature (`personal_sign`), hex, 65 bytes.
-    fn signed_by(&self, user: &str, message: &str, signature: &str) -> bool {
-        let Ok(user) = user.parse::<Address>() else { return false };
-        let Ok(sig) = signature.parse::<alloy::primitives::Signature>() else { return false };
-        sig.recover_address_from_msg(message.as_bytes()).is_ok_and(|a| a == user)
     }
 
     async fn fund(&self, swap_id: u64, script: &[u8]) -> anyhow::Result<()> {

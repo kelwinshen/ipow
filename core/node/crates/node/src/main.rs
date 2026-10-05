@@ -156,13 +156,13 @@ async fn main() -> anyhow::Result<()> {
     let mut pairs: Vec<(Arc<dyn Worker>, Arc<dyn ProtocolNetwork>)> = vec![];
     // The networks whose Conversion this operator serves, for the tunnel API.
     let mut tunnel_networks: HashMap<String, TunnelNetwork> = HashMap::new();
-    let tunnel_book = Arc::new(TunnelBook::default());
+    let tunnel_book = Arc::new(TunnelBook::new(settings.tunnel_api.as_ref().map(|t| t.max_sats).unwrap_or_else(ipow_protocol_core::settings::default_tunnel_max_sats)));
     let mut kinds: HashMap<String, (Kind, Arc<dyn ProtocolNetwork>)> = HashMap::new();
     for n in &settings.networks {
         let Connected { net: network, conversion, kind } = connect(n)?;
         if let (Some(app), Some(c)) = (&conversion, &n.conversion) {
             tunnel_networks.insert(n.name.clone(), TunnelNetwork { app: app.clone(), coins: c.coins.clone() });
-            tunnel_book.add_network(&n.name, app.clone(), network.clone());
+            tunnel_book.add_network(&n.name, app.clone(), network.clone(), c.coins.clone());
         }
         kinds.insert(n.name.clone(), (kind, network.clone()));
         info!(network = %n.name, address = %network.me(), "connected");

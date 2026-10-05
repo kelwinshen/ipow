@@ -258,7 +258,7 @@ describe("Conversion: buy, BTC to coin", function () {
   /** The operator wins, anchors at a new block, and locks 1 ETH. */
   async function funded(ctx: Ctx, script = OPERATOR_SCRIPT) {
     const { conversion, protocol, chain, user, operator } = ctx;
-    await conversion.connect(user).buy(ethers.ZeroAddress, ETH, 5_000_000n, "0x", 6, FEES, { value: FEES, gasLimit: GAS });
+    await conversion.connect(user).buy(ethers.ZeroAddress, ETH, 5_000_000n, "0x", "0x", 6, FEES, { value: FEES, gasLimit: GAS });
     const swapId = await conversion.swapCount();
     const jobId = await win(ctx, swapId);
     const parent = chain.tip;
@@ -392,7 +392,7 @@ describe("Conversion: buy, BTC to coin", function () {
   it("lets only the job's operator fund, after its anchor, in time, with a new script", async function () {
     const ctx = await deploy();
     const { conversion, protocol, chain, user, operator, stranger } = ctx;
-    await conversion.connect(user).buy(ethers.ZeroAddress, ETH, 5_000_000n, "0x", 6, FEES, { value: FEES, gasLimit: GAS });
+    await conversion.connect(user).buy(ethers.ZeroAddress, ETH, 5_000_000n, "0x", "0x", 6, FEES, { value: FEES, gasLimit: GAS });
     const jobId = await win(ctx, 1n);
     await expect(conversion.connect(operator).fund(1n, OPERATOR_SCRIPT, { value: ETH })).to.be.revertedWithCustomError(conversion, "NotAnchored");
     const anchor = await chain.add();
@@ -401,7 +401,7 @@ describe("Conversion: buy, BTC to coin", function () {
     await expect(conversion.connect(operator).fund(1n, OPERATOR_SCRIPT, { value: ETH - 1n })).to.be.revertedWithCustomError(conversion, "InvalidAmount");
     await conversion.connect(operator).fund(1n, OPERATOR_SCRIPT, { value: ETH });
 
-    await conversion.connect(user).buy(ethers.ZeroAddress, ETH, 5_000_000n, "0x", 6, FEES, { value: FEES, gasLimit: GAS });
+    await conversion.connect(user).buy(ethers.ZeroAddress, ETH, 5_000_000n, "0x", "0x", 6, FEES, { value: FEES, gasLimit: GAS });
     const job2 = await win(ctx, 2n);
     // An anchor mined 40 minutes ago: the payment blocks are mostly over.
     const anchor2 = await chain.add([], (await latestTime()) - 40 * MINUTE);
@@ -412,7 +412,7 @@ describe("Conversion: buy, BTC to coin", function () {
     expect((await conversion.getSwap(2n)).state).to.equal(5n); // Cancelled
 
     // A script named for an earlier swap is refused.
-    await conversion.connect(user).buy(ethers.ZeroAddress, ETH, 5_000_000n, "0x", 6, FEES, { value: FEES, gasLimit: GAS });
+    await conversion.connect(user).buy(ethers.ZeroAddress, ETH, 5_000_000n, "0x", "0x", 6, FEES, { value: FEES, gasLimit: GAS });
     const job3 = await win(ctx, 3n);
     await protocol.connect(operator).anchorJob(job3, await chain.add());
     await expect(conversion.connect(operator).fund(3n, OPERATOR_SCRIPT, { value: ETH })).to.be.revertedWithCustomError(conversion, "ScriptUsed");
@@ -421,20 +421,27 @@ describe("Conversion: buy, BTC to coin", function () {
   it("keeps the user's own Bitcoin script on a buy, as a note", async function () {
     const ctx = await deploy();
     const { conversion, user } = ctx;
-    await conversion.connect(user).buy(ethers.ZeroAddress, ETH, 5_000_000n, USER_SCRIPT, 6, FEES, { value: FEES, gasLimit: GAS });
+    await conversion.connect(user).buy(ethers.ZeroAddress, ETH, 5_000_000n, USER_SCRIPT, "0x", 6, FEES, { value: FEES, gasLimit: GAS });
     expect((await conversion.getSwap(1n)).userScript).to.equal(USER_SCRIPT);
     // Too long for any standard script: refused. Empty: allowed.
     await expect(
-      conversion.connect(user).buy(ethers.ZeroAddress, ETH, 5_000_000n, "0x" + "00".repeat(41), 6, FEES, { value: FEES, gasLimit: GAS })
+      conversion.connect(user).buy(ethers.ZeroAddress, ETH, 5_000_000n, "0x" + "00".repeat(41), "0x", 6, FEES, { value: FEES, gasLimit: GAS })
     ).to.be.revertedWithCustomError(conversion, "InvalidScript");
-    await conversion.connect(user).buy(ethers.ZeroAddress, ETH, 5_000_000n, "0x", 6, FEES, { value: FEES, gasLimit: GAS });
+    await conversion.connect(user).buy(ethers.ZeroAddress, ETH, 5_000_000n, "0x", "0x", 6, FEES, { value: FEES, gasLimit: GAS });
     expect((await conversion.getSwap(2n)).userScript).to.equal("0x");
+    // A memo for operators is kept too, up to 128 bytes.
+    const memo = ethers.hexlify(ethers.toUtf8Bytes("ipow-tunnel/1 solana-devnet native 60000000"));
+    await conversion.connect(user).buy(ethers.ZeroAddress, ETH, 5_000_000n, "0x", memo, 6, FEES, { value: FEES, gasLimit: GAS });
+    expect((await conversion.getSwap(3n)).memo).to.equal(memo);
+    await expect(
+      conversion.connect(user).buy(ethers.ZeroAddress, ETH, 5_000_000n, "0x", "0x" + "00".repeat(129), 6, FEES, { value: FEES, gasLimit: GAS })
+    ).to.be.revertedWithCustomError(conversion, "InvalidMemo");
   });
 
   it("cancels a swap nobody took, with the job's fees to the user's credit", async function () {
     const ctx = await deploy();
     const { conversion, protocol, user } = ctx;
-    await conversion.connect(user).buy(ethers.ZeroAddress, ETH, 5_000_000n, "0x", 6, FEES, { value: FEES, gasLimit: GAS });
+    await conversion.connect(user).buy(ethers.ZeroAddress, ETH, 5_000_000n, "0x", "0x", 6, FEES, { value: FEES, gasLimit: GAS });
     await expect(conversion.cancel(1n)).to.be.revertedWithCustomError(conversion, "FundingTimeNotOver");
     await mineAt((await latestTime()) + 16 * MINUTE);
     const jobId = (await conversion.getSwap(1n)).jobId;
@@ -459,7 +466,7 @@ describe("Conversion: buy, BTC to coin", function () {
   it("buys a token, locked exactly by the operator", async function () {
     const ctx = await deploy();
     const { conversion, protocol, token, chain, user, operator } = ctx;
-    await conversion.connect(user).buy(await token.getAddress(), 1000n, 5_000_000n, "0x", 6, FEES, { value: FEES, gasLimit: GAS });
+    await conversion.connect(user).buy(await token.getAddress(), 1000n, 5_000_000n, "0x", "0x", 6, FEES, { value: FEES, gasLimit: GAS });
     const jobId = await win(ctx, 1n);
     await protocol.connect(operator).anchorJob(jobId, await chain.add());
     await token.mint(operator.address, 1000n);
@@ -475,7 +482,7 @@ describe("Conversion: buy, BTC to coin", function () {
     const ctx = await deploy();
     const { conversion, user } = ctx;
     await expect(
-      conversion.connect(user).buy(ethers.ZeroAddress, ETH, MAX_SATS + 1n, "0x", 6, FEES, { value: FEES, gasLimit: GAS })
+      conversion.connect(user).buy(ethers.ZeroAddress, ETH, MAX_SATS + 1n, "0x", "0x", 6, FEES, { value: FEES, gasLimit: GAS })
     ).to.be.revertedWithCustomError(conversion, "TooLarge");
   });
 });

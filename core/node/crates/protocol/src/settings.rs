@@ -83,7 +83,7 @@ fn default_true() -> bool {
     true
 }
 
-fn default_tunnel_max_sats() -> u64 {
+pub fn default_tunnel_max_sats() -> u64 {
     100_000
 }
 

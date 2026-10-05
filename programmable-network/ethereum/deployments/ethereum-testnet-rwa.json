@@ -31,6 +31,76 @@
       "decimals": 18,
       "faucet": "1",
       "vaultAsset": 4
+    },
+    "XAUT": {
+      "address": "0x1a7bd06F30b7ED12f6C698b0B3a289eBB379aaC9",
+      "name": "Tether Gold (Sepolia Greatwall)",
+      "decimals": 18,
+      "faucet": "1",
+      "vaultAsset": 5
+    },
+    "STRCx": {
+      "address": "0xB364813e60dB761FCF7FebFa9b1caD062797a9D6",
+      "name": "Strategy PP Variable xStock (Sepolia Greatwall)",
+      "decimals": 18,
+      "faucet": "5",
+      "vaultAsset": 6
+    },
+    "IVVon": {
+      "address": "0x866D9360E35c3DaE8B1ad98aeCC729647C093852",
+      "name": "iShares Core S&P 500 ETF (Ondo) (Sepolia Greatwall)",
+      "decimals": 18,
+      "faucet": "5",
+      "vaultAsset": 7
+    },
+    "QQQon": {
+      "address": "0x6c472F0404179BE1985D92C759Fd9293252Ab858",
+      "name": "Invesco QQQ (Ondo) (Sepolia Greatwall)",
+      "decimals": 18,
+      "faucet": "5",
+      "vaultAsset": 8
+    },
+    "NVDAon": {
+      "address": "0xE8F52D763CF87154DC443fa36F9f6D65f44CCaE0",
+      "name": "NVIDIA (Ondo) (Sepolia Greatwall)",
+      "decimals": 18,
+      "faucet": "5",
+      "vaultAsset": 9
+    },
+    "SLVon": {
+      "address": "0xc22Ca2B75825cE64a3937F155698C968848d9645",
+      "name": "iShares Silver Trust (Ondo) (Sepolia Greatwall)",
+      "decimals": 18,
+      "faucet": "5",
+      "vaultAsset": 10
+    },
+    "IEFAon": {
+      "address": "0x3baaC1a56A8431fea5d0ee0636f285d4F996Bc4C",
+      "name": "iShares Core MSCI EAFE ETF (Ondo) (Sepolia Greatwall)",
+      "decimals": 18,
+      "faucet": "5",
+      "vaultAsset": 11
+    },
+    "AMDon": {
+      "address": "0x04b4Cfe08b2C79fFeBc083E5e7091CfAC142c201",
+      "name": "AMD (Ondo) (Sepolia Greatwall)",
+      "decimals": 18,
+      "faucet": "5",
+      "vaultAsset": 12
+    },
+    "SOFIon": {
+      "address": "0xA83EE721F0f398A920f4c35Eb04aa244d2c5d1fC",
+      "name": "SoFi Technologies (Ondo) (Sepolia Greatwall)",
+      "decimals": 18,
+      "faucet": "5",
+      "vaultAsset": 13
+    },
+    "HIMSon": {
+      "address": "0x2c8b859ff059554ff363dED4a484062E247E03BC",
+      "name": "Hims & Hers Health (Ondo) (Sepolia Greatwall)",
+      "decimals": 18,
+      "faucet": "5",
+      "vaultAsset": 14
     }
   }
 }

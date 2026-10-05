@@ -1,0 +1,71 @@
+{
+  "network": "hyperliquid-testnet",
+  "chainId": 998,
+  "minter": "0x9784B80BC7b95753f2a2732649F3a1136b4c2BF1",
+  "operator": "0x9784B80BC7b95753f2a2732649F3a1136b4c2BF1",
+  "tokens": {
+    "thBILL": {
+      "address": "0xbc653e8dB02870f0562231BA55E6f4F182cAaF4c",
+      "name": "Theo Short Duration US Treasury Fund (HyperEVM Testnet Greatwall)",
+      "decimals": 18,
+      "faucet": "100",
+      "vaultAsset": 1
+    },
+    "USDH": {
+      "address": "0xDaB99518afF82db3c16ad748B56884238bb2C5C5",
+      "name": "USDH (HyperEVM Testnet Greatwall)",
+      "decimals": 18,
+      "faucet": "100",
+      "vaultAsset": 2
+    },
+    "GMEx": {
+      "address": "0xC034e3Fc38E88D12922A285D09470510d320a200",
+      "name": "Gamestop xStock (HyperEVM Testnet Greatwall)",
+      "decimals": 18,
+      "faucet": "5",
+      "vaultAsset": 3
+    },
+    "MUx": {
+      "address": "0xCeee90F921AA994B837B97B4886c1A2AE56b2550",
+      "name": "Micron Technology xStock (HyperEVM Testnet Greatwall)",
+      "decimals": 18,
+      "faucet": "5",
+      "vaultAsset": 4
+    },
+    "USDHL": {
+      "address": "0x8965958BC61220d8add02E227437Fa363E21D96f",
+      "name": "Hyper USD (HyperEVM Testnet Greatwall)",
+      "decimals": 18,
+      "faucet": "100",
+      "vaultAsset": 5
+    },
+    "SKHYx": {
+      "address": "0xE101001bD62451c6f3337f44EF2cC4F166dd891D",
+      "name": "SK hynix xStock (HyperEVM Testnet Greatwall)",
+      "decimals": 18,
+      "faucet": "5",
+      "vaultAsset": 6
+    },
+    "NBISx": {
+      "address": "0xFcbF76B91dDebbee0c21d808B26a9Fb8fcC0ca94",
+      "name": "Nebius xStock (HyperEVM Testnet Greatwall)",
+      "decimals": 18,
+      "faucet": "5",
+      "vaultAsset": 7
+    },
+    "IWMx": {
+      "address": "0x1E5da6001764bB4e76321FD90Dfaf626cA1f3A83",
+      "name": "Russell 2000 xStock (HyperEVM Testnet Greatwall)",
+      "decimals": 18,
+      "faucet": "5",
+      "vaultAsset": 8
+    },
+    "CRWVx": {
+      "address": "0xda238E5F844d01554b1A9F2342F733A8205d0586",
+      "name": "CoreWeave xStock (HyperEVM Testnet Greatwall)",
+      "decimals": 18,
+      "faucet": "5",
+      "vaultAsset": 9
+    }
+  }
+}

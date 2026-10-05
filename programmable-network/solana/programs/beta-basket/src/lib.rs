@@ -15,10 +15,18 @@
 //! Its powers are recorded when the basket is created. A burn pays each
 //! part on its own, and a share of what the basket actually holds, so one
 //! issuer's action falls only on its own part, and equally on every holder.
+//!
+//! A part may be another network's asset, held here as the vault's receipt
+//! of it, named before the vault has made that mint (E5): the part is then
+//! pending (no token program recorded), and is read, its powers with it,
+//! when first minted. Nothing can be minted while a part's mint does not
+//! exist: the asset must be bridged here first.
 //! No key can change the program once its upgrade authority is removed
 //! (D59).
 
 use anchor_lang::prelude::*;
+use anchor_lang::solana_program::instruction::{AccountMeta, Instruction};
+use anchor_lang::solana_program::program::invoke_signed;
 use anchor_spl::associated_token::{self, get_associated_token_address_with_program_id, AssociatedToken};
 use anchor_spl::token::{self, Burn, Mint, MintTo, Token, TokenAccount};
 use anchor_spl::token_2022::spl_token_2022::extension::{BaseStateWithExtensions, ExtensionType, StateWithExtensions};
@@ -37,6 +45,17 @@ pub const BPS: u128 = 10_000;
 /// the basket is new.
 pub const BETA_DECIMALS: u8 = 9;
 pub const ONE: u128 = 1_000_000_000;
+
+/// The basket token's name, symbol and metadata URI (E4): Token Metadata's
+/// limits, in bytes; a name and a symbol of at least one.
+pub const MAX_NAME: usize = 32;
+pub const MAX_SYMBOL: usize = 10;
+pub const MAX_URI: usize = 200;
+/// Metaplex Token Metadata: the account wallets read a token's name,
+/// symbol and image from. Its `CreateMetadataAccountV3` is sent as the
+/// instruction's bytes, so the program depends on no crate of it.
+pub const METADATA_PROGRAM: Pubkey = Pubkey::from_str_const("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s");
+pub const METADATA_SEED: &[u8] = b"metadata";
 
 pub const BASKET_SEED: &[u8] = b"basket";
 pub const BETA_SEED: &[u8] = b"beta";
@@ -71,7 +90,8 @@ pub struct Part {
     /// What one whole BETA holds of it when the basket is new, in its
     /// smallest unit.
     pub amount: u64,
-    /// The classic token program, or Token-2022.
+    /// The classic token program, or Token-2022; the default while the
+    /// part's mint does not exist yet (E5), read when it is first minted.
     pub token_program: Pubkey,
     pub decimals: u8,
     /// Its issuer's powers: `CAN_FREEZE`, `CAN_PAUSE`, `CAN_MOVE`,
@@ -118,6 +138,10 @@ pub struct Owed {
 
 #[error_code]
 pub enum BasketError {
+    #[msg("a part is a receipt the vault has not made yet: bridge the asset here first")]
+    PartNotMadeYet,
+    #[msg("the token's name is 1 to 32 bytes, its symbol 1 to 10, its URI at most 200")]
+    BadMetadata,
     #[msg("A basket has 1 to 8 parts, each a different token with an amount")]
     BadParts,
     #[msg("A fee is at most 1%")]
@@ -302,15 +326,33 @@ pub mod beta_basket {
     /// Creates basket `id` of the caller, and its BETA token. The remaining
     /// accounts are the parts' mints, in order; each part's issuer powers
     /// are read from its mint and recorded.
-    pub fn create_basket<'info>(ctx: Context<'info, CreateBasket<'info>>, id: u64, parts: Vec<Part>, mint_fee_bps: u16, burn_fee_bps: u16) -> Result<()> {
+    pub fn create_basket<'info>(
+        ctx: Context<'info, CreateBasket<'info>>,
+        id: u64,
+        name: String,
+        symbol: String,
+        uri: String,
+        parts: Vec<Part>,
+        mint_fee_bps: u16,
+        burn_fee_bps: u16,
+    ) -> Result<()> {
         require!(!parts.is_empty() && parts.len() <= MAX_PARTS, BasketError::BadParts);
         require!(ctx.remaining_accounts.len() == parts.len(), BasketError::WrongAccount);
         require!(mint_fee_bps <= MAX_FEE_BPS && burn_fee_bps <= MAX_FEE_BPS, BasketError::FeeTooHigh);
+        require!(
+            !name.is_empty() && name.len() <= MAX_NAME && !symbol.is_empty() && symbol.len() <= MAX_SYMBOL && uri.len() <= MAX_URI,
+            BasketError::BadMetadata
+        );
         let mut recorded = vec![];
         for (i, p) in parts.iter().enumerate() {
             require!(p.amount > 0 && parts[..i].iter().all(|q| q.mint != p.mint), BasketError::BadParts);
             let m = &ctx.remaining_accounts[i];
             require_keys_eq!(m.key(), p.mint, BasketError::WrongAccount);
+            if m.data_is_empty() && *m.owner == anchor_lang::system_program::ID {
+                // A receipt the vault has not made yet (E5): pending.
+                recorded.push(Part { mint: p.mint, amount: p.amount, token_program: Pubkey::default(), decimals: 0, powers: 0, owed: 0 });
+                continue;
+            }
             let (decimals, powers) = powers_of(m)?;
             recorded.push(Part { mint: p.mint, amount: p.amount, token_program: *m.owner, decimals, powers, owed: 0 });
         }
@@ -325,6 +367,47 @@ pub mod beta_basket {
         b.bump = ctx.bumps.basket;
         b.beta_bump = ctx.bumps.beta;
         ctx.accounts.fees.bump = ctx.bumps.fees;
+        // The token's name, symbol and URI (E4), in its Token Metadata
+        // account, fixed for good: the basket is its update authority and
+        // the account is made immutable.
+        let a = &ctx.accounts;
+        let mut data = Vec::with_capacity(4 * 3 + name.len() + symbol.len() + uri.len() + 8);
+        data.push(33); // CreateMetadataAccountV3
+        for v in [&name, &symbol, &uri] {
+            data.extend_from_slice(&(v.len() as u32).to_le_bytes());
+            data.extend_from_slice(v.as_bytes());
+        }
+        data.extend_from_slice(&[0, 0]); // seller_fee_basis_points
+        data.extend_from_slice(&[0, 0, 0]); // creators, collection, uses: none
+        data.push(0); // is_mutable: false
+        data.push(0); // collection_details: none
+        let ix = Instruction {
+            program_id: METADATA_PROGRAM,
+            accounts: vec![
+                AccountMeta::new(a.metadata.key(), false),
+                AccountMeta::new_readonly(a.beta.key(), false),
+                AccountMeta::new_readonly(a.basket.key(), true),
+                AccountMeta::new(a.creator.key(), true),
+                AccountMeta::new_readonly(a.basket.key(), true),
+                AccountMeta::new_readonly(a.system_program.key(), false),
+            ],
+            data,
+        };
+        let creator_key = a.creator.key();
+        let id_bytes = id.to_le_bytes();
+        let seeds: &[&[u8]] = &[BASKET_SEED, creator_key.as_ref(), &id_bytes, &[ctx.bumps.basket]];
+        invoke_signed(
+            &ix,
+            &[
+                a.metadata.to_account_info(),
+                a.beta.to_account_info(),
+                a.basket.to_account_info(),
+                a.creator.to_account_info(),
+                a.system_program.to_account_info(),
+                a.metadata_program.to_account_info(),
+            ],
+            &[seeds],
+        )?;
         Ok(())
     }
 
@@ -344,6 +427,23 @@ pub mod beta_basket {
         // A whole number of BETA first: a dust first mint would set the
         // basket's mix for every later minter.
         require!(supply > 0 || amount as u128 % ONE == 0, BasketError::FirstMintNotWhole);
+        // A pending part (E5) is read now that its mint exists, its powers
+        // recorded as a part's are at creation; or the mint waits.
+        let pending: Vec<usize> = a.basket.parts.iter().enumerate().filter(|(_, p)| p.token_program == Pubkey::default()).map(|(i, _)| i).collect();
+        if !pending.is_empty() {
+            require!(ctx.remaining_accounts.len() >= PER_PART * a.basket.parts.len(), BasketError::WrongAccount);
+            let basket = &mut ctx.accounts.basket;
+            for i in pending {
+                let m = &ctx.remaining_accounts[PER_PART * i];
+                require_keys_eq!(m.key(), basket.parts[i].mint, BasketError::WrongAccount);
+                require!(!(m.data_is_empty() && *m.owner == anchor_lang::system_program::ID), BasketError::PartNotMadeYet);
+                let (decimals, powers) = powers_of(m)?;
+                basket.parts[i].token_program = *m.owner;
+                basket.parts[i].decimals = decimals;
+                basket.parts[i].powers = powers;
+            }
+        }
+        let a = &ctx.accounts;
         let accounts = part_accounts(&a.basket, &basket_key, ctx.remaining_accounts, &user, 0)?;
         for (part, acc) in a.basket.parts.iter().zip(accounts) {
             associated_token::create_idempotent(CpiContext::new(
@@ -540,10 +640,17 @@ pub struct CreateBasket<'info> {
     /// The creator's record of fees: it receives them first.
     #[account(init, payer = creator, space = 8 + Fees::INIT_SPACE, seeds = [FEES_SEED, basket.key().as_ref(), creator.key().as_ref()], bump)]
     pub fees: Account<'info, Fees>,
+    /// CHECK: the token's metadata account, made by Token Metadata at its
+    /// own address for the mint; checked to be that address.
+    #[account(mut, seeds = [METADATA_SEED, METADATA_PROGRAM.as_ref(), beta.key().as_ref()], bump, seeds::program = METADATA_PROGRAM)]
+    pub metadata: UncheckedAccount<'info>,
     #[account(mut)]
     pub creator: Signer<'info>,
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
+    /// CHECK: Token Metadata itself, by its id.
+    #[account(address = METADATA_PROGRAM)]
+    pub metadata_program: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]

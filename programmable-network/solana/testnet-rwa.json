@@ -31,6 +31,86 @@
       "decimals": 9,
       "faucet": 1,
       "vaultAsset": 4
+    },
+    "ONyc": {
+      "mint": "3Rz3KnHk5TFecwkjn5iUVNgSmNxscT5k1VaJskP8Y5i1",
+      "name": "OnRe Reinsurance (GW Devnet)",
+      "decimals": 9,
+      "faucet": 5,
+      "vaultAsset": 5,
+      "metadata": "https://greatwall.finance/assets/rwa/solana/ONyc.json"
+    },
+    "MSTRx": {
+      "mint": "CuJKX2cCGbjRztMMKPDmtRtxPsi33siXSmDvum4aWHDG",
+      "name": "MicroStrategy xStock (GW Devnet)",
+      "decimals": 9,
+      "faucet": 5,
+      "vaultAsset": 6,
+      "metadata": "https://greatwall.finance/assets/rwa/solana/MSTRx.json"
+    },
+    "CRCLx": {
+      "mint": "23EfYUXxaUuhQUeYHFwCvWQGJcQ5J7voFjXLE7nAqzHx",
+      "name": "Circle xStock (GW Devnet)",
+      "decimals": 9,
+      "faucet": 5,
+      "vaultAsset": 7,
+      "metadata": "https://greatwall.finance/assets/rwa/solana/CRCLx.json"
+    },
+    "SPYx": {
+      "mint": "5DPmBfTHyvrgWsFzLL8mTTE7C8Aw8dWYb3eiijZcwkvw",
+      "name": "SP500 xStock (GW Devnet)",
+      "decimals": 9,
+      "faucet": 5,
+      "vaultAsset": 8,
+      "metadata": "https://greatwall.finance/assets/rwa/solana/SPYx.json"
+    },
+    "TSLAx": {
+      "mint": "Ds6YjJDgHNSbCNu3fJXR7JhK2KKHr69t9NttxurPBZ2x",
+      "name": "Tesla xStock (GW Devnet)",
+      "decimals": 9,
+      "faucet": 5,
+      "vaultAsset": 9,
+      "metadata": "https://greatwall.finance/assets/rwa/solana/TSLAx.json"
+    },
+    "GLDx": {
+      "mint": "ED4i81SD8b5PwCJiSW3mU5VmeTuAgFVEBx4Kzi21d8rf",
+      "name": "Gold xStock (GW Devnet)",
+      "decimals": 9,
+      "faucet": 5,
+      "vaultAsset": 10,
+      "metadata": "https://greatwall.finance/assets/rwa/solana/GLDx.json"
+    },
+    "GOOGLx": {
+      "mint": "H5jmGEmxJ1rt6CdwUXfoj5euBE4ZLWXuBQKsgPjJD7e4",
+      "name": "Alphabet xStock (GW Devnet)",
+      "decimals": 9,
+      "faucet": 5,
+      "vaultAsset": 11,
+      "metadata": "https://greatwall.finance/assets/rwa/solana/GOOGLx.json"
+    },
+    "SPCXx": {
+      "mint": "FEzJpUCA5JXs3uEfc94Gx9CebP4UHAeeTuonNSB49kha",
+      "name": "SpaceX xStock (GW Devnet)",
+      "decimals": 9,
+      "faucet": 5,
+      "vaultAsset": 12,
+      "metadata": "https://greatwall.finance/assets/rwa/solana/SPCXx.json"
+    },
+    "QQQx": {
+      "mint": "GoZFcM4moGyWh8Tr41Y3LiR1p7JYo6ZgUebxp8gy1Mvx",
+      "name": "Nasdaq xStock (GW Devnet)",
+      "decimals": 9,
+      "faucet": 5,
+      "vaultAsset": 13,
+      "metadata": "https://greatwall.finance/assets/rwa/solana/QQQx.json"
+    },
+    "HOODx": {
+      "mint": "DYMkgJF2GLeWrgbx4wWE5FBzKURL5CKqaPAD9mcAEgBs",
+      "name": "Robinhood xStock (GW Devnet)",
+      "decimals": 9,
+      "faucet": 5,
+      "vaultAsset": 14,
+      "metadata": "https://greatwall.finance/assets/rwa/solana/HOODx.json"
     }
   }
 }

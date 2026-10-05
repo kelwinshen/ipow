@@ -135,6 +135,8 @@ impl ConversionApp for SvmConversion {
             job_id: s.job_id,
             script: s.script,
             pay_window: (s.pay_from != 0).then_some((s.pay_from, s.pay_to)),
+            // The program keeps no memo yet; its buys are not open to users.
+            memo: vec![],
         })
     }
 
@@ -156,13 +158,6 @@ impl ConversionApp for SvmConversion {
 
     async fn buy_fees(&self) -> anyhow::Result<Amount> {
         Ok(paid(CONFIRMATIONS) as Amount)
-    }
-
-    /// An ed25519 signature of the message's bytes by the wallet, base58.
-    fn signed_by(&self, user: &str, message: &str, signature: &str) -> bool {
-        let Ok(user) = user.parse::<Pubkey>() else { return false };
-        let Ok(sig) = signature.parse::<solana_sdk::signature::Signature>() else { return false };
-        sig.verify(user.as_ref(), message.as_bytes())
     }
 
     async fn fund(&self, swap_id: u64, script: &[u8]) -> anyhow::Result<()> {

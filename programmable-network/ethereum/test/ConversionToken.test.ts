@@ -53,16 +53,16 @@ describe("Conversion on a token network", function () {
       conversion.connect(user).sell(ethers.ZeroAddress, USD, 5_000_000n, SCRIPT, 6, 200_000n, { value: USD, gasLimit: GAS })
     ).to.be.revertedWithCustomError(conversion, "InvalidAmount");
     await atTempoPrice();
-    await expect(conversion.connect(user).buy(ethers.ZeroAddress, USD, 5_000_000n, "0x", 6, 200_000n, { gasLimit: GAS })).to.be.revertedWithCustomError(
+    await expect(conversion.connect(user).buy(ethers.ZeroAddress, USD, 5_000_000n, "0x", "0x", 6, 200_000n, { gasLimit: GAS })).to.be.revertedWithCustomError(
       conversion,
       "InvalidAmount"
     );
     await atTempoPrice();
     await expect(
-      conversion.connect(user).buy(await coin.getAddress(), USD, 5_000_000n, "0x", 6, 200_000n, { value: 1n, gasLimit: GAS })
+      conversion.connect(user).buy(await coin.getAddress(), USD, 5_000_000n, "0x", "0x", 6, 200_000n, { value: 1n, gasLimit: GAS })
     ).to.be.revertedWithCustomError(conversion, "InvalidAmount");
     await atTempoPrice();
-    await conversion.connect(user).buy(await coin.getAddress(), USD, 5_000_000n, "0x", 6, 200_000n, { gasLimit: GAS });
+    await conversion.connect(user).buy(await coin.getAddress(), USD, 5_000_000n, "0x", "0x", 6, 200_000n, { gasLimit: GAS });
     expect(await coin.balanceOf(await protocol.getAddress())).to.equal(200_000n);
   });
 

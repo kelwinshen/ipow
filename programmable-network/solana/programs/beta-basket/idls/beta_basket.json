@@ -411,6 +411,108 @@
           }
         },
         {
+          "name": "metadata",
+          "docs": [
+            "own address for the mint; checked to be that address."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  101,
+                  116,
+                  97,
+                  100,
+                  97,
+                  116,
+                  97
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  11,
+                  112,
+                  101,
+                  177,
+                  227,
+                  209,
+                  124,
+                  69,
+                  56,
+                  157,
+                  82,
+                  127,
+                  107,
+                  4,
+                  195,
+                  205,
+                  88,
+                  184,
+                  108,
+                  115,
+                  26,
+                  160,
+                  253,
+                  181,
+                  73,
+                  182,
+                  209,
+                  188,
+                  3,
+                  248,
+                  41,
+                  70
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "beta"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                11,
+                112,
+                101,
+                177,
+                227,
+                209,
+                124,
+                69,
+                56,
+                157,
+                82,
+                127,
+                107,
+                4,
+                195,
+                205,
+                88,
+                184,
+                108,
+                115,
+                26,
+                160,
+                253,
+                181,
+                73,
+                182,
+                209,
+                188,
+                3,
+                248,
+                41,
+                70
+              ]
+            }
+          }
+        },
+        {
           "name": "creator",
           "writable": true,
           "signer": true
@@ -422,12 +524,28 @@
         {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "metadata_program",
+          "address": "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s"
         }
       ],
       "args": [
         {
           "name": "id",
           "type": "u64"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "symbol",
+          "type": "string"
+        },
+        {
+          "name": "uri",
+          "type": "string"
         },
         {
           "name": "parts",
@@ -701,53 +819,63 @@
   "errors": [
     {
       "code": 6000,
+      "name": "PartNotMadeYet",
+      "msg": "a part is a receipt the vault has not made yet: bridge the asset here first"
+    },
+    {
+      "code": 6001,
+      "name": "BadMetadata",
+      "msg": "the token's name is 1 to 32 bytes, its symbol 1 to 10, its URI at most 200"
+    },
+    {
+      "code": 6002,
       "name": "BadParts",
       "msg": "A basket has 1 to 8 parts, each a different token with an amount"
     },
     {
-      "code": 6001,
+      "code": 6003,
       "name": "FeeTooHigh",
       "msg": "A fee is at most 1%"
     },
     {
-      "code": 6002,
+      "code": 6004,
       "name": "WrongAccount",
       "msg": "The accounts of the parts are not the ones expected"
     },
     {
-      "code": 6003,
+      "code": 6005,
       "name": "BadMint",
       "msg": "A part must be a token of the classic program or of Token-2022, without transfer fees, transfer hooks, confidential transfers, or a ban on transfers"
     },
     {
-      "code": 6004,
+      "code": 6006,
       "name": "ZeroAmount"
     },
     {
-      "code": 6005,
+      "code": 6007,
       "name": "Overflow"
     },
     {
-      "code": 6006,
+      "code": 6008,
       "name": "NothingOwed"
     },
     {
-      "code": 6007,
+      "code": 6009,
       "name": "FirstMintNotWhole",
       "msg": "A basket's first mint is a whole number of BETA, so it holds exactly the parts it was created with"
     },
     {
-      "code": 6008,
+      "code": 6010,
       "name": "PartEmpty",
       "msg": "A part of the basket holds nothing: its issuer took it all. Nothing can be minted"
     },
     {
-      "code": 6009,
+      "code": 6011,
       "name": "PartChanged",
       "msg": "A part's token no longer has the rules recorded for it"
     },
     {
-      "code": 6010,
+      "code": 6012,
       "name": "NoFeesRecord",
       "msg": "The fee receiver's record of fees is needed"
     }
@@ -871,7 +999,8 @@
           {
             "name": "token_program",
             "docs": [
-              "The classic token program, or Token-2022."
+              "The classic token program, or Token-2022; the default while the",
+              "part's mint does not exist yet (E5), read when it is first minted."
             ],
             "type": "pubkey"
           },

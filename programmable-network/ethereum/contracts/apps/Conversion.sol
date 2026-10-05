@@ -80,10 +80,17 @@ contract Conversion is ReentrancyGuard {
         /// would pay from. Anyone may pay a buy, from anywhere: this is a
         /// note, not a rule. Empty when not given.
         bytes userScript;
+        /// Buy only: a note for operators, as the user's app wrote it. A
+        /// tunnel's buy names the sale that will pay it on another network
+        /// (the SDK's `tunnelMemo`), so an operator reading new buys takes
+        /// the sale on those terms. Not read by this contract.
+        bytes memo;
     }
 
     /// The longest user script a buy keeps: the longest standard one is 34 bytes.
     uint256 private constant MAX_USER_SCRIPT = 40;
+    /// The longest memo a buy keeps.
+    uint256 private constant MAX_MEMO = 128;
 
     /// @notice The challenge period of a close: the one kind of claim.
     uint32 public constant CLOSE_PERIOD = 36 hours;
@@ -136,6 +143,7 @@ contract Conversion is ReentrancyGuard {
 
     error InvalidAmount();
     error InvalidScript();
+    error InvalidMemo();
     error TooLarge();
     error WrongState();
     error NotOperator();
@@ -348,15 +356,19 @@ contract Conversion is ReentrancyGuard {
     /// coin (D138).
     /// @param userScript The user's own Bitcoin output script, kept for apps
     /// to show (empty for none); payments are accepted from anywhere.
-    function buy(address token, uint256 amount, uint64 sats, bytes calldata userScript, uint16 confirmations, uint256 fees)
+    /// @param memo A note for operators (empty for none): a tunnel's terms.
+    function buy(address token, uint256 amount, uint64 sats, bytes calldata userScript, bytes calldata memo, uint16 confirmations, uint256 fees)
         external
         payable
         nonReentrant
         returns (uint256 swapId)
     {
         if (userScript.length > MAX_USER_SCRIPT) revert InvalidScript();
+        if (memo.length > MAX_MEMO) revert InvalidMemo();
         swapId = _buy(msg.sender, token, amount, sats, confirmations, fees);
-        _swaps[swapId].userScript = userScript;
+        Swap storage s = _swaps[swapId];
+        s.userScript = userScript;
+        s.memo = memo;
     }
 
     /// @notice A buy whose coin goes to `recipient`, the caller paying the

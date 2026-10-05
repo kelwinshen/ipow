@@ -3,7 +3,7 @@
 // for BTC, or buy it with BTC, an operator taking the other side. Apps give
 // and show Bitcoin addresses; the contract holds output scripts.
 
-import { Contract, ZeroAddress, type Provider, type Signer } from "ethers";
+import { Contract, ZeroAddress, hexlify, toUtf8Bytes, toUtf8String, type Provider, type Signer } from "ethers";
 
 import { Bitcoin } from "./bitcoin.ts";
 import { addressToScript, scriptToAddress } from "./btcAddress.ts";
@@ -47,6 +47,8 @@ export type SwapView = {
   /** Buy: the user's own Bitcoin address, as named when the buy was opened;
    *  null for none. Payments are accepted from anywhere. */
   userAddress: string | null;
+  /** Buy: the note for operators, as text; empty for none. */
+  memo: string;
   /** What the swap waits for now, in words an app can show. */
   waitingFor: string | null;
 };
@@ -144,20 +146,32 @@ export async function buyFor(
 
 /** Buys `amount` of `token` (zero for the network's coin) for `sats`. Once
  *  an operator locks it, the swap names where and when to pay. `from` is
- *  the user's own Bitcoin address, kept on the swap for apps to show;
- *  any wallet may pay. */
+ *  the user's own Bitcoin address, kept on the swap for apps to show (any
+ *  wallet may pay); `memo` a note for operators (a tunnel's terms,
+ *  `tunnelMemo`), as text. */
 export async function buy(
   signer: Signer,
   d: Deployment,
   quote: SwapQuote,
-  options: { token?: string; amount: bigint; sats: bigint; from?: string }
+  options: { token?: string; amount: bigint; sats: bigint; from?: string; memo?: string }
 ): Promise<{ swapId: bigint; jobId: bigint; txHash: string }> {
   if (d.coin.kind !== "native") throw new Error(`${d.name}: a token coin's swap needs its approvals, not built yet`);
   const c = conversion(d, signer);
-  const args = [options.token ?? ZeroAddress, options.amount, options.sats, options.from ? addressToScript(options.from) : "0x", quote.confirmations, quote.fees];
+  const memo = options.memo ? hexlify(toUtf8Bytes(options.memo)) : "0x";
+  const args = [options.token ?? ZeroAddress, options.amount, options.sats, options.from ? addressToScript(options.from) : "0x", memo, quote.confirmations, quote.fees];
   const value = quote.fees * rpcScale(d);
   const tx = await c.buy(...args, { value, gasLimit: await jobGas(c, "buy", args, value) });
   return { ...opened(c, await tx.wait(), "Bought"), txHash: tx.hash };
+}
+
+/** A memo's bytes as the text they were written as; hex when not text. */
+function memoText(hex: string | undefined): string {
+  if (!hex || hex === "0x") return "";
+  try {
+    return toUtf8String(hex);
+  } catch {
+    return hex;
+  }
 }
 
 export async function getSwap(provider: Provider, d: Deployment, swapId: bigint | number): Promise<SwapView> {
@@ -197,6 +211,7 @@ export async function getSwap(provider: Provider, d: Deployment, swapId: bigint 
     payBlocks,
     payWindow: Number(s.payFrom ?? 0) === 0 ? null : { first: Number(s.payFrom), last: Number(s.payTo) },
     userAddress: s.userScript && s.userScript !== "0x" ? scriptToAddress(s.userScript) : null,
+    memo: memoText(s.memo),
     waitingFor: waiting[`${side}/${state}`] ?? null,
   };
 }
