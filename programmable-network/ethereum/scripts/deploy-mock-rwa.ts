@@ -1,8 +1,12 @@
 // Deploys Greatwall.finance's test stand-ins for tokenized assets (MockRWA,
 // named "<asset> (<test network> Greatwall)" after the real tokens they
-// stand in for, see TOKENS) on one EVM test network, registers each with the vault so
-// it can be locked, mints the operator's inventory for swaps, and reads it
-// all back. Tokens already in deployments/<network>-testnet-rwa.json are
+// stand in for, see TOKENS) on one EVM test network, registers each with
+// every vault of the network (one per pair, D132: the pair with Solana and
+// each EVM pair), so it can be locked toward any peer and named as a
+// basket's part there, mints the operator's inventory for swaps, and reads
+// it all back. Run it again after a pair is added: it registers the listed
+// tokens with the new pair's vault. A token in the record but no longer
+// listed in TOKENS (Sepolia's first four) keeps only the vaults it has. Tokens already in deployments/<network>-testnet-rwa.json are
 // kept and skipped, so the list can grow between runs. A logo is not on
 // chain: Greatwall serves each token's image (public/assets/rwa/<symbol>.png
 // for Sepolia, public/assets/rwa/<network>/<symbol>.png for the others)
@@ -39,6 +43,9 @@ const TOKENS: Record<string, { symbol: string; name: string; faucet: string }[]>
     { symbol: "AMDon", name: "AMD (Ondo) (Sepolia Greatwall)", faucet: "5" },
     { symbol: "SOFIon", name: "SoFi Technologies (Ondo) (Sepolia Greatwall)", faucet: "5" },
     { symbol: "HIMSon", name: "Hims & Hers Health (Ondo) (Sepolia Greatwall)", faucet: "5" },
+    // 2026-10-06, for Greatwall's own index.
+    { symbol: "VTIon", name: "Vanguard Total Stock Market ETF (Ondo) (Sepolia Greatwall)", faucet: "5" },
+    { symbol: "IEMGon", name: "iShares Core MSCI Emerging Markets ETF (Ondo) (Sepolia Greatwall)", faucet: "5" },
   ],
   base: [
     { symbol: "GLDY", name: "Streamex GLDY (Base Sepolia Greatwall)", faucet: "5" },
@@ -51,6 +58,8 @@ const TOKENS: Record<string, { symbol: string; name: string; faucet: string }[]>
     { symbol: "wtNKE", name: "Wrapped NIKE, Inc. ST0x (Base Sepolia Greatwall)", faucet: "5" },
     { symbol: "AMZN.d", name: "Amazon.com, Inc. Common Stock (Base Sepolia Greatwall)", faucet: "5" },
     { symbol: "wtMCD", name: "Wrapped McDonald's Corporation ST0x (Base Sepolia Greatwall)", faucet: "5" },
+    // 2026-10-06, for Greatwall's own index.
+    { symbol: "GLDx", name: "Gold xStock (Base Sepolia Greatwall)", faucet: "5" },
   ],
   // Robinhood's stock tokens carry no ticker on rwa.xyz; the symbol here is
   // the stock's ticker with an r, the name Robinhood's.
@@ -76,6 +85,23 @@ const TOKENS: Record<string, { symbol: string; name: string; faucet: string }[]>
     { symbol: "NBISx", name: "Nebius xStock (HyperEVM Testnet Greatwall)", faucet: "5" },
     { symbol: "IWMx", name: "Russell 2000 xStock (HyperEVM Testnet Greatwall)", faucet: "5" },
     { symbol: "CRWVx", name: "CoreWeave xStock (HyperEVM Testnet Greatwall)", faucet: "5" },
+    // 2026-10-06, for Greatwall's own index.
+    { symbol: "SPYx", name: "SP500 xStock (HyperEVM Testnet Greatwall)", faucet: "5" },
+  ],
+  // Arbitrum (D141): Reality's stock tokens, Pleasing Gold, and Coinbase
+  // Wrapped BTC for Greatwall's own index (2026-10-06).
+  arbitrum: [
+    { symbol: "rINTC", name: "Intel Reality (Arbitrum Sepolia Greatwall)", faucet: "5" },
+    { symbol: "rMSTR", name: "MicroStrategy Reality (Arbitrum Sepolia Greatwall)", faucet: "5" },
+    { symbol: "rMU", name: "Micron Technology Reality (Arbitrum Sepolia Greatwall)", faucet: "5" },
+    { symbol: "rMRNA", name: "Moderna Reality (Arbitrum Sepolia Greatwall)", faucet: "5" },
+    { symbol: "rOKLO", name: "Oklo Inc Reality (Arbitrum Sepolia Greatwall)", faucet: "5" },
+    { symbol: "PGOLD", name: "Pleasing Gold (Arbitrum Sepolia Greatwall)", faucet: "1" },
+    { symbol: "rDRAM", name: "Roundhill Memory ETF Reality (Arbitrum Sepolia Greatwall)", faucet: "5" },
+    { symbol: "rSPY", name: "SPDR S&P 500 ETF Reality (Arbitrum Sepolia Greatwall)", faucet: "5" },
+    { symbol: "rSNDK", name: "SanDisk Reality (Arbitrum Sepolia Greatwall)", faucet: "5" },
+    { symbol: "rTSM", name: "Taiwan Semiconductor Reality (Arbitrum Sepolia Greatwall)", faucet: "5" },
+    { symbol: "cbBTC", name: "Coinbase Wrapped BTC (Arbitrum Sepolia Greatwall)", faucet: "0.01" },
   ],
 };
 
@@ -115,18 +141,18 @@ if (chainId !== s.chainId.testnet) throw new Error(`chain ${chainId} is not ${ne
 
 const d = JSON.parse(readFileSync(join(here, "..", "deployments", `${network}-testnet.json`), "utf8"));
 const homeAddress: string = d.vaults[0].home;
+/** Every vault of the network: one per pair (D132). The first, paired with
+ *  Solana, gives a token's `vaultAsset`; each pair's number is kept by peer. */
+const HOME_ABI = ["function registerAsset(address) returns (uint32)", "function assetOfToken(address) view returns (uint32)", "event AssetRegistered(uint32 indexed asset, address indexed token, uint8 decimals, uint8 recordDecimals)"];
+const homes: { peer: number; home: Contract }[] = d.vaults.map((v: any) => ({ peer: Number(v.peer), home: new Contract(v.home, HOME_ABI, wallet) }));
 const operator = getAddress(flag("--operator") ?? deployer.address);
 const inventory = flag("--inventory") ?? "1000";
 const artifact = JSON.parse(readFileSync(join(here, "..", "artifacts", "contracts", "testnet", "MockRWA.sol", "MockRWA.json"), "utf8"));
-const home = new Contract(
-  homeAddress,
-  ["function registerAsset(address) returns (uint32)", "function assetOfToken(address) view returns (uint32)", "event AssetRegistered(uint32 indexed asset, address indexed token, uint8 decimals, uint8 recordDecimals)"],
-  wallet
-);
+const home = homes[0].home;
 
 const out = join(here, "..", "deployments", `${network}-testnet-rwa.json`);
 const existing = existsSync(out) ? JSON.parse(readFileSync(out, "utf8")) : { tokens: {} };
-console.log(`${network} test network (chain ${chainId}): deployer ${deployer.address}, operator ${operator}, vault home ${homeAddress}${dry ? " (dry run)" : ""}`);
+console.log(`${network} test network (chain ${chainId}): deployer ${deployer.address}, operator ${operator}, vaults with ${homes.map((h) => h.peer).join(", ")} (first ${homeAddress})${dry ? " (dry run)" : ""}`);
 
 /** The record so far: written after every token, so a failure part-way
  *  (HyperEVM's big-block fee spiked 5,000× on 2026-10-05, after eight of
@@ -154,7 +180,7 @@ for (const t of tokens) {
   if (address && (await provider.getCode(address)) !== "0x") {
     console.log(`${t.symbol}: deployed already at ${address}`);
   } else if (dry) {
-    console.log(`${t.symbol}: would deploy "${t.name}", faucet ${t.faucet}, mint ${inventory} to the operator, register with the vault`);
+    console.log(`${t.symbol}: would deploy "${t.name}", faucet ${t.faucet}, mint ${inventory} to the operator, register with the vaults of pairs ${homes.map((h) => h.peer).join(", ")}`);
     continue;
   } else {
     const factory = new ContractFactory(artifact.abi, artifact.bytecode, wallet);
@@ -180,19 +206,24 @@ for (const t of tokens) {
     await (await token.mint(operator, parseUnits(inventory, 18), { gasLimit: GAS.mint, ...(await fees()) })).wait(1, WAIT_MS);
     console.log(`${t.symbol}: minted ${inventory} to ${operator}`);
   }
-  // Registered with the vault once: asset numbers start at 1 for tokens.
-  let assetPlusOne = Number(await home.assetOfToken(address));
-  if (assetPlusOne === 0) {
-    await (await home.registerAsset(address, { gasLimit: GAS.register, ...(await fees()) })).wait(1, WAIT_MS);
-    // Read until a node behind the endpoint shows it (Base Sepolia's gave 0
-    // right after the receipt, 2026-10-05).
-    for (let i = 0; (assetPlusOne = Number(await home.assetOfToken(address))) === 0; i++) {
-      if (i === 30) throw new Error(`${t.symbol}: not registered after a minute`);
-      await new Promise((r) => setTimeout(r, 2_000));
+  // Registered with each pair's vault once: asset numbers start at 1 for
+  // tokens there.
+  const pairAssets: Record<string, number> = { ...(existing.tokens[t.symbol]?.pairAssets ?? {}) };
+  for (const { peer, home: h } of homes) {
+    let assetPlusOne = Number(await h.assetOfToken(address));
+    if (assetPlusOne === 0) {
+      await (await h.registerAsset(address, { gasLimit: GAS.register, ...(await fees()) })).wait(1, WAIT_MS);
+      // Read until a node behind the endpoint shows it (Base Sepolia's gave
+      // 0 right after the receipt, 2026-10-05).
+      for (let i = 0; (assetPlusOne = Number(await h.assetOfToken(address))) === 0; i++) {
+        if (i === 30) throw new Error(`${t.symbol}: not registered with the vault of pair ${peer} after a minute`);
+        await new Promise((r) => setTimeout(r, 2_000));
+      }
+      console.log(`${t.symbol}: registered with the vault of pair ${peer} as asset ${assetPlusOne - 1}`);
     }
-    console.log(`${t.symbol}: registered with the vault as asset ${assetPlusOne - 1}`);
+    pairAssets[peer] = assetPlusOne - 1;
   }
-  existing.tokens[t.symbol] = { address, name: t.name, decimals: 18, faucet: t.faucet, vaultAsset: assetPlusOne - 1 };
+  existing.tokens[t.symbol] = { address, name: t.name, decimals: 18, faucet: t.faucet, vaultAsset: pairAssets[homes[0].peer], pairAssets };
   save();
 }
 
@@ -210,7 +241,12 @@ if (!dry) {
     ]);
     if (name !== t.name || sym !== symbol || getAddress(minter) !== deployer.address || faucet !== parseUnits(t.faucet, 18) || Number(asset) - 1 !== t.vaultAsset)
       throw new Error(`${symbol} at ${t.address} does not read back as recorded: name "${name}", symbol ${sym}, minter ${minter}, faucet ${faucet}, vault asset ${Number(asset) - 1} (record: "${t.name}", ${symbol}, ${deployer.address}, ${parseUnits(t.faucet, 18)}, ${t.vaultAsset})`);
-    console.log(`checked ${symbol}: ${t.address}, vault asset ${t.vaultAsset}, operator holds ${held / 10n ** 18n}`);
+    for (const [peer, n] of Object.entries<number>(t.pairAssets ?? {})) {
+      const h = homes.find((x) => String(x.peer) === peer);
+      const got = h ? Number(await h.home.assetOfToken(t.address)) - 1 : -1;
+      if (got !== n) throw new Error(`${symbol}: the vault of pair ${peer} reads asset ${got}, recorded ${n}`);
+    }
+    console.log(`checked ${symbol}: ${t.address}, vault asset ${t.vaultAsset}${t.pairAssets ? `, by pair ${JSON.stringify(t.pairAssets)}` : ""}, operator holds ${held / 10n ** 18n}`);
   }
   save();
   console.log(`wrote ${out}`);

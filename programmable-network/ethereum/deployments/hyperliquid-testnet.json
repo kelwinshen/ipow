@@ -25,7 +25,7 @@
       "receipts": "0xE346843867B4756859Ea1a176cBC636d2074fFFA",
       "homeFactory": "0x7F0211E1BEA9A940f4E2F4A21B52f2f69C6e8dD5",
       "receiptsFactory": "0x405FaC50eB5d0134cf971310EBd6cdcDF2721b86",
-      "source": "current",
+      "source": "63668a5",
       "at": "2026-10-05T14:27:07.533Z"
     },
     {
@@ -36,7 +36,7 @@
       "receipts": "0x115C9E3c93F384E9f8fb177aA49538D09061B0cD",
       "homeFactory": "0x6B70Af8a21a16F0c36dF37Ff1BAC581Cd3894Cb7",
       "receiptsFactory": "0xB6C7e5Db33F34D86102C8Df0AcACAd7052699162",
-      "source": "current",
+      "source": "63668a5",
       "at": "2026-10-05T14:32:04.230Z"
     },
     {
@@ -47,7 +47,7 @@
       "receipts": "0xe4aC5A816a24A0c7Ad56DCCdbcfB36F329e76F3a",
       "homeFactory": "0xCF87B06B09754ed3c9855b64Ae6FD295a7a1da10",
       "receiptsFactory": "0xCe6Cda46Ac4d02c6BbB3613de07821e0fd80b313",
-      "source": "current",
+      "source": "63668a5",
       "at": "2026-10-05T14:37:05.750Z"
     }
   ],

@@ -125,6 +125,19 @@ export const NETWORKS: Record<string, NetworkSettings> = {
     // blocks (measured on its testnet on 2026-10-02).
     bigBlocks: true,
   },
+  arbitrum: {
+    // D141. Arbitrum One and Arbitrum Sepolia; Sepolia's chain id read from
+    // its endpoint on 2026-10-06.
+    number: 9,
+    chainId: { testnet: 421614, mainnet: 42161 },
+    rpcEnv: { testnet: "ARBITRUM_SEPOLIA_RPC_URL", mainnet: "ARBITRUM_RPC_URL" },
+    keyEnv: { testnet: "ARBITRUM_SEPOLIA_PRIVATE_KEY", mainnet: "ARBITRUM_PRIVATE_KEY" },
+    coin: { kind: "native", decimals: 18, price: "baseFee" },
+    // ArbGasInfo precompile (D135), as on Robinhood; read on Arbitrum
+    // Sepolia on 2026-10-06 (getPricesInWei answered).
+    dataFee: "arb",
+    vault: { testnet: TEST_18, mainnet: null },
+  },
   tempo: {
     number: 8,
     chainId: { testnet: 42431, mainnet: null },

@@ -389,9 +389,9 @@ describe("iPoWVault: real Bitcoin (D108)", function () {
     await expect(home.connect(user).lock(0, RECIPIENT, E, 0, 0, { value: ETH })).to.be.revertedWithCustomError(home, "ZeroAddress");
     await home.connect(user).lock(0, pad(user.address), E, 0, 0, { value: ETH });
 
-    // A pair needs two different networks.
+    // A pair needs two different networks of the list, 1 to 9 (D133, D141).
     const factory = await ethers.getContractFactory("iPoWVaultNative");
-    for (const [a, b] of [[1, 1], [0, 2], [1, 0]]) {
+    for (const [a, b] of [[1, 1], [0, 2], [1, 0], [1, 10], [10, 2]]) {
       await expect(deployVault(await protocol.getAddress(), a, b)).to.be.revertedWithCustomError(factory, "BadNetworks");
     }
   });
@@ -847,6 +847,26 @@ describe("iPoWVault: claims from Solana (D110, D111, D129)", function () {
 });
 
 describe("iPoWVault: receipts of Solana's assets (section 11.9)", function () {
+  it("names a receipt after its peer, Arbitrum's ETH as vETH.arbitrum (D141)", async function () {
+    const core = await ethers.deployContract("AcceptingCore");
+    const factory = await ethers.deployContract("VaultReceiptsFactory");
+    const names: [number, string, string][] = [
+      [3, "iPoW vETH.base", "vETH.base"],
+      [9, "iPoW vETH.arbitrum", "vETH.arbitrum"],
+    ];
+    for (const [peer, name, symbol] of names) {
+      const at = await factory.make.staticCall(await core.getAddress(), ETHEREUM, peer);
+      await factory.make(await core.getAddress(), ETHEREUM, peer);
+      const receipts = await ethers.getContractAt("VaultReceipts", at);
+      await receipts.makeReceipt(1n, rec.asset(peer, 0, ethers.ZeroHash, 9));
+      await receipts.makeReceipt(1n, rec.asset(peer, 2, ethers.id("a token"), 9));
+      const coin = await ethers.getContractAt("VaultReceipt", await receipts.receiptOf(0));
+      expect([await coin.name(), await coin.symbol()]).to.deep.equal([name, symbol]);
+      const token = await ethers.getContractAt("VaultReceipt", await receipts.receiptOf(2));
+      expect(await token.symbol()).to.equal(`${symbol}-2`);
+    }
+  });
+
   it("makes a receipt from an accepted ASSET record, issues it for a LOCK, once, and never for a given-up lock", async function () {
     const ctx = await deploy();
     const { receipts, user, stranger } = ctx;

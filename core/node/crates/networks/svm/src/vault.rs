@@ -175,11 +175,17 @@ pub fn pair_commitment(peer: u8, peer_vault: &[u8; 20], peer_operator: &[u8; 20]
     sha256(&[b"iPoW pair", a[0], a[1], a[2], b[0], b[1], b[2]])
 }
 
+/// Whether network `peer` can be Solana's peer: one of the list (D133, D141),
+/// not Solana itself.
+pub fn can_pair(peer: u8) -> bool {
+    peer != SOLANA && (1..=MAX_NETWORK).contains(&peer)
+}
+
 impl SvmVault {
     /// The vault program's pair with network `peer`.
     pub fn new(net: Arc<SvmNetwork>, program: &str, peer: u8) -> anyhow::Result<Self> {
         anyhow::ensure!(program == vt::ID.to_string(), "the vault is {program}, this node is built for {}", vt::ID);
-        anyhow::ensure!(peer != SOLANA && (1..=MAX_NETWORK).contains(&peer), "network {peer} cannot be Solana's peer");
+        anyhow::ensure!(can_pair(peer), "network {peer} cannot be Solana's peer");
         Ok(SvmVault { net, peer, p: Pdas::new(peer) })
     }
 
@@ -1065,6 +1071,17 @@ impl VaultApp for SvmVault {
 mod tests {
     use super::*;
     use ipow_protocol_core::vault::{encode, ETHEREUM};
+
+    #[test]
+    fn pairs_with_every_network_of_the_list_up_to_arbitrum() {
+        // D133, D141: 1 and 3 to 9; not Solana, not 0, not past Arbitrum.
+        for peer in [1u8, 3, 4, 5, 6, 7, 8, 9] {
+            assert!(super::can_pair(peer), "{peer}");
+        }
+        for peer in [0u8, 2, 10, 255] {
+            assert!(!super::can_pair(peer), "{peer}");
+        }
+    }
 
     #[test]
     fn reads_the_accounts_of_a_batch_up_to_where_it_stops_parsing() {

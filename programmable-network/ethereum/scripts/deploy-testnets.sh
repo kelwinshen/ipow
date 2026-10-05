@@ -44,6 +44,8 @@ deploy base      Gyhrq1CzHyU9BfECK5G8RW4ho75oaRPqMngXYYvLuduL
 deploy robinhood Dydhoos4EgX15LFLJR5a6DvGtuzmNjegpzzynJSJbF5
 deploy polkadot  BcTMgkGcknJu9GW6XQ7HoRdXdP3Jo6iRt8ZjKe6fm7r7
 deploy hedera    7Wwn5bjARBmdCjNT7KUBwB7LR3JYSLFAWSSm98pxvE2S
+# Arbitrum (D141, network 9) is not deployed here: Solana's vault must first
+# be upgraded to the build that takes 9. scripts/deploy-arbitrum.sh does it.
 # Hyperliquid only once the deployer's address uses big blocks: switch it
 # with `node scripts/hyperliquid-big-blocks.ts` (from $ETH) first.
 if (cd "$ETH" && node scripts/hyperliquid-big-blocks.ts --check) | grep -q "uses big blocks: true"; then

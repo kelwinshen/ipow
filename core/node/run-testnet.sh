@@ -9,7 +9,9 @@ cd "$(dirname "$0")"
 set -a
 . ../../programmable-network/ethereum/.env
 # The other EVM test networks' endpoints and keys: each package's own .env.
-for n in base hyperliquid robinhood; do . "../../programmable-network/$n/.env"; done
+for n in base hyperliquid robinhood arbitrum; do
+  if [ -f "../../programmable-network/$n/.env" ]; then . "../../programmable-network/$n/.env"; fi
+done
 set +a
 export SOLANA_RPC_URL=https://api.devnet.solana.com
 SOLANA_KEY=$(cat "$HOME/.config/solana/id.json")

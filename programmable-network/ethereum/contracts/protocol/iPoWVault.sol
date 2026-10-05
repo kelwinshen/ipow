@@ -228,8 +228,8 @@ abstract contract iPoWVault is ReentrancyGuard, IVaultCore {
         address coin_
     ) {
         if (deposit_ == 0 || minCertifyingEscrow_ == 0) revert ZeroAmount();
-        // D133: two different networks of the list, 1 to 8.
-        if (here_ == 0 || peer_ == 0 || here_ > 8 || peer_ > 8 || here_ == peer_) revert BadNetworks();
+        // D133, D141: two different networks of the list, 1 to 9.
+        if (here_ == 0 || peer_ == 0 || here_ > 9 || peer_ > 9 || here_ == peer_) revert BadNetworks();
         here = here_;
         peer = peer_;
         minCertifyingEscrow = minCertifyingEscrow_;

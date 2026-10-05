@@ -140,8 +140,9 @@ contract VaultReceipts is ReentrancyGuard {
         return address(r);
     }
 
-    /// @dev A network of D133's list by name, and its coin as a receipt's name
-    /// shows it: vETH for Ethereum's ETH, vETH.base for Base's.
+    /// @dev A network of D133's list (with D141's Arbitrum) by name, and its
+    /// coin as a receipt's name shows it: vETH for Ethereum's ETH, vETH.base
+    /// for Base's, vETH.arbitrum for Arbitrum's.
     function _names(uint8 net) private pure returns (string memory, string memory) {
         if (net == 1) return ("Ethereum", "ETH");
         if (net == 2) return ("Solana", "SOL");
@@ -150,6 +151,7 @@ contract VaultReceipts is ReentrancyGuard {
         if (net == 5) return ("Polkadot", "DOT");
         if (net == 6) return ("Hedera", "HBAR");
         if (net == 7) return ("Hyperliquid", "HYPE");
+        if (net == 9) return ("Arbitrum", "ETH.arbitrum");
         return ("Tempo", "USD.tempo");
     }
 

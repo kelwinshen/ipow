@@ -9,8 +9,8 @@ use sha2::{Digest, Sha256};
 
 use crate::types::{Amount, BlockRef};
 
-/// Network numbers, fixed for good (D133). A vault serves one pair of them
-/// (D132).
+/// Network numbers, fixed for good (D133, and D141's Arbitrum). A vault
+/// serves one pair of them (D132).
 pub const ETHEREUM: u8 = 1;
 pub const SOLANA: u8 = 2;
 pub const BASE: u8 = 3;
@@ -19,7 +19,8 @@ pub const POLKADOT: u8 = 5;
 pub const HEDERA: u8 = 6;
 pub const HYPERLIQUID: u8 = 7;
 pub const TEMPO: u8 = 8;
-pub const MAX_NETWORK: u8 = 8;
+pub const ARBITRUM: u8 = 9;
+pub const MAX_NETWORK: u8 = 9;
 
 /// D119: a message is false when its batch is longer than this, its Bitcoin
 /// transaction longer than this, or it carries more LOCK, REQUEST, CANCEL

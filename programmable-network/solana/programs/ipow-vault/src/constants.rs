@@ -41,8 +41,8 @@ pub const MAX_DECIMALS: u8 = 9;
 /// This network's number (D133). Its peer's is the pair's configuration's
 /// (D132): one program serves every peer.
 pub const SOLANA: u8 = 2;
-/// The highest network number of D133.
-pub const MAX_NETWORK: u8 = 8;
+/// The highest network number of D133: 9, Arbitrum, since D141.
+pub const MAX_NETWORK: u8 = 9;
 
 pub const LOCK: u8 = 1;
 pub const REQUEST: u8 = 2;

@@ -28,7 +28,7 @@ const MIN_HEIGHT = 965_567;
 const DEPOSIT = new BN(1_000_000);
 const MIN_CERTIFYING_ESCROW = new BN(10_000_000);
 /** EVM networks by number (D133), with their deployments files. */
-const PEERS: [string, number][] = [["ethereum", 1], ["base", 3], ["robinhood", 4], ["polkadot", 5], ["hedera", 6], ["hyperliquid", 7], ["tempo", 8]];
+const PEERS: [string, number][] = [["ethereum", 1], ["base", 3], ["robinhood", 4], ["polkadot", 5], ["hedera", 6], ["hyperliquid", 7], ["tempo", 8], ["arbitrum", 9]];
 
 const DRY = process.argv.includes("--dry");
 const LOADER = new PublicKey("BPFLoaderUpgradeab1e11111111111111111111111");

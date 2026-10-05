@@ -127,7 +127,7 @@ describe("The SDK", function () {
     await usd.mint(user.address, 10n ** 12n);
     const ONE = 10n ** 9n; // one whole BETA
     // One BETA holds 0.001 ETH and 2 USD; 0.5% to mint and to burn.
-    const { key, beta } = await createBasket(user, d, { id: 1, parts: [{ token: ethers.ZeroAddress, amount: 10n ** 15n }, { token: await usd.getAddress(), amount: 2_000_000n }], mintFeeBps: 50, burnFeeBps: 50 });
+    const { key, beta } = await createBasket(user, d, { id: 1, name: "ETH and USD", symbol: "EUSD", uri: "", parts: [{ token: ethers.ZeroAddress, amount: 10n ** 15n }, { token: await usd.getAddress(), amount: 2_000_000n }], mintFeeBps: 50, burnFeeBps: 50 });
 
     const q = await quoteMint(ethers.provider, d, key, 3n * ONE);
     expect(q.need).to.deep.equal([3n * 10n ** 15n, 6_000_000n]);

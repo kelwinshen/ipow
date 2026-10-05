@@ -2254,10 +2254,10 @@ fn settles_a_wrong_attest_in_its_own_asset_and_leaves_another_assets_lock_to_its
     assert_eq!(w.tokens(&alice1), 7 * GWEI_PER_ETH);
 }
 
-/// D132, D133: one program serves every peer. The pair with Base (3) has
-/// its own configuration and its own SOL; a pair is set up once, never with
-/// Solana itself; a record naming Base in the pair with Ethereum is false
-/// there.
+/// D132, D133, D141: one program serves every peer. The pair with Base (3)
+/// has its own configuration and its own SOL; a pair is set up once, never
+/// with Solana itself nor past Arbitrum (9); a record naming Base in the
+/// pair with Ethereum is false there.
 #[test]
 fn keeps_each_pair_apart() {
     let mut w = World::new();
@@ -2289,6 +2289,13 @@ fn keeps_each_pair_apart() {
     let ix = init(&w, 3);
     assert!(w.send(ix, &[&user]).is_err());
     let ix = init(&w, SOLANA);
+    assert!(w.send(ix, &[&user]).is_err());
+    // D141: Arbitrum, 9, is the last network of the list; 10 is none.
+    let ix = init(&w, 9);
+    w.send(ix, &[&user]).unwrap();
+    let a: ipow_vault::accounts::Config = w.ctx.get_account(&vt(&[b"config", &[9]])).unwrap();
+    assert_eq!(a.peer, 9);
+    let ix = init(&w, 10);
     assert!(w.send(ix, &[&user]).is_err());
 
     // In the pair with Ethereum, a lock of Base's is a lie.
