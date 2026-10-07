@@ -14,13 +14,24 @@ const UPGRADEABLE_LOADER: Pubkey = pubkey!("BPFLoaderUpgradeab1e1111111111111111
 /// nothing can change (D59). Records SOL as asset 0 (section 11.9), and
 /// registers the vault with the protocol as an application with no claims,
 /// so that it can open checkpoint jobs (D116).
-pub fn handler(ctx: Context<Initialize>, peer: u8, peer_vault: [u8; 20], deposit: u64, min_certifying_escrow: u64) -> Result<()> {
+/// With a genesis key, the pair starts in genesis until that key finalizes
+/// it or `genesis_end`, within MAX_GENESIS; with the default key, none.
+pub fn handler(ctx: Context<Initialize>, peer: u8, peer_vault: [u8; 20], deposit: u64, min_certifying_escrow: u64, genesis_key: Pubkey, genesis_end: i64) -> Result<()> {
     require!(peer_vault != [0u8; 20] && deposit > 0 && min_certifying_escrow > 0, VaultError::ZeroAmount);
     require!((1..=MAX_NETWORK).contains(&peer) && peer != SOLANA, VaultError::BadNetwork);
     #[cfg(not(feature = "test-limits"))]
     require_upgrade_authority(ctx.program_id, &ctx.accounts.program_data, &ctx.accounts.payer.key())?;
+    let t = crate::util::now()?;
+    if genesis_key == Pubkey::default() {
+        require!(genesis_end == 0, VaultError::BadGenesis);
+    } else {
+        require!(genesis_end > t && genesis_end <= t + MAX_GENESIS, VaultError::BadGenesis);
+    }
     let c = &mut ctx.accounts.config;
     c.peer = peer;
+    c.genesis_key = genesis_key;
+    c.genesis_end = genesis_end;
+    c.genesis_done = false;
     c.peer_vault = peer_vault;
     c.deposit = deposit;
     c.min_certifying_escrow = min_certifying_escrow;

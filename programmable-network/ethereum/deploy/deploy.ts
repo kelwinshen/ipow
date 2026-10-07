@@ -56,6 +56,13 @@ export type DeployOptions = {
    *  deployer's contract `offset` deployments on will be created at. */
   call?: (to: string, abi: unknown, fn: string, args: unknown[]) => Promise<void>;
   nextCreate?: (offset: number) => Promise<string>;
+  /** The network's protocol as already deployed: only the vault's
+   *  factories and its vaults are deployed, beside them. */
+  existing?: Pick<Deployment, "lightClient" | "dataFee" | "protocol" | "conversion" | "betaBaskets">;
+  /** Each vault's receipts start in genesis (docs/drafts/ipow-vault-genesis.md):
+   *  `key` may make receipts and issue named locks until it finalizes or
+   *  `end` (seconds). Without it, a vault has no genesis (D59). */
+  genesis?: { key: string; end: bigint };
 };
 
 /** The commit the contracts are built from; a deployment is only made
@@ -186,6 +193,8 @@ export async function deployNetwork(signer: Signer, o: DeployOptions): Promise<D
     return { address, contract: c as any };
   }
 
+  if (o.existing) return deployVaults();
+
   const lightClient = await deploy("protocol/iPoWLightClient.sol", "iPoWLightClient", [o.minHeight]);
   await expectEqual("light client's lowest height", async () => await lightClient.contract.minHeight(), o.minHeight);
 
@@ -216,88 +225,106 @@ export async function deployNetwork(signer: Signer, o: DeployOptions): Promise<D
   await expectEqual("Conversion's largest swap", async () => await conversion.contract.maxSats(), o.maxSats);
   await expectEqual("Conversion's coin", async () => await conversion.contract.coin(), coin);
   const betaBaskets = await deploy("apps/BetaBaskets.sol", "BetaBaskets", []);
-  // A token coin's decimals are read from the token; this is the native's.
-  const nativeDecimals = s.coin.kind === "native" ? s.coin.decimals : 18;
-  const homeFactory = await deploy("protocol/vault/VaultFactories.sol", "VaultHomeFactory", [nativeDecimals]);
-  await expectEqual("home factory's native decimals", async () => await homeFactory.contract.nativeDecimals(), nativeDecimals);
-  const receiptsFactory = await deploy("protocol/vault/VaultFactories.sol", "VaultReceiptsFactory", []);
+  return deployVaults({ lightClient, dataFee, protocol, conversion, betaBaskets });
 
-  /** A call that changes state, through the network's own sender if it has one. */
-  async function call(to: string, abi: unknown, fn: string, args: unknown[]) {
-    if (o.send) {
-      if (!o.call) throw new Error("a sender needs its call too");
-      return o.call(to, abi, fn, args);
-    }
-    await (await (new Contract(to, abi as any, signer) as any)[fn](...args, { ...(o.overrides ?? {}) })).wait();
-  }
-  /** Where the deployer's contract `offset` transactions on will be created. */
-  async function nextCreate(offset: number): Promise<string> {
-    if (o.send) {
-      if (!o.nextCreate) throw new Error("a sender needs its nextCreate too");
-      return getAddress(await o.nextCreate(offset));
-    }
-    const from = await signer.getAddress();
-    return getCreateAddress({ from, nonce: (await provider.getTransactionCount(from, "pending")) + offset });
-  }
+  /** The vault's factories and one vault per pair, beside the protocol
+   *  just deployed or the one kept (`o.existing`). */
+  async function deployVaults(kept?: { lightClient: { address: string }; dataFee: { address: string } | null; protocol: { address: string; contract: any }; conversion: { address: string }; betaBaskets: { address: string } }): Promise<Deployment> {
+    const ex = o.existing;
+    const { lightClient, dataFee, protocol, conversion, betaBaskets } = kept ?? {
+      lightClient: { address: ex!.lightClient },
+      dataFee: ex!.dataFee ? { address: ex!.dataFee } : null,
+      protocol: { address: ex!.protocol, contract: null },
+      conversion: { address: ex!.conversion },
+      betaBaskets: { address: ex!.betaBaskets },
+    };
+    if (!kept && (await provider.getCode(ex!.protocol)) === "0x") throw new Error(`${o.network}: no protocol at ${ex!.protocol}`);
+    // A token coin's decimals are read from the token; this is the native's.
+    const nativeDecimals = s.coin.kind === "native" ? s.coin.decimals : 18;
+    const homeFactory = await deploy("protocol/vault/VaultFactories.sol", "VaultHomeFactory", [nativeDecimals]);
+    await expectEqual("home factory's native decimals", async () => await homeFactory.contract.nativeDecimals(), nativeDecimals);
+    const receiptsFactory = await deploy("protocol/vault/VaultFactories.sol", "VaultReceiptsFactory", []);
 
-  const vaults: Deployment["vaults"] = [];
-  for (const pair of o.pairs) {
-    // The parts first, each in its own transaction, made by the factories
-    // for the vault deployed right after them: no transaction creates more
-    // than one contract, as Tempo's limit of 50 million gas asks.
-    const core = await nextCreate(2);
-    const madeHome = getAddress(await homeFactory.contract.make.staticCall(core, s.number, pair.peer, coin));
-    await call(homeFactory.address, homeFactory.contract.interface.fragments, "make", [core, s.number, pair.peer, coin]);
-    // Anyone may make a part, so the one made is read back: the address a
-    // simulation gave before the transaction could be another caller's.
-    await expectEqual("home part made", async () => await homeFactory.contract.made(madeHome), true);
-    const homePart = new Contract(madeHome, artifact("protocol/vault/VaultHome.sol", "VaultHome").abi, signer);
-    await expectEqual("home part's vault and pair", async () => `${await homePart.core()},${await homePart.here()},${await homePart.peer()},${(await homePart.getAsset(0)).token}`, `${core},${s.number},${pair.peer},${coin}`);
-    const madeReceipts = getAddress(await receiptsFactory.contract.make.staticCall(core, s.number, pair.peer));
-    await call(receiptsFactory.address, receiptsFactory.contract.interface.fragments, "make", [core, s.number, pair.peer]);
-    await expectEqual("receipts part made", async () => await receiptsFactory.contract.made(madeReceipts), true);
-    const receiptsPart = new Contract(madeReceipts, artifact("protocol/vault/VaultReceipts.sol", "VaultReceipts").abi, signer);
-    await expectEqual("receipts part's vault and pair", async () => `${await receiptsPart.core()},${await receiptsPart.here()},${await receiptsPart.peer()}`, `${core},${s.number},${pair.peer}`);
-    o.log?.(`VaultHome ${madeHome}`);
-    o.log?.(`VaultReceipts ${madeReceipts}`);
-    const common = [protocol.address, s.number, pair.peer, pair.peerVault, amounts.deposit, amounts.minCertifyingEscrow, homeFactory.address, receiptsFactory.address, madeHome, madeReceipts];
-    const vault =
-      s.coin.kind === "native"
-        ? await deploy("protocol/iPoWVault.sol", "iPoWVaultNative", common)
-        : await deploy("protocol/iPoWVaultToken.sol", "iPoWVaultToken", [...common, coin]);
-    if (vault.address !== core) throw new Error(`the vault is at ${vault.address}, its parts were made for ${core}`);
-    const v = vault.contract;
-    await expectEqual("vault's networks", async () => `${await v.here()},${await v.peer()}`, `${s.number},${pair.peer}`);
-    await expectEqual("vault's peer vault", async () => (await v.peerVault()).toLowerCase(), pair.peerVault.toLowerCase());
-    await expectEqual("vault's protocol", async () => await v.protocol(), protocol.address);
-    await expectEqual("vault's amounts", async () => `${await v.deposit()},${await v.minCertifyingEscrow()}`, `${amounts.deposit},${amounts.minCertifyingEscrow}`);
-    await expectEqual("vault's factories", async () => `${await v.homeFactory()},${await v.receiptsFactory()}`, `${homeFactory.address},${receiptsFactory.address}`);
-    await expectEqual("vault's parts", async () => `${getAddress(await v.home())},${getAddress(await v.receipts())}`, `${madeHome},${madeReceipts}`);
-    const home = madeHome;
-    const receipts = madeReceipts;
-    for (const [part, file, name] of [[home, "protocol/vault/VaultHome.sol", "VaultHome"], [receipts, "protocol/vault/VaultReceipts.sol", "VaultReceipts"]]) {
-      const a = artifact(file, name);
-      const code = await settle(() => provider.getCode(part), (c) => codeMatches(c, a.deployedBytecode, a.immutableReferences));
-      if (!codeMatches(code, a.deployedBytecode, a.immutableReferences)) {
-        throw new Error(`${name}: the code at ${part} is not the artifact's`);
+    /** A call that changes state, through the network's own sender if it has one. */
+    async function call(to: string, abi: unknown, fn: string, args: unknown[]) {
+      if (o.send) {
+        if (!o.call) throw new Error("a sender needs its call too");
+        return o.call(to, abi, fn, args);
       }
+      await (await (new Contract(to, abi as any, signer) as any)[fn](...args, { ...(o.overrides ?? {}) })).wait();
     }
-    vaults.push({ peer: pair.peer, peerVault: pair.peerVault, vault: vault.address, home, receipts });
-  }
+    /** Where the deployer's contract `offset` transactions on will be created. */
+    async function nextCreate(offset: number): Promise<string> {
+      if (o.send) {
+        if (!o.nextCreate) throw new Error("a sender needs its nextCreate too");
+        return getAddress(await o.nextCreate(offset));
+      }
+      const from = await signer.getAddress();
+      return getCreateAddress({ from, nonce: (await provider.getTransactionCount(from, "pending")) + offset });
+    }
 
-  return {
-    network: o.network,
-    env: o.env,
-    chainId,
-    lightClient: lightClient.address,
-    dataFee: dataFee?.address ?? null,
-    protocol: protocol.address,
-    conversion: conversion.address,
-    betaBaskets: betaBaskets.address,
-    homeFactory: homeFactory.address,
-    receiptsFactory: receiptsFactory.address,
-    vaults,
-  };
+    const vaults: Deployment["vaults"] = [];
+    for (const pair of o.pairs) {
+      // The parts first, each in its own transaction, made by the factories
+      // for the vault deployed right after them: no transaction creates more
+      // than one contract, as Tempo's limit of 50 million gas asks.
+      const core = await nextCreate(2);
+      const madeHome = getAddress(await homeFactory.contract.make.staticCall(core, s.number, pair.peer, coin));
+      await call(homeFactory.address, homeFactory.contract.interface.fragments, "make", [core, s.number, pair.peer, coin]);
+      // Anyone may make a part, so the one made is read back: the address a
+      // simulation gave before the transaction could be another caller's.
+      await expectEqual("home part made", async () => await homeFactory.contract.made(madeHome), true);
+      const homePart = new Contract(madeHome, artifact("protocol/vault/VaultHome.sol", "VaultHome").abi, signer);
+      await expectEqual("home part's vault and pair", async () => `${await homePart.core()},${await homePart.here()},${await homePart.peer()},${(await homePart.getAsset(0)).token}`, `${core},${s.number},${pair.peer},${coin}`);
+      const receiptsArgs = o.genesis ? [core, s.number, pair.peer, o.genesis.key, o.genesis.end] : [core, s.number, pair.peer];
+      const receiptsMake = o.genesis ? "makeGenesis" : "make";
+      const madeReceipts = getAddress(await receiptsFactory.contract[receiptsMake].staticCall(...receiptsArgs));
+      await call(receiptsFactory.address, receiptsFactory.contract.interface.fragments, receiptsMake, receiptsArgs);
+      await expectEqual("receipts part made", async () => await receiptsFactory.contract.made(madeReceipts), true);
+      const receiptsPart = new Contract(madeReceipts, artifact("protocol/vault/VaultReceipts.sol", "VaultReceipts").abi, signer);
+      await expectEqual("receipts part's vault and pair", async () => `${await receiptsPart.core()},${await receiptsPart.here()},${await receiptsPart.peer()}`, `${core},${s.number},${pair.peer}`);
+      await expectEqual("receipts part's genesis", async () => `${(await receiptsPart.genesisKey()).toLowerCase()},${await receiptsPart.genesisEnd()}`, `${(o.genesis?.key ?? ZeroAddress).toLowerCase()},${o.genesis?.end ?? 0n}`);
+      o.log?.(`VaultHome ${madeHome}`);
+      o.log?.(`VaultReceipts ${madeReceipts}`);
+      const common = [protocol.address, s.number, pair.peer, pair.peerVault, amounts.deposit, amounts.minCertifyingEscrow, homeFactory.address, receiptsFactory.address, madeHome, madeReceipts];
+      const vault =
+        s.coin.kind === "native"
+          ? await deploy("protocol/iPoWVault.sol", "iPoWVaultNative", common)
+          : await deploy("protocol/iPoWVaultToken.sol", "iPoWVaultToken", [...common, coin]);
+      if (vault.address !== core) throw new Error(`the vault is at ${vault.address}, its parts were made for ${core}`);
+      const v = vault.contract;
+      await expectEqual("vault's networks", async () => `${await v.here()},${await v.peer()}`, `${s.number},${pair.peer}`);
+      await expectEqual("vault's peer vault", async () => (await v.peerVault()).toLowerCase(), pair.peerVault.toLowerCase());
+      await expectEqual("vault's protocol", async () => await v.protocol(), protocol.address);
+      await expectEqual("vault's amounts", async () => `${await v.deposit()},${await v.minCertifyingEscrow()}`, `${amounts.deposit},${amounts.minCertifyingEscrow}`);
+      await expectEqual("vault's factories", async () => `${await v.homeFactory()},${await v.receiptsFactory()}`, `${homeFactory.address},${receiptsFactory.address}`);
+      await expectEqual("vault's parts", async () => `${getAddress(await v.home())},${getAddress(await v.receipts())}`, `${madeHome},${madeReceipts}`);
+      const home = madeHome;
+      const receipts = madeReceipts;
+      for (const [part, file, name] of [[home, "protocol/vault/VaultHome.sol", "VaultHome"], [receipts, "protocol/vault/VaultReceipts.sol", "VaultReceipts"]]) {
+        const a = artifact(file, name);
+        const code = await settle(() => provider.getCode(part), (c) => codeMatches(c, a.deployedBytecode, a.immutableReferences));
+        if (!codeMatches(code, a.deployedBytecode, a.immutableReferences)) {
+          throw new Error(`${name}: the code at ${part} is not the artifact's`);
+        }
+      }
+      vaults.push({ peer: pair.peer, peerVault: pair.peerVault, vault: vault.address, home, receipts });
+    }
+
+    return {
+      network: o.network,
+      env: o.env,
+      chainId,
+      lightClient: lightClient.address,
+      dataFee: dataFee?.address ?? null,
+      protocol: protocol.address,
+      conversion: conversion.address,
+      betaBaskets: betaBaskets.address,
+      homeFactory: homeFactory.address,
+      receiptsFactory: receiptsFactory.address,
+      vaults,
+    };
+  }
 }
 
 /** How long a read-back waits for an endpoint that has not yet seen the

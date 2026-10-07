@@ -7,6 +7,12 @@
 // programmable-network/tempo:
 //
 //   node scripts/deploy-new-protocol.ts [--dry]
+//   node scripts/deploy-new-protocol.ts --vaults-only --solana-pair <account> [--genesis-days N]
+//
+// --vaults-only keeps the protocol of deployments/tempo-testnet.json and
+// deploys a new vault paired with Solana beside it, naming <account> (the
+// Solana vault's ["config", 8]); with --genesis-days its receipts start in
+// genesis for the deployer (docs/drafts/ipow-vault-genesis.md).
 //
 // Where a contract lands: read on 2026-10-02, the deployer's ordinary nonce
 // was 12 and exactly the CREATE addresses of raw nonces 0 to 11 held code,
@@ -30,11 +36,17 @@ import { NETWORKS } from "../../ethereum/deploy/networks.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const DRY = process.argv.includes("--dry");
+const argv = process.argv.slice(2);
+const flag = (name: string) => (argv.includes(name) ? argv[argv.indexOf(name) + 1] : undefined);
+const VAULTS_ONLY = argv.includes("--vaults-only");
+const GENESIS_DAYS = Number(flag("--genesis-days") ?? 0);
+if (flag("--genesis-days") && !(GENESIS_DAYS > 0 && GENESIS_DAYS <= 30)) throw new Error("--genesis-days: 1 to 30");
+if (VAULTS_ONLY && !flag("--solana-pair")) throw new Error("--vaults-only needs --solana-pair");
 /** D93, as on every other network. */
 const MIN_HEIGHT = 965_567;
 const MAX_SATS = 100_000n;
 /** The Solana vault's pair account for Tempo, ["config", 8]. */
-const SOLANA_PAIR = "7wvWJdeTW9WynaP17Le7dnWcBkV7qpVz78sR9TrA977Q";
+const SOLANA_PAIR = flag("--solana-pair") ?? "7wvWJdeTW9WynaP17Le7dnWcBkV7qpVz78sR9TrA977Q";
 /** The same account as 32 bytes. */
 const SOLANA_PAIR_BYTES = solanaAccountBytes(SOLANA_PAIR);
 
@@ -96,6 +108,9 @@ async function nextCreate(offset: number) {
   return createAddress((await client.getTransactionCount({ address: account.address })) + offset);
 }
 
+const file = join(here, "..", "..", "ethereum", "deployments", "tempo-testnet.json");
+const before = VAULTS_ONLY ? JSON.parse(fs.readFileSync(file, "utf8")) : null;
+const genesis = GENESIS_DAYS ? { key: account.address, end: BigInt(Math.floor(Date.now() / 1000) + GENESIS_DAYS * 86_400) } : undefined;
 const deployment = await deployNetwork(readOnlySigner(env[s.rpcEnv.testnet], account.address), {
   network: "tempo",
   env: "testnet",
@@ -105,9 +120,24 @@ const deployment = await deployNetwork(readOnlySigner(env[s.rpcEnv.testnet], acc
   send,
   call,
   nextCreate,
+  existing: before ? { lightClient: before.lightClient, dataFee: before.dataFee, protocol: before.protocol, conversion: before.conversion, betaBaskets: before.betaBaskets } : undefined,
+  genesis,
   log: (line) => console.log(line),
 });
 
-const file = join(here, "..", "..", "ethereum", "deployments", "tempo-testnet.json");
-fs.writeFileSync(file, JSON.stringify({ ...deployment, source, deployer: account.address, minHeight: MIN_HEIGHT, maxSats: String(MAX_SATS), solanaPairAccount: SOLANA_PAIR, at: new Date().toISOString() }, null, 2) + "\n");
+if (before) {
+  // The record before, kept beside it; then the new vault in place of the old.
+  const replaced = join(here, "..", "..", "ethereum", "deployments", "replaced");
+  fs.mkdirSync(replaced, { recursive: true });
+  fs.copyFileSync(file, join(replaced, `tempo-testnet.${Date.now()}.json`));
+  const vault = deployment.vaults[0];
+  before.vaults = [
+    { ...vault, homeFactory: deployment.homeFactory, receiptsFactory: deployment.receiptsFactory, source, ...(genesis ? { genesisEnd: Number(genesis.end) } : {}), at: new Date().toISOString() },
+    ...before.vaults.filter((v: { peer: number }) => v.peer !== 2),
+  ];
+  Object.assign(before, { homeFactory: deployment.homeFactory, receiptsFactory: deployment.receiptsFactory, solanaPairAccount: SOLANA_PAIR });
+  fs.writeFileSync(file, JSON.stringify(before, null, 2) + "\n");
+} else {
+  fs.writeFileSync(file, JSON.stringify({ ...deployment, source, deployer: account.address, minHeight: MIN_HEIGHT, maxSats: String(MAX_SATS), solanaPairAccount: SOLANA_PAIR, at: new Date().toISOString() }, null, 2) + "\n");
+}
 console.log("written", file);

@@ -42,8 +42,16 @@ contract VaultHomeFactory {
 contract VaultReceiptsFactory {
     mapping(address => bool) public made;
 
+    /// @notice A part with no genesis (D59 whole).
     function make(IVaultCore core, uint8 here, uint8 peer) external returns (VaultReceipts part) {
-        part = new VaultReceipts(core, here, peer);
+        part = new VaultReceipts(core, here, peer, address(0), 0);
+        made[address(part)] = true;
+    }
+
+    /// @notice A part that starts in genesis: `genesisKey` may make receipts
+    /// and issue named locks until it finalizes or `genesisEnd` (D142, D144).
+    function makeGenesis(IVaultCore core, uint8 here, uint8 peer, address genesisKey, uint64 genesisEnd) external returns (VaultReceipts part) {
+        part = new VaultReceipts(core, here, peer, genesisKey, genesisEnd);
         made[address(part)] = true;
     }
 }

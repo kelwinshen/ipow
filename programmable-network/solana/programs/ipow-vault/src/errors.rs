@@ -39,4 +39,8 @@ pub enum VaultError {
     TooManyAssets,
     AlreadyPaid,
     Underfunded,
+    #[msg("Not the genesis key, or the pair's genesis is over")]
+    NotGenesis,
+    #[msg("A genesis ends in the future and within 30 days; with no key, none")]
+    BadGenesis,
 }

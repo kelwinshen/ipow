@@ -476,6 +476,38 @@ network. The node's settings list all six pairs under the vault role,
 still off. Not yet: the Bridge app's EVM–EVM directions; the operator's
 pair chains on Bitcoin (one real transaction per pair) and bonds.
 
+## 2026-10-06: Arbitrum Sepolia as network 9, and every token in every vault
+
+`scripts/deploy-arbitrum.sh`, from commit `c9a2a60` (D141). In order:
+Solana devnet's vault upgraded to the build that takes 9; the protocol on
+Arbitrum Sepolia, its vault paired with Solana; Solana's pair account
+`["config", 9]` set up; Arbitrum paired with Sepolia, Base Sepolia,
+Robinhood and HyperEVM; Arbitrum's 11 mock RWA tokens; VTIon and IEMGon on
+Sepolia, GLDx on Base, SPYx on HyperEVM; and every listed token registered
+with every vault of its network (one per pair), so a token can be a
+basket's part on any paired network. `verify-deployments.ts` then read every
+network back: all match (Arbitrum 30 contracts).
+
+Friction, three runs:
+
+- **Arbitrum's gas.** A factory deployment on Arbitrum Sepolia ran out of
+  gas at exactly its estimate (3,655,771): an Arbitrum transaction's gas
+  includes posting its data to Ethereum, whose price moved between the
+  estimate and the block. Nothing was left half made (a pair's records are
+  written only when both vaults exist; one unused factory remains). Fixed:
+  on an Arbitrum chain the pair and token scripts give the estimate plus
+  half.
+- **HyperEVM's price.** Its endpoint answered "method not found" to
+  `eth_bigBlockGasPrice` once, between answers. Fixed: asked again, then
+  the last price read.
+- **Time.** About 250 registrations, most of them catching up: before this,
+  tokens were registered only with each network's vault toward Solana, so
+  no token could be a part across two EVM networks. HyperEVM takes about one
+  such transaction a minute (big blocks), about 40 minutes of the run.
+
+For the SDK and Greatwall: a network added later costs one vault pair per
+network already there, and each of its tokens one registration per pair.
+
 ## Housekeeping
 
 **2026-09-24**: a stale, expired, never-claimed test `Pending` account on

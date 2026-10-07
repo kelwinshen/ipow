@@ -1,0 +1,162 @@
+{
+  "network": "arbitrum-testnet",
+  "chainId": 421614,
+  "minter": "0x9784B80BC7b95753f2a2732649F3a1136b4c2BF1",
+  "operator": "0x9784B80BC7b95753f2a2732649F3a1136b4c2BF1",
+  "tokens": {
+    "rINTC": {
+      "address": "0x4265A27605cDd45b69d36f17635Bad03351387e6",
+      "name": "Intel Reality (Arbitrum Sepolia Greatwall)",
+      "decimals": 18,
+      "faucet": "5",
+      "vaultAsset": 1,
+      "pairAssets": {
+        "1": 1,
+        "2": 1,
+        "3": 1,
+        "4": 1,
+        "7": 1
+      }
+    },
+    "rMSTR": {
+      "address": "0x75A1ADc3a4194f580eeCCa5473197Ff32414d2C1",
+      "name": "MicroStrategy Reality (Arbitrum Sepolia Greatwall)",
+      "decimals": 18,
+      "faucet": "5",
+      "vaultAsset": 2,
+      "pairAssets": {
+        "1": 2,
+        "2": 2,
+        "3": 2,
+        "4": 2,
+        "7": 2
+      }
+    },
+    "rMU": {
+      "address": "0x525D70BBc90149345a171F5E308C923A4B8b109A",
+      "name": "Micron Technology Reality (Arbitrum Sepolia Greatwall)",
+      "decimals": 18,
+      "faucet": "5",
+      "vaultAsset": 3,
+      "pairAssets": {
+        "1": 3,
+        "2": 3,
+        "3": 3,
+        "4": 3,
+        "7": 3
+      }
+    },
+    "rMRNA": {
+      "address": "0xE101001bD62451c6f3337f44EF2cC4F166dd891D",
+      "name": "Moderna Reality (Arbitrum Sepolia Greatwall)",
+      "decimals": 18,
+      "faucet": "5",
+      "vaultAsset": 4,
+      "pairAssets": {
+        "1": 4,
+        "2": 4,
+        "3": 4,
+        "4": 4,
+        "7": 4
+      }
+    },
+    "rOKLO": {
+      "address": "0xbf869aa1EAb77acdAF5419CD18C3c2d0A60A019a",
+      "name": "Oklo Inc Reality (Arbitrum Sepolia Greatwall)",
+      "decimals": 18,
+      "faucet": "5",
+      "vaultAsset": 5,
+      "pairAssets": {
+        "1": 5,
+        "2": 5,
+        "3": 5,
+        "4": 5,
+        "7": 5
+      }
+    },
+    "PGOLD": {
+      "address": "0x51d0bc4CE62Fa394242415d0DAa167A5AF6Bb45B",
+      "name": "Pleasing Gold (Arbitrum Sepolia Greatwall)",
+      "decimals": 18,
+      "faucet": "1",
+      "vaultAsset": 6,
+      "pairAssets": {
+        "1": 6,
+        "2": 6,
+        "3": 6,
+        "4": 6,
+        "7": 6
+      }
+    },
+    "rDRAM": {
+      "address": "0xB6C7e5Db33F34D86102C8Df0AcACAd7052699162",
+      "name": "Roundhill Memory ETF Reality (Arbitrum Sepolia Greatwall)",
+      "decimals": 18,
+      "faucet": "5",
+      "vaultAsset": 7,
+      "pairAssets": {
+        "1": 7,
+        "2": 7,
+        "3": 7,
+        "4": 7,
+        "7": 7
+      }
+    },
+    "rSPY": {
+      "address": "0xE610e70B799b3d169BeA946a9029655226985805",
+      "name": "SPDR S&P 500 ETF Reality (Arbitrum Sepolia Greatwall)",
+      "decimals": 18,
+      "faucet": "5",
+      "vaultAsset": 8,
+      "pairAssets": {
+        "1": 8,
+        "2": 8,
+        "3": 8,
+        "4": 8,
+        "7": 8
+      }
+    },
+    "rSNDK": {
+      "address": "0x966Afd06E991A771F5f64DFf032465E42C02769D",
+      "name": "SanDisk Reality (Arbitrum Sepolia Greatwall)",
+      "decimals": 18,
+      "faucet": "5",
+      "vaultAsset": 9,
+      "pairAssets": {
+        "1": 9,
+        "2": 9,
+        "3": 9,
+        "4": 9,
+        "7": 9
+      }
+    },
+    "rTSM": {
+      "address": "0xEB4CF40eFFbec1758b0Fa6a6CC4b4E5a2091b1cF",
+      "name": "Taiwan Semiconductor Reality (Arbitrum Sepolia Greatwall)",
+      "decimals": 18,
+      "faucet": "5",
+      "vaultAsset": 10,
+      "pairAssets": {
+        "1": 10,
+        "2": 10,
+        "3": 10,
+        "4": 10,
+        "7": 10
+      }
+    },
+    "cbBTC": {
+      "address": "0x5cE276280542817547D075a51E6A0B563FF5D9c8",
+      "name": "Coinbase Wrapped BTC (Arbitrum Sepolia Greatwall)",
+      "decimals": 18,
+      "faucet": "0.01",
+      "vaultAsset": 11,
+      "pairAssets": {
+        "1": 11,
+        "2": 11,
+        "3": 11,
+        "4": 11,
+        "7": 11
+      }
+    }
+  }
+}

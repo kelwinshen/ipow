@@ -1,0 +1,71 @@
+{
+  "network": "arbitrum",
+  "env": "testnet",
+  "chainId": 421614,
+  "lightClient": "0x53e1291BdAff473694BbbB8DD257f9844e5f9F3c",
+  "dataFee": "0xF43DF008d31995690C75982937a368545953564A",
+  "protocol": "0x35e564d74B90a3A5bfcA8Dec65b1325C83d2e822",
+  "conversion": "0xB7054E399E31A2cFE181c4fD59C7235562a6d45d",
+  "betaBaskets": "0xE8780640839860F9049132606d18c916956A44A5",
+  "homeFactory": "0x6354779b4Dbb564c712ea91c179eCF521C15BE73",
+  "receiptsFactory": "0x24765955eCbffAaACB48a8c3747975d6C750C075",
+  "vaults": [
+    {
+      "peer": 2,
+      "peerVault": "0x4815ecb8cbde8c4ad79f98503b783fbc2381d99e76f88965ab4f1822497fcda1",
+      "vault": "0x8b9efF66C7D93816Eadf702cC6cE273e8B2b03e7",
+      "home": "0xb39B9e031271B78dD6797B133Dc79942480B430e",
+      "receipts": "0xc52610b59E5eF7d8460dA06EA79DeeE7c62ebb83"
+    },
+    {
+      "peer": 1,
+      "peerVault": "0x0000000000000000000000003d62a18f49709a580c4f0d7494d2073770791573",
+      "vault": "0xcE962Aa05135638f82eCFC15e3f114EEda4DF823",
+      "home": "0x5E14002470a5c0FfD431BA151e4D22a678C16b6C",
+      "receipts": "0x1612cD7f7EA5c4661F3dDf0c7BeCC5A21E7f889F",
+      "homeFactory": "0x900D54050f9Fe47ca56cC67A281947Da2EeE2cD1",
+      "receiptsFactory": "0xC40003975B6ff70E46999Bac8f3b06a9908Fb333",
+      "source": "current",
+      "at": "2026-10-05T23:09:51.655Z"
+    },
+    {
+      "peer": 3,
+      "peerVault": "0x00000000000000000000000047250ffd774c0d7d9f61b24cdc7d7338bfc63b31",
+      "vault": "0x0496e48C51E3783F5a059AC82B70F5D398448D3A",
+      "home": "0x3FAd0a01e663403ef9BbB21b93268BCaE0cC1e4c",
+      "receipts": "0x0992bb4815BF9c8Eba0C9B3A543fb41A0A4e45CB",
+      "homeFactory": "0x5F63BF3638f8E2BcBD56a4E43cEC7D39637A6f80",
+      "receiptsFactory": "0xa43f67C41Fc6e8474278d5a7C1540862CC2a16bA",
+      "source": "current",
+      "at": "2026-10-05T23:10:39.234Z"
+    },
+    {
+      "peer": 4,
+      "peerVault": "0x0000000000000000000000007063aa65e06d6d5759997c50c0134c1af20be59d",
+      "vault": "0x10C9C79C8c46c1f9f07D7A258Bbd42B4ED6f973E",
+      "home": "0xCC87ec659D54802077b6004901A1A72C646bF07A",
+      "receipts": "0x6a4E25f0506C9cddfB1a469c9ED93633edC3eee0",
+      "homeFactory": "0xd6b425c7908E171a33dF2a4e6C5687eDF0D2d6c3",
+      "receiptsFactory": "0xb856906fEBAFBB21A06DdC35E9BCe476139A86BA",
+      "source": "current",
+      "at": "2026-10-05T23:17:53.149Z"
+    },
+    {
+      "peer": 7,
+      "peerVault": "0x00000000000000000000000062c8feb829fb9249f822dafa89f55e9c6f82dea4",
+      "vault": "0x01BE560A22e91201C9414b634f0a61085F84dD08",
+      "home": "0x6F87fAfe6Edd22B71A1FD61D69C479bc3D2ff5C5",
+      "receipts": "0xC1EaCb05eC97a62b94c9874f4Fc72dB0cE6FBC60",
+      "homeFactory": "0x15390C4901e11D3732489825c2FBa33A2E3e5b37",
+      "receiptsFactory": "0x2Dd456fCe7B3574AbD76b2899d3106CaB6ff5b9B",
+      "source": "current",
+      "at": "2026-10-05T23:23:21.725Z"
+    }
+  ],
+  "source": "c9a2a605f05f20a916a549e2095e768ce71b5eb4",
+  "deployer": "0x9784B80BC7b95753f2a2732649F3a1136b4c2BF1",
+  "minHeight": 965567,
+  "maxSats": "100000",
+  "solanaPairAccount": "5rPkBfeBqcEhUUwo8dzwp19XcK5F9gYRYZ7wseusT2ek",
+  "at": "2026-10-05T23:07:49.689Z"
+}

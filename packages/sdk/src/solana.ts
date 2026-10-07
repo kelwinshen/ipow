@@ -7,7 +7,7 @@
 // Imported, not global: in a browser this is the `buffer` package.
 import { Buffer } from "buffer";
 import { AnchorProvider, BN, Program } from "@coral-xyz/anchor";
-import { Connection, Keypair, PublicKey, SystemProgram, Transaction, VersionedTransaction } from "@solana/web3.js";
+import { Connection, Keypair, PublicKey, SystemProgram, Transaction, TransactionInstruction, VersionedTransaction } from "@solana/web3.js";
 import { getAddress } from "ethers";
 
 import { IDLS, SOLANA } from "./generated/solana.ts";
@@ -25,7 +25,15 @@ export type SolanaWallet = {
   signAllTransactions<T extends Transaction | VersionedTransaction>(txs: T[]): Promise<T[]>;
 };
 
-export type SolanaAsset = { number: number; mint: string | null; decimals: number; recordDecimals: number; unit: bigint };
+export type SolanaAsset = {
+  number: number;
+  mint: string | null;
+  decimals: number;
+  recordDecimals: number;
+  unit: bigint;
+  /** The token's program (classic or Token-2022); null for SOL. */
+  tokenProgram: string | null;
+};
 
 export type SolanaLockState = {
   lockId: bigint;
@@ -104,20 +112,20 @@ export class SolanaVault {
     for (let i = 0; i < Number(c.assetCount); i++) {
       const a = await this.accounts.homeAsset.fetch(this.at("asset", u32(i)));
       const native = a.mint.equals(PublicKey.default);
-      out.push({ number: i, mint: native ? null : a.mint.toBase58(), decimals: a.decimals, recordDecimals: a.recordDecimals, unit: big(a.unit) });
+      out.push({ number: i, mint: native ? null : a.mint.toBase58(), decimals: a.decimals, recordDecimals: a.recordDecimals, unit: big(a.unit), tokenProgram: native ? null : a.tokenProgram.toBase58() });
     }
     return out;
   }
 
-  /** Locks `amount` of asset `asset` (in its own units: lamports for SOL)
-   *  for its receipt on the EVM network, to `recipient` there; the fee and
-   *  fast fee in the same units. SOL only for now: a token lock needs its
-   *  token accounts, not yet built here. */
+  /** Locks `amount` of asset `asset` (in its own units: lamports for SOL,
+   *  the token's smallest unit for a token) for its receipt on the EVM
+   *  network, to `recipient` there; the fee and fast fee in the same units.
+   *  A token must be registered with the pair first (`registerToken`). */
   async lock(options: { asset?: number; recipient: string; amount: bigint; fee?: bigint; fastFee?: bigint }): Promise<{ lockId: bigint; signature: string }> {
     const assetNumber = options.asset ?? 0;
     const asset = (await this.assets())[assetNumber];
     if (!asset) throw new Error(`no asset ${assetNumber}`);
-    if (asset.mint) throw new Error("a token lock on Solana is not built in the SDK yet");
+
     const record = (x: bigint, what: string) => {
       if (x % asset.unit !== 0n) throw new Error(`${what} must be a whole number of record units (${asset.unit} each)`);
       return x / asset.unit;
@@ -133,17 +141,54 @@ export class SolanaVault {
         config: this.config,
         homeAsset: this.at("asset", u32(assetNumber)),
         lock: this.at("home_lock", u64(lockId)),
-        from: null,
-        tokens: null,
-        mint: null,
-        tokenProgram: null,
+        // A token: the user's account of it, the vault's (one per token in
+        // the pair), its mint and program. Left out for SOL: Anchor takes
+        // null for an optional account, though its types do not say so.
+        ...(asset.mint
+          ? (() => {
+              const mint = new PublicKey(asset.mint);
+              const program = new PublicKey(asset.tokenProgram!);
+              return { from: associatedTokenAccount(this.program.provider.publicKey!, mint, program), tokens: this.at("home_tokens", mint.toBuffer()), mint, tokenProgram: program };
+            })()
+          : { from: null, tokens: null, mint: null, tokenProgram: null }),
         user: this.program.provider.publicKey!,
         systemProgram: SystemProgram.programId,
-        // The token accounts are left out for SOL: Anchor takes null for an
-        // optional account, though its types do not say so.
       } as any)
       .rpc();
     return { lockId, signature };
+  }
+
+  /** The asset of the token `mint` in this pair, or null when the pair
+   *  has not registered it. */
+  async assetOfMint(mint: string): Promise<SolanaAsset | null> {
+    return (await this.assets()).find((a) => a.mint === mint) ?? null;
+  }
+
+  /**
+   * Registers the token `mint` with this pair, so it can be locked toward
+   * the pair's EVM network (D128). Anyone may, once per token and pair; the
+   * signer pays the two new accounts' rent. A token the vault cannot count
+   * (a transfer fee, a hook…) is refused by the program. Returns its number.
+   */
+  async registerToken(mint: string): Promise<{ asset: number; signature: string }> {
+    const key = new PublicKey(mint);
+    const info = await this.connection.getAccountInfo(key);
+    if (!info) throw new Error(`no mint at ${mint}`);
+    const c = await this.accounts.config.fetch(this.config);
+    const asset = Number(c.assetCount);
+    const signature = await this.program.methods
+      .registerAsset()
+      .accountsStrict({
+        config: this.config,
+        asset: this.at("asset", u32(asset)),
+        mint: key,
+        tokens: this.at("home_tokens", key.toBuffer()),
+        payer: this.program.provider.publicKey!,
+        tokenProgram: info.owner,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+    return { asset, signature };
   }
 
   async getLock(lockId: bigint | number): Promise<SolanaLockState> {
@@ -182,6 +227,78 @@ export class SolanaVault {
   /** The receipt here of the EVM network's asset `asset` (its number there). */
   receiptMint(asset: number): PublicKey {
     return this.at("receipt", u32(asset));
+  }
+
+  // Genesis (docs/drafts/ipow-vault-genesis.md): the pair's genesis key
+  // makes receipts and issues named locks until it finalizes or its end.
+
+  /** The pair's genesis: its key (null with none), its end (seconds), and
+   *  whether it is open now. */
+  async genesis(): Promise<{ key: string | null; end: number; finalized: boolean; open: boolean }> {
+    const c = await this.accounts.config.fetch(this.config);
+    const key = c.genesisKey.equals(PublicKey.default) ? null : c.genesisKey.toBase58();
+    const end = Number(c.genesisEnd);
+    return { key, end, finalized: c.genesisDone, open: key !== null && !c.genesisDone && Date.now() / 1000 < end };
+  }
+
+  /** G1: makes the receipt here of the EVM network's asset `asset`, its
+   *  token there (an address) and its record decimals there. The wallet
+   *  must be the genesis key. */
+  async genesisMakeReceipt(asset: number, token: string, decimals: number): Promise<string> {
+    return this.program.methods
+      .genesisMakeReceipt(asset, Array.from(Buffer.from(getAddress(token).slice(2), "hex")), decimals)
+      .accountsStrict({
+        config: this.config,
+        mint: this.receiptMint(asset),
+        holding: this.at("holding", u32(asset)),
+        key: this.program.provider.publicKey!,
+        tokenProgram: TOKEN_PROGRAM,
+        systemProgram: SystemProgram.programId,
+      } as any)
+      .rpc();
+  }
+
+  /** G2: issues lock `lockId` of the EVM network's asset `asset`, its value
+   *  (amount and fast fee, in record units) to `recipient` here, making the
+   *  recipient's account of the receipt if it has none. The wallet must be
+   *  the genesis key. */
+  async genesisIssue(lockId: bigint | number, asset: number, value: bigint, recipient: string): Promise<string> {
+    const owner = new PublicKey(recipient);
+    const mint = this.receiptMint(asset);
+    const to = associatedTokenAccount(owner, mint);
+    const payer = this.program.provider.publicKey!;
+    // The associated token program's create-if-missing (instruction 1).
+    const makeTo = new TransactionInstruction({
+      programId: ASSOCIATED_TOKEN_PROGRAM,
+      keys: [
+        { pubkey: payer, isSigner: true, isWritable: true },
+        { pubkey: to, isSigner: false, isWritable: true },
+        { pubkey: owner, isSigner: false, isWritable: false },
+        { pubkey: mint, isSigner: false, isWritable: false },
+        { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+        { pubkey: TOKEN_PROGRAM, isSigner: false, isWritable: false },
+      ],
+      data: Buffer.from([1]),
+    });
+    return this.program.methods
+      .genesisIssue(new BN(BigInt(lockId).toString()), asset, new BN(value.toString()))
+      .accountsStrict({
+        mark: this.at("lock", u64(lockId)),
+        config: this.config,
+        mint,
+        holding: this.at("holding", u32(asset)),
+        to,
+        key: payer,
+        tokenProgram: TOKEN_PROGRAM,
+        systemProgram: SystemProgram.programId,
+      } as any)
+      .preInstructions([makeTo])
+      .rpc();
+  }
+
+  /** Ends the pair's genesis for good. The wallet must be the genesis key. */
+  async finalizeGenesis(): Promise<string> {
+    return this.program.methods.finalizeGenesis().accountsStrict({ config: this.config, key: this.program.provider.publicKey! } as any).rpc();
   }
 
   /** Receipts of that asset `owner` holds here, in record units; 0 with no
@@ -282,6 +399,6 @@ function burnState(requestId: bigint, r: any): SolanaBurnState {
 }
 
 /** A wallet's account for a token, at its usual address. */
-export function associatedTokenAccount(owner: PublicKey, mint: PublicKey): PublicKey {
-  return PublicKey.findProgramAddressSync([owner.toBuffer(), TOKEN_PROGRAM.toBuffer(), mint.toBuffer()], ASSOCIATED_TOKEN_PROGRAM)[0];
+export function associatedTokenAccount(owner: PublicKey, mint: PublicKey, tokenProgram: PublicKey = TOKEN_PROGRAM): PublicKey {
+  return PublicKey.findProgramAddressSync([owner.toBuffer(), tokenProgram.toBuffer(), mint.toBuffer()], ASSOCIATED_TOKEN_PROGRAM)[0];
 }

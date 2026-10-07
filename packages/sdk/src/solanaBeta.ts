@@ -5,8 +5,8 @@
 
 // Imported, not global: in a browser this is the `buffer` package.
 import { Buffer } from "buffer";
-import { AnchorProvider, BN, Program } from "@coral-xyz/anchor";
-import { Connection, PublicKey, SystemProgram, Transaction, TransactionInstruction, type AccountMeta } from "@solana/web3.js";
+import { AnchorProvider, BN, Program, parseIdlErrors, translateError } from "@coral-xyz/anchor";
+import { AddressLookupTableProgram, ComputeBudgetProgram, Connection, PublicKey, SystemProgram, Transaction, TransactionInstruction, TransactionMessage, VersionedTransaction, AddressLookupTableAccount, type AccountMeta } from "@solana/web3.js";
 
 import { IDLS, SOLANA } from "./generated/solana.ts";
 import { associatedTokenAccount, type SolanaWallet } from "./solana.ts";
@@ -91,6 +91,10 @@ function associatedTokenAddress(owner: PublicKey, mint: PublicKey, tokenProgram:
   return PublicKey.findProgramAddressSync([owner.toBuffer(), tokenProgram.toBuffer(), mint.toBuffer()], ASSOCIATED_TOKEN_PROGRAM)[0];
 }
 
+/** Lookup tables kept across instances (an app makes one per action), by
+ *  wallet and the accounts they hold. */
+const TABLES = new Map<string, PublicKey>();
+
 export class SolanaBeta {
   readonly connection: Connection;
   readonly program: InstanceType<typeof Program>;
@@ -101,6 +105,171 @@ export class SolanaBeta {
     this.wallet = wallet;
     const provider = new AnchorProvider(connection, wallet as any, { commitment: "confirmed" });
     this.program = new Program({ ...(IDLS.betaBasket as any), address: programId }, provider);
+  }
+
+  /**
+   * Sends `ixs` in one transaction, signed by the wallet. A transaction
+   * past Solana's 1,232 bytes (an index of many parts: each names its mint,
+   * and minting four accounts per part) goes through an address lookup
+   * table, so it names each account by one byte, not 32. The wallet's own
+   * table that holds every account is reused (one kept since an earlier
+   * call, or found among the wallet's tables); otherwise one is made and
+   * filled first, in transactions the wallet signs at once. A table's rent
+   * (about 0.0003 SOL, and 0.0002 per account) stays with the wallet, which
+   * may close the table later. A program's error comes back by its name, as
+   * Anchor gives it.
+   */
+  private async send(ixs: TransactionInstruction[]): Promise<string> {
+    try {
+      const plain = await this.compile(ixs, []);
+      if (plain) return await this.sendSigned(plain);
+      const lookup = await this.tableFor(ixs);
+      const tx = await this.compile(ixs, [lookup]);
+      if (!tx) throw new Error("the transaction is too large even with a lookup table");
+      return await this.sendSigned(tx);
+    } catch (e) {
+      throw translateError(e, parseIdlErrors(this.program.idl as any));
+    }
+  }
+
+  /** The transaction, or null when it would pass Solana's size. */
+  private async compile(ixs: TransactionInstruction[], tables: AddressLookupTableAccount[]): Promise<{ tx: VersionedTransaction; blockhash: string; lastValidBlockHeight: number } | null> {
+    const { blockhash, lastValidBlockHeight } = await this.connection.getLatestBlockhash("confirmed");
+    const message = new TransactionMessage({ payerKey: this.wallet.publicKey, recentBlockhash: blockhash, instructions: ixs }).compileToV0Message(tables);
+    const tx = new VersionedTransaction(message);
+    try {
+      if (tx.serialize().length > 1232) return null;
+    } catch {
+      return null;
+    }
+    return { tx, blockhash, lastValidBlockHeight };
+  }
+
+  private async sendSigned(t: { tx: VersionedTransaction; blockhash: string; lastValidBlockHeight: number }): Promise<string> {
+    const signed = await this.wallet.signTransaction(t.tx);
+    return this.sendAndWait(signed);
+  }
+
+  /**
+   * Sends a signed transaction and waits until it is confirmed. Followed by
+   * its signature and the blockhash it was signed with, not the one it was
+   * built with: a wallet may replace the blockhash (and add its own fee
+   * instructions) while the user takes their time, and the transaction then
+   * lands after the one it was built with has expired (2026-10-06).
+   */
+  private async sendAndWait(signed: VersionedTransaction): Promise<string> {
+    const raw = signed.serialize();
+    // Simulated at "confirmed", where a table made moments ago exists.
+    const signature = await this.connection.sendRawTransaction(raw, { preflightCommitment: "confirmed" });
+    const blockhash = signed.message.recentBlockhash;
+    for (let i = 0; ; i++) {
+      const s = (await this.connection.getSignatureStatus(signature, { searchTransactionHistory: true })).value;
+      if (s?.err) throw new Error(`transaction ${signature} failed: ${JSON.stringify(s.err)}`);
+      if (s && (s.confirmationStatus === "confirmed" || s.confirmationStatus === "finalized")) return signature;
+      // Gone for good only once its own blockhash has expired and it is
+      // still not seen.
+      if (i % 5 === 4 && !(await this.connection.isBlockhashValid(blockhash, { commitment: "confirmed" })).value) {
+        const last = (await this.connection.getSignatureStatus(signature, { searchTransactionHistory: true })).value;
+        if (last && !last.err) return signature;
+        throw new Error(`transaction ${signature} expired before it landed: try again`);
+      }
+      // Sent again now and then: a node may have dropped it.
+      if (i % 5 === 2) await this.connection.sendRawTransaction(raw, { skipPreflight: true }).catch(() => undefined);
+      await new Promise((r) => setTimeout(r, 1_000));
+    }
+  }
+
+  /** A lookup table holding every account `ixs` names (but the wallet, and
+   *  a program only invoked, which a table cannot stand for): the wallet's
+   *  own if one holds them, filled up if one holds part of them, or new. */
+  private async tableFor(ixs: TransactionInstruction[]): Promise<AddressLookupTableAccount> {
+    const payer = this.wallet.publicKey;
+    const invoked = new Set(ixs.map((ix) => ix.programId.toBase58()));
+    const keys = new Map<string, PublicKey>();
+    for (const ix of ixs) for (const k of ix.keys) if (!k.isSigner && !k.pubkey.equals(payer) && !invoked.has(k.pubkey.toBase58())) keys.set(k.pubkey.toBase58(), k.pubkey);
+    const want = [...keys.values()];
+    const id = `${payer.toBase58()}:${[...keys.keys()].sort().join(",")}`;
+    // Kept since an earlier call (any instance), or the wallet's table that
+    // already holds the most of them.
+    let table = TABLES.get(id) ?? TABLES.get(`${payer.toBase58()}:partial`) ?? (await this.walletTable(want));
+    let have = table ? (await this.connection.getAddressLookupTable(table, { commitment: "confirmed" })).value : null;
+    const missing = want.filter((k) => !have?.state.addresses.some((a) => a.equals(k)));
+    // A table holds at most 256 addresses: past that, a new one.
+    if (!table || !have || have.state.addresses.length + missing.length > 256) {
+      table = await this.fillTable(null, want);
+    } else if (missing.length) {
+      await this.fillTable(table, missing);
+    }
+    TABLES.set(id, table);
+    return this.activeTable(table, want);
+  }
+
+  /** The wallet's lookup table holding most of `want`, if it can find one
+   *  (an endpoint may refuse to list them: then none). */
+  private async walletTable(want: PublicKey[]): Promise<PublicKey | null> {
+    try {
+      // A table's authority is at byte 22 of its account.
+      const owned = await this.connection.getProgramAccounts(AddressLookupTableProgram.programId, {
+        commitment: "confirmed",
+        filters: [{ memcmp: { offset: 22, bytes: this.wallet.publicKey.toBase58() } }],
+      });
+      let best: { key: PublicKey; n: number } | null = null;
+      for (const a of owned) {
+        const t = new AddressLookupTableAccount({ key: a.pubkey, state: AddressLookupTableAccount.deserialize(a.account.data) });
+        if (!t.isActive()) continue;
+        const n = want.filter((k) => t.state.addresses.some((x) => x.equals(k))).length;
+        if (n > 0 && (!best || n > best.n)) best = { key: a.pubkey, n };
+      }
+      return best?.key ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Makes a table (when `table` is null) and adds `addresses` to it, in
+   *  transactions the wallet signs together and that are sent in order.
+   *  A table made is kept even if filling it stops part way, so a second
+   *  try fills up the same one rather than paying for another. */
+  private async fillTable(table: PublicKey | null, addresses: PublicKey[]): Promise<PublicKey> {
+    const payer = this.wallet.publicKey;
+    const ixs: TransactionInstruction[][] = [];
+    if (!table) {
+      const recentSlot = await this.connection.getSlot("finalized");
+      const [create, made] = AddressLookupTableProgram.createLookupTable({ authority: payer, payer, recentSlot });
+      table = made;
+      ixs.push([create]);
+    }
+    const CHUNK = 20;
+    for (let from = 0; from < addresses.length; from += CHUNK) {
+      const extend = AddressLookupTableProgram.extendLookupTable({ lookupTable: table, authority: payer, payer, addresses: addresses.slice(from, from + CHUNK) });
+      if (ixs.length && from === 0 && ixs[0].length === 1) ixs[0].push(extend);
+      else ixs.push([extend]);
+    }
+    const { blockhash } = await this.connection.getLatestBlockhash("confirmed");
+    const txs = ixs.map((list) => new VersionedTransaction(new TransactionMessage({ payerKey: payer, recentBlockhash: blockhash, instructions: list }).compileToV0Message()));
+    const signed = await this.wallet.signAllTransactions(txs);
+    for (const tx of signed) {
+      try {
+        await this.sendAndWait(tx);
+      } catch (e: any) {
+        throw new Error(`the lookup table ${table.toBase58()} was not filled: ${e?.message ?? e}; trying again fills up the same table`);
+      }
+      // Kept from the first transaction on: what is made is not paid twice.
+      TABLES.set(`${payer.toBase58()}:partial`, table);
+    }
+    return table;
+  }
+
+  /** The table once it holds every one of `want` and a slot has passed
+   *  since it was last filled: before that, a transaction cannot use it. */
+  private async activeTable(table: PublicKey, want: PublicKey[]): Promise<AddressLookupTableAccount> {
+    for (let i = 0; i < 60; i++) {
+      const t = (await this.connection.getAddressLookupTable(table, { commitment: "confirmed" })).value;
+      const holds = t && want.every((k) => t.state.addresses.some((a) => a.equals(k)));
+      if (t && holds && (await this.connection.getSlot("confirmed")) > Number(t.state.lastExtendedSlot)) return t;
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    throw new Error(`the lookup table ${table.toBase58()} is not ready after 30 seconds`);
   }
 
   private pda(...seeds: Buffer[]): PublicKey {
@@ -147,11 +316,13 @@ export class SolanaBeta {
       if ((await this.connection.getAccountInfo(new PublicKey(p.mint))) === null) throw new Error(`no mint at ${p.mint}; a receipt not made yet is named with pending: true`);
     }
     const parts = options.parts.map((p) => ({ mint: new PublicKey(p.mint), amount: new BN(p.amount.toString()), tokenProgram: PublicKey.default, decimals: 0, powers: 0, owed: new BN(0) }));
-    const signature = await this.program.methods
+    const ix = await this.program.methods
       .createBasket(new BN(BigInt(options.id).toString()), options.name, options.symbol, options.uri ?? "", parts, options.mintFeeBps ?? 0, options.burnFeeBps ?? 0)
       .accountsStrict({ basket, beta, fees: this.feesRecord(basket, creator), metadata: metadataAddress(beta), creator, tokenProgram: TOKEN_PROGRAM, systemProgram: SystemProgram.programId, metadataProgram: METADATA_PROGRAM })
       .remainingAccounts(parts.map((p) => ({ pubkey: p.mint, isSigner: false, isWritable: false })))
-      .rpc();
+      .instruction();
+    // The metadata call and a check per part: more compute than the default.
+    const signature = await this.send([ComputeBudgetProgram.setComputeUnitLimit({ units: 1_000_000 }), ix]);
     return { basket: basket.toBase58(), beta: this.betaMint(basket).toBase58(), signature };
   }
 
@@ -234,7 +405,7 @@ export class SolanaBeta {
       const short = take - (await this.tokenBalance(user, new PublicKey(WRAPPED_SOL)));
       if (short > 0n) wrap.push(...wrapSolInstructions(user, short));
     }
-    const signature = await this.program.methods
+    const ix = await this.program.methods
       .mint(new BN(amount.toString()))
       .accountsStrict({
         basket: new PublicKey(address),
@@ -246,9 +417,10 @@ export class SolanaBeta {
         associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM,
         systemProgram: SystemProgram.programId,
       } as any)
-      .preInstructions([...wrap, createAccountIdempotent(user, user, beta)])
       .remainingAccounts(await this.partAccounts(b, user))
-      .rpc();
+      .instruction();
+    // A transfer per part: more compute than the default for many parts.
+    const signature = await this.send([ComputeBudgetProgram.setComputeUnitLimit({ units: 1_000_000 }), ...wrap, createAccountIdempotent(user, user, beta), ix]);
     return { signature };
   }
 
@@ -260,7 +432,7 @@ export class SolanaBeta {
     const user = this.wallet.publicKey;
     const beta = new PublicKey(b.beta);
     const bits = defer.reduce((x, i) => x | (1 << i), 0);
-    const signature = await this.program.methods
+    const ix = await this.program.methods
       .burn(new BN(amount.toString()), bits)
       .accountsStrict({
         basket: new PublicKey(address),
@@ -271,14 +443,18 @@ export class SolanaBeta {
         tokenProgram: TOKEN_PROGRAM,
         systemProgram: SystemProgram.programId,
       } as any)
-      .preInstructions(b.parts.map((p) => createAccountIdempotent(user, user, new PublicKey(p.mint), new PublicKey(p.tokenProgram))))
       // After every part's accounts, the wallet's owed record of each
       // deferred part, in order: the program opens one that is missing.
       .remainingAccounts([
         ...(await this.partAccounts(b, user)),
         ...b.parts.flatMap((_, i) => (bits & (1 << i) ? [{ pubkey: this.owedRecord(new PublicKey(address), user, i), isSigner: false, isWritable: true }] : [])),
       ])
-      .rpc();
+      .instruction();
+    const signature = await this.send([
+      ComputeBudgetProgram.setComputeUnitLimit({ units: 1_000_000 }),
+      ...b.parts.map((p) => createAccountIdempotent(user, user, new PublicKey(p.mint), new PublicKey(p.tokenProgram))),
+      ix,
+    ]);
     return { signature };
   }
 

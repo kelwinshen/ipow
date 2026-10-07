@@ -11,6 +11,11 @@ export const SOLANA = {
   },
   "pairs": [
     {
+      "peer": 9,
+      "peerNetwork": "arbitrum-testnet",
+      "evmVault": "0x8b9efF66C7D93816Eadf702cC6cE273e8B2b03e7"
+    },
+    {
       "peer": 3,
       "peerNetwork": "base-testnet",
       "evmVault": "0x4cFD981522F31A4dc12Aeb433907ebc3CBD37A55"

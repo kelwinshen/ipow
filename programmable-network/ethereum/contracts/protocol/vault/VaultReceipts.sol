@@ -16,6 +16,14 @@ import {VaultReceipt} from "./VaultReceipt.sol";
 /// functions.
 ///
 /// Receipts are credited, and the address withdraws them.
+///
+/// Genesis (docs/drafts/ipow-vault-genesis.md, D142 to D147): a vault made
+/// with a genesis key starts in genesis. Until the key finalizes it, or
+/// `genesisEnd` passes, that key alone may make a receipt (G1) and issue a
+/// named lock on Solana (G2) without a claim; nothing else. A lock issued
+/// at genesis is marked issued as `issue` marks it, so no claim or attest
+/// issues it again. After genesis the key has no power left. Made with no
+/// key (address zero), a vault has no genesis at all (mainnet, D59).
 contract VaultReceipts is ReentrancyGuard {
     /// What became of a lock on Solana here. It exists once something
     /// happened, so each happens once.
@@ -65,6 +73,15 @@ contract VaultReceipts is ReentrancyGuard {
 
     IVaultCore public immutable core;
 
+    /// @notice The genesis key, zero when this vault has no genesis, and the
+    /// time genesis ends at the latest (D144).
+    address public immutable genesisKey;
+    uint64 public immutable genesisEnd;
+    /// @notice Set by the key's finalize: genesis is over for good.
+    bool public genesisFinalized;
+    /// @notice The longest genesis a vault may be made with.
+    uint256 public constant MAX_GENESIS = 30 days;
+
     mapping(uint32 => VaultReceipt) public receiptOf;
     mapping(uint64 => Mark) private _marks;
     uint64 public burnCount;
@@ -84,6 +101,11 @@ contract VaultReceipts is ReentrancyGuard {
     event AttestBurned(uint64 indexed attestId, address by);
     event AttestSettled(uint64 indexed attestId, uint256 claimId, bool counted);
     event CreditWithdrawn(address indexed to, uint32 indexed asset, uint256 amount);
+    /// @notice What backs each genesis action (D145): a receipt made, and a
+    /// lock on Solana issued, by its number, asset, value and recipient.
+    event GenesisReceipt(uint32 indexed asset, bytes32 token, uint8 decimals);
+    event GenesisIssued(uint64 indexed lockId, uint32 indexed asset, uint64 value, address to);
+    event GenesisFinalized(uint64 at);
 
     error NotCore();
     error UnknownAsset();
@@ -100,6 +122,8 @@ contract VaultReceipts is ReentrancyGuard {
     error WindowNotOver();
     error NotRefused();
     error NotInOrder();
+    error NotGenesis();
+    error BadGenesis();
 
     modifier onlyCore() {
         if (msg.sender != address(core)) revert NotCore();
@@ -110,10 +134,59 @@ contract VaultReceipts is ReentrancyGuard {
     uint8 public here;
     uint8 public peer;
 
-    constructor(IVaultCore core_, uint8 here_, uint8 peer_) {
+    constructor(IVaultCore core_, uint8 here_, uint8 peer_, address genesisKey_, uint64 genesisEnd_) {
         core = core_;
         here = here_;
         peer = peer_;
+        // A genesis ends in the future and within MAX_GENESIS; with no key, none.
+        if (genesisKey_ != address(0) && (genesisEnd_ <= block.timestamp || genesisEnd_ > block.timestamp + MAX_GENESIS)) revert BadGenesis();
+        if (genesisKey_ == address(0) && genesisEnd_ != 0) revert BadGenesis();
+        genesisKey = genesisKey_;
+        genesisEnd = genesisEnd_;
+    }
+
+    // ------------------------------------------------------------------
+    // Genesis (D142 to D147)
+    // ------------------------------------------------------------------
+
+    /// @notice Whether genesis is open: a key, not finalized, before its end.
+    function genesisOpen() public view returns (bool) {
+        return genesisKey != address(0) && !genesisFinalized && block.timestamp < genesisEnd;
+    }
+
+    modifier onlyGenesis() {
+        if (msg.sender != genesisKey || !genesisOpen()) revert NotGenesis();
+        _;
+    }
+
+    /// @notice G1: makes the receipt of asset `asset` on Solana, as an
+    /// accepted ASSET record would: its token there (the mint, or zero for
+    /// SOL) and its decimals, which must be the asset's record decimals
+    /// there. A later ASSET claim finds it made.
+    function genesisMakeReceipt(uint32 asset, bytes32 token, uint8 decimals) external onlyGenesis returns (address) {
+        emit GenesisReceipt(asset, token, decimals);
+        return _make(asset, token, decimals);
+    }
+
+    /// @notice G2: issues lock `lockId` on Solana, of `asset`, its value
+    /// (amount and fast fee) to `to`, as `issue` would after an accepted
+    /// claim. It sets the same mark, so the lock is issued once whichever
+    /// comes first; one attested, given up or issued is refused (D143).
+    function genesisIssue(uint64 lockId, uint32 asset, uint64 value, address to) external onlyGenesis nonReentrant {
+        if (to == address(0)) revert ZeroAddress();
+        if (value == 0) revert ZeroAmount();
+        VaultReceipt r = _receipt(asset);
+        Mark storage m = _marks[lockId];
+        if (m.issued || m.givenUp || m.attests != 0) revert AlreadyDone();
+        m.issued = true;
+        emit GenesisIssued(lockId, asset, value, to);
+        r.mint(to, value);
+    }
+
+    /// @notice Ends genesis for good (D144).
+    function finalizeGenesis() external onlyGenesis {
+        genesisFinalized = true;
+        emit GenesisFinalized(uint64(block.timestamp));
     }
 
     // ------------------------------------------------------------------
@@ -125,9 +198,12 @@ contract VaultReceipts is ReentrancyGuard {
     function makeReceipt(uint256 claimId, bytes calldata record) external returns (address) {
         if (record.length != R.ASSET_LEN || uint8(record[0]) != R.ASSET || uint8(record[1]) != peer) revert WrongRecord();
         _requireCarried(claimId, record);
-        uint32 asset = R.u32(record, 2);
+        return _make(R.u32(record, 2), R.b32(record, 6), uint8(record[38]));
+    }
+
+    /// @dev Makes asset `asset`'s receipt, once.
+    function _make(uint32 asset, bytes32 token, uint8 decimals) private returns (address) {
         if (address(receiptOf[asset]) != address(0)) revert AssetExists();
-        uint8 decimals = uint8(record[38]);
         if (decimals > R.MAX_DECIMALS) revert WrongRecord();
         string memory n = Strings.toString(asset);
         (string memory net, string memory coin) = _names(peer);
@@ -136,7 +212,7 @@ contract VaultReceipts is ReentrancyGuard {
             : (string.concat("iPoW ", net, " asset ", n), string.concat("v", coin, "-", n));
         VaultReceipt r = new VaultReceipt{salt: bytes32(uint256(asset))}(name, symbol, decimals);
         receiptOf[asset] = r;
-        emit ReceiptMade(asset, address(r), R.b32(record, 6), decimals);
+        emit ReceiptMade(asset, address(r), token, decimals);
         return address(r);
     }
 

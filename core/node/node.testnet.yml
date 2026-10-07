@@ -55,6 +55,8 @@ networks:
         - { token: "0x04b4Cfe08b2C79fFeBc083E5e7091CfAC142c201", symbol: AMDon, decimals: 18, pay_sats: 1600, ask_sats: 1600 }
         - { token: "0xA83EE721F0f398A920f4c35Eb04aa244d2c5d1fC", symbol: SOFIon, decimals: 18, pay_sats: 250, ask_sats: 250 }
         - { token: "0x2c8b859ff059554ff363dED4a484062E247E03BC", symbol: HIMSon, decimals: 18, pay_sats: 500, ask_sats: 500 }
+        - { token: "0x0082296c24D2c994DC6DC5DEa74e77ddFC0A0895", symbol: VTIon, decimals: 18, pay_sats: 3200, ask_sats: 3200 }
+        - { token: "0xb934E173e34e8F3e9e6E6B2F7A901B75c9D8C7F8", symbol: IEMGon, decimals: 18, pay_sats: 650, ask_sats: 650 }
 
   - name: base-sepolia
     kind: evm
@@ -83,6 +85,7 @@ networks:
         - { token: "0xbf869aa1EAb77acdAF5419CD18C3c2d0A60A019a", symbol: wtNKE, decimals: 18, pay_sats: 700, ask_sats: 700 }
         - { token: "0x763d74652203aab8341914D99C0C102640FcBb9E", symbol: AMZN.d, decimals: 18, pay_sats: 2200, ask_sats: 2200 }
         - { token: "0x36BA462fF711C7261C4894Af40E5f0c49C98b280", symbol: wtMCD, decimals: 18, pay_sats: 3000, ask_sats: 3000 }
+        - { token: "0x5a7Af423913dbB082BaCEBF3c0Daac52789b1F4A", symbol: GLDx, decimals: 18, pay_sats: 3700, ask_sats: 3700 }
 
   - name: hyperliquid-testnet
     kind: evm
@@ -110,6 +113,7 @@ networks:
         - { token: "0xFcbF76B91dDebbee0c21d808B26a9Fb8fcC0ca94", symbol: NBISx, decimals: 18, pay_sats: 1000, ask_sats: 1000 }
         - { token: "0x1E5da6001764bB4e76321FD90Dfaf626cA1f3A83", symbol: IWMx, decimals: 18, pay_sats: 2400, ask_sats: 2400 }
         - { token: "0xda238E5F844d01554b1A9F2342F733A8205d0586", symbol: CRWVx, decimals: 18, pay_sats: 1200, ask_sats: 1200 }
+        - { token: "0x48aA89dcB9355016c2010426f99d4c44D65281e9", symbol: SPYx, decimals: 18, pay_sats: 6500, ask_sats: 6500 }
 
   - name: robinhood-testnet
     kind: evm
@@ -138,6 +142,34 @@ networks:
         - { token: "0x1bF2c8784e5e801BeAb042791fE161156e771B66", symbol: GMEr, decimals: 18, pay_sats: 250, ask_sats: 250 }
         - { token: "0x3Fc561125a24C7Bb02f1edd1f8F773e16185799f", symbol: PLTRr, decimals: 18, pay_sats: 1800, ask_sats: 1800 }
         - { token: "0xdfB626fA52Ef04EAf2DfC4fA30e9B3d7E5fA90DC", symbol: SGOVr, decimals: 18, pay_sats: 1000, ask_sats: 1000 }
+
+  - name: arbitrum-sepolia
+    kind: evm
+    rpc_env: ARBITRUM_SEPOLIA_RPC_URL
+    key_env: ARBITRUM_SEPOLIA_PRIVATE_KEY
+    light_client: "0x53e1291BdAff473694BbbB8DD257f9844e5f9F3c"
+    protocol: "0x35e564d74B90a3A5bfcA8Dec65b1325C83d2e822"
+    # A challenge's deposit, at most 0.01 ETH.
+    guardian: { max_deposit: "10000000000000000" }
+    # At most 0.01 ETH of bond locked for one job, as on the other rollups.
+    operator: { max_bid: "10000000000000000" }
+    # Conversion (added by scripts/sync-testnet-coins.mjs): the coin and
+    # Greatwall's mock RWA tokens of deployments/arbitrum-testnet-rwa.json.
+    conversion:
+      address: "0xB7054E399E31A2cFE181c4fD59C7235562a6d45d"
+      coins:
+        - { token: native, symbol: ETH, decimals: 18, pay_sats: 300000, ask_sats: 300000 }
+        - { token: "0x4265A27605cDd45b69d36f17635Bad03351387e6", symbol: rINTC, decimals: 18, pay_sats: 350, ask_sats: 350 }
+        - { token: "0x75A1ADc3a4194f580eeCCa5473197Ff32414d2C1", symbol: rMSTR, decimals: 18, pay_sats: 3300, ask_sats: 3300 }
+        - { token: "0x525D70BBc90149345a171F5E308C923A4B8b109A", symbol: rMU, decimals: 18, pay_sats: 1800, ask_sats: 1800 }
+        - { token: "0xE101001bD62451c6f3337f44EF2cC4F166dd891D", symbol: rMRNA, decimals: 18, pay_sats: 280, ask_sats: 280 }
+        - { token: "0xbf869aa1EAb77acdAF5419CD18C3c2d0A60A019a", symbol: rOKLO, decimals: 18, pay_sats: 1000, ask_sats: 1000 }
+        - { token: "0x51d0bc4CE62Fa394242415d0DAa167A5AF6Bb45B", symbol: PGOLD, decimals: 18, pay_sats: 40000, ask_sats: 40000 }
+        - { token: "0xB6C7e5Db33F34D86102C8Df0AcACAd7052699162", symbol: rDRAM, decimals: 18, pay_sats: 300, ask_sats: 300 }
+        - { token: "0xE610e70B799b3d169BeA946a9029655226985805", symbol: rSPY, decimals: 18, pay_sats: 6500, ask_sats: 6500 }
+        - { token: "0x966Afd06E991A771F5f64DFf032465E42C02769D", symbol: rSNDK, decimals: 18, pay_sats: 1200, ask_sats: 1200 }
+        - { token: "0xEB4CF40eFFbec1758b0Fa6a6CC4b4E5a2091b1cF", symbol: rTSM, decimals: 18, pay_sats: 2900, ask_sats: 2900 }
+        - { token: "0x5cE276280542817547D075a51E6A0B563FF5D9c8", symbol: cbBTC, decimals: 18, pay_sats: 1000000, ask_sats: 1000000 }
 
   - name: solana-devnet
     kind: svm

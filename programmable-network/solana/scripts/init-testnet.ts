@@ -4,9 +4,15 @@
 // there. Each step is skipped when its account exists already, and every
 // pair is read back. Run from programmable-network/solana:
 //
-//   node scripts/init-testnet.ts [--dry]
+//   node scripts/init-testnet.ts [--dry] [--genesis-days N]
+//   node scripts/init-testnet.ts --print-pairs
 //
-// With --dry it only reads devnet and prints what it would do.
+// With --dry it only reads devnet and prints what it would do. With
+// --genesis-days each pair set up starts in genesis for this key, ending N
+// days from now at the latest (docs/drafts/ipow-vault-genesis.md).
+// --print-pairs prints each EVM network's pair account, ["config", number]
+// of the vault program the IDL names, which its vault must name: run it
+// before redeploying the EVM vaults.
 //
 // The key is the Solana CLI's (~/.config/solana/id.json), the programs'
 // upgrade authority; it is never printed.
@@ -31,6 +37,9 @@ const MIN_CERTIFYING_ESCROW = new BN(10_000_000);
 const PEERS: [string, number][] = [["ethereum", 1], ["base", 3], ["robinhood", 4], ["polkadot", 5], ["hedera", 6], ["hyperliquid", 7], ["tempo", 8], ["arbitrum", 9]];
 
 const DRY = process.argv.includes("--dry");
+const argv = process.argv.slice(2);
+const GENESIS_DAYS = argv.includes("--genesis-days") ? Number(argv[argv.indexOf("--genesis-days") + 1]) : 0;
+if (argv.includes("--genesis-days") && !(GENESIS_DAYS > 0 && GENESIS_DAYS <= 30)) throw new Error("--genesis-days: 1 to 30");
 const LOADER = new PublicKey("BPFLoaderUpgradeab1e11111111111111111111111");
 const idl = (prog: string, name: string) => JSON.parse(readFileSync(join(root, "programs", prog, "idls", `${name}.json`), "utf8"));
 
@@ -47,7 +56,15 @@ const pda = (program: PublicKey, seeds: (Buffer | Uint8Array)[]) => PublicKey.fi
 const programData = (program: PublicKey) => pda(LOADER, [program.toBuffer()]);
 const exists = async (a: PublicKey) => (await connection.getAccountInfo(a)) !== null;
 
-console.log("authority", key.publicKey.toBase58());
+console.log("authority", key.publicKey.toBase58(), "vault program", vt.programId.toBase58());
+
+if (argv.includes("--print-pairs")) {
+  for (const [network, number] of PEERS) console.log(`${network} (${number}): ${pda(vt.programId, [Buffer.from("config"), Buffer.from([number])]).toBase58()}`);
+  process.exit(0);
+}
+/** The genesis this run sets up each new pair with, if any. */
+const genesisKey = GENESIS_DAYS ? key.publicKey : PublicKey.default;
+const genesisEnd = new BN(GENESIS_DAYS ? Math.floor(Date.now() / 1000) + GENESIS_DAYS * 86_400 : 0);
 
 // The light client.
 const lcConfig = pda(lc.programId, [Buffer.from("config")]);
@@ -101,21 +118,22 @@ for (const [network, number] of PEERS) {
     continue;
   }
   const d = JSON.parse(readFileSync(file, "utf8"));
-  const evmVault: string = d.vaults.find((v: any) => v.peer === 2).vault;
+  const solanaPair = d.vaults.find((v: any) => v.peer === 2);
+  const evmVault: string = solanaPair.vault;
   const peerVault = Array.from(Buffer.from(evmVault.slice(2), "hex"));
   const config = pda(vt.programId, [Buffer.from("config"), Buffer.from([number])]);
   // The EVM vault must name this account as its peer: the account recorded,
   // and the 32 bytes the vault holds, decoded here by Solana's own library.
   if (d.solanaPairAccount !== config.toBase58()) throw new Error(`${network}: its vault names ${d.solanaPairAccount}, the pair account is ${config.toBase58()}`);
   const held = "0x" + Buffer.from(config.toBytes()).toString("hex");
-  if (held.toLowerCase() !== d.vaults[0].peerVault.toLowerCase()) throw new Error(`${network}: its vault holds ${d.vaults[0].peerVault}, the pair account is ${held}`);
+  if (held.toLowerCase() !== solanaPair.peerVault.toLowerCase()) throw new Error(`${network}: its vault holds ${solanaPair.peerVault}, the pair account is ${held}`);
   if (await exists(config)) console.log(`vault pair ${network} (${number}): set up already`);
   else if (DRY) {
     console.log(`vault pair ${network} (${number}): would set up ${config.toBase58()} -> ${evmVault}`);
     continue;
   } else {
     const sig = await vt.methods
-      .initialize(number, peerVault, DEPOSIT, MIN_CERTIFYING_ESCROW)
+      .initialize(number, peerVault, DEPOSIT, MIN_CERTIFYING_ESCROW, genesisKey, genesisEnd)
       .accountsStrict({
         config,
         sol: pda(vt.programId, [Buffer.from("asset"), config.toBuffer(), Buffer.from([0, 0, 0, 0])]),
@@ -133,5 +151,6 @@ for (const [network, number] of PEERS) {
   if (c.peer !== number || named.toLowerCase() !== evmVault.toLowerCase() || !c.deposit.eq(DEPOSIT) || !c.minCertifyingEscrow.eq(MIN_CERTIFYING_ESCROW)) {
     throw new Error(`vault pair ${network}: reads peer ${c.peer}, vault ${named}, deposit ${c.deposit}, escrow ${c.minCertifyingEscrow}`);
   }
-  console.log(`vault pair ${network} (${number}): reads back ${config.toBase58()} -> ${named}`);
+  if (GENESIS_DAYS && !c.genesisKey.equals(key.publicKey)) throw new Error(`vault pair ${network}: its genesis key reads ${c.genesisKey.toBase58()}`);
+  console.log(`vault pair ${network} (${number}): reads back ${config.toBase58()} -> ${named}${c.genesisKey.equals(PublicKey.default) ? "" : `, in genesis until ${new Date(c.genesisEnd.toNumber() * 1000).toISOString()}${c.genesisDone ? " (finalized)" : ""}`}`);
 }

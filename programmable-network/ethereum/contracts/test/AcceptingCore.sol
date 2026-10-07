@@ -12,4 +12,8 @@ contract AcceptingCore {
     function carries(uint256, bytes32) external pure returns (bool) {
         return true;
     }
+
+    function operatorActive(address) external pure returns (bool) {
+        return true;
+    }
 }

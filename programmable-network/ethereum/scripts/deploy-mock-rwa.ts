@@ -161,16 +161,31 @@ const save = () =>
   writeFileSync(out, JSON.stringify({ network: `${network}-testnet`, chainId, minter: deployer.address, operator, tokens: existing.tokens }, null, 2) + "\n");
 /** Fees on a big-block network: capped at twice the big-block price now,
  *  rather than the node's estimate, which spiked to 500 gwei once. */
+let lastBigPrice: bigint | null = null;
 const fees = async () => {
   if (!s.bigBlocks) return {};
-  const price = BigInt(await provider.send("eth_bigBlockGasPrice", []));
-  return { maxFeePerGas: price * 2n, maxPriorityFeePerGas: 0n };
+  // HyperEVM's endpoint sometimes answers "method not found" for the price
+  // between answers (2026-10-06): asked again, then the last price read.
+  for (let i = 0; i < 5; i++) {
+    try {
+      lastBigPrice = BigInt(await provider.send("eth_bigBlockGasPrice", []));
+      break;
+    } catch (e) {
+      if (i === 4 && lastBigPrice === null) throw e;
+      await new Promise((r) => setTimeout(r, 3_000));
+    }
+  }
+  return { maxFeePerGas: lastBigPrice! * 2n, maxPriorityFeePerGas: 0n };
 };
 
 /** The transactions' gas, set rather than estimated: on Base Sepolia the
  *  estimate for a mint came from a node that had not seen the deploy yet
  *  (22,946 gas; the mint ran out and reverted, 2026-10-05). */
 const GAS = { mint: 120_000, register: 300_000 };
+/** On an Arbitrum chain gas also pays for posting the data to Ethereum, at
+ *  a price that moves: the estimate and half again, at least the set gas. */
+const gasOf = async (estimate: () => Promise<bigint>, set = 0) =>
+  s.dataFee === "arb" ? { gasLimit: [BigInt(set), ((await estimate()) * 3n) / 2n].reduce((a, b) => (a > b ? a : b)) } : set ? { gasLimit: set } : {};
 /** How long a transaction may take to land before the run fails loudly: a
  *  capped fee can be left behind by a price that rises after it was read. */
 const WAIT_MS = 180_000;
@@ -184,7 +199,10 @@ for (const t of tokens) {
     continue;
   } else {
     const factory = new ContractFactory(artifact.abi, artifact.bytecode, wallet);
-    const c = await factory.deploy(t.name, t.symbol, parseUnits(t.faucet, 18), await fees());
+    const c = await factory.deploy(t.name, t.symbol, parseUnits(t.faucet, 18), {
+      ...(await fees()),
+      ...(await gasOf(async () => wallet.estimateGas(await factory.getDeployTransaction(t.name, t.symbol, parseUnits(t.faucet, 18))))),
+    });
     await c.deploymentTransaction()!.wait(1, WAIT_MS);
     address = await c.getAddress();
     console.log(`${t.symbol}: deployed at ${address} (${c.deploymentTransaction()?.hash})`);
@@ -203,7 +221,7 @@ for (const t of tokens) {
   // a run that stopped before it.
   const token = new Contract(address, artifact.abi, wallet);
   if ((await token.balanceOf(operator)) === 0n) {
-    await (await token.mint(operator, parseUnits(inventory, 18), { gasLimit: GAS.mint, ...(await fees()) })).wait(1, WAIT_MS);
+    await (await token.mint(operator, parseUnits(inventory, 18), { ...(await gasOf(() => token.mint.estimateGas(operator, parseUnits(inventory, 18)), GAS.mint)), ...(await fees()) })).wait(1, WAIT_MS);
     console.log(`${t.symbol}: minted ${inventory} to ${operator}`);
   }
   // Registered with each pair's vault once: asset numbers start at 1 for
@@ -212,7 +230,7 @@ for (const t of tokens) {
   for (const { peer, home: h } of homes) {
     let assetPlusOne = Number(await h.assetOfToken(address));
     if (assetPlusOne === 0) {
-      await (await h.registerAsset(address, { gasLimit: GAS.register, ...(await fees()) })).wait(1, WAIT_MS);
+      await (await h.registerAsset(address, { ...(await gasOf(() => h.registerAsset.estimateGas(address), GAS.register)), ...(await fees()) })).wait(1, WAIT_MS);
       // Read until a node behind the endpoint shows it (Base Sepolia's gave
       // 0 right after the receipt, 2026-10-05).
       for (let i = 0; (assetPlusOne = Number(await h.assetOfToken(address))) === 0; i++) {

@@ -49,6 +49,17 @@
       "receiptsFactory": "0x769d3CB24E20C77b45Bb0FCec35c7750f7E02CfC",
       "source": "63668a5",
       "at": "2026-10-05T14:27:07.517Z"
+    },
+    {
+      "peer": 9,
+      "peerVault": "0x000000000000000000000000ce962aa05135638f82ecfc15e3f114eeda4df823",
+      "vault": "0x3D62A18F49709A580c4f0d7494d2073770791573",
+      "home": "0xde29522fb6c8018bcdf9F1fb2DD32a7e6712878A",
+      "receipts": "0x1A1377d77BaA54Db55680AD9B40651B622Ac13cA",
+      "homeFactory": "0xd1473d4279C539760CBf5880504773d4f26F505e",
+      "receiptsFactory": "0x68342460861C0825fa913CD0528f87867139f7D3",
+      "source": "current",
+      "at": "2026-10-05T23:09:51.633Z"
     }
   ],
   "deployer": "0x9784B80BC7b95753f2a2732649F3a1136b4c2BF1",

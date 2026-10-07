@@ -23,7 +23,11 @@ for that:
   [`ipow-conversion-tunnel.md`](ipow-conversion-tunnel.md),
   conversion between programmable networks: a buy and a sell of
   Conversion linked by one Bitcoin payment, as the old protocol's tunnel
-  did, with open questions.
+  did, with open questions;
+  [`ipow-vault-genesis.md`](ipow-vault-genesis.md), a one-time genesis
+  step for the testnet vaults: receipts made and named home locks issued
+  by one key until it finalizes, so the fast path works from the start,
+  with open questions.
   The protocol redesign was approved on 2026-09-28 and moved to
   [`../design/ipow-protocol.md`](../design/ipow-protocol.md). Its build
   plan is [`ipow-build-plan.md`](ipow-build-plan.md).

@@ -14,8 +14,9 @@ Design and plan: [`docs/drafts/ipow-sdk.md`](../../docs/drafts/ipow-sdk.md).
   units converted to record units, locking (a token approved first),
   burning a receipt, and following each on this network.
 
-On Solana (`SolanaVault`): the vault's assets, locking SOL for its receipt
-on the pair's EVM network and following that lock, receipt balances,
+On Solana (`SolanaVault`): the vault's assets, registering an SPL token
+with a pair (`registerToken`), locking SOL or a registered token for its
+receipt on the pair's EVM network and following that lock, receipt balances,
 burning a receipt, and whether a lock made on the EVM network had its
 receipt issued on Solana. `followLock` follows an EVM lock to its receipt
 on Solana as one journey: `Locked`, `Carried`, `Issued` (or `GivenUp`,

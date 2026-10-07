@@ -241,7 +241,7 @@ impl SvmWorld {
                         protocol_program: pr::ID,
                         system_program: SYSTEM,
                     },
-                    vt::client::args::Initialize { peer: ipow_protocol_core::vault::ETHEREUM, peer_vault: ethereum_vault, deposit, min_certifying_escrow },
+                    vt::client::args::Initialize { peer: ipow_protocol_core::vault::ETHEREUM, peer_vault: ethereum_vault, deposit, min_certifying_escrow, genesis_key: Pubkey::default(), genesis_end: 0 },
                 )],
                 &self.user,
             )

@@ -27,9 +27,23 @@ Robinhood and HyperEVM, deploys Greatwall's mock RWA tokens, reads
 everything back, and updates the SDK and the node's settings. Each step
 skips what exists, so it can be run again.
 
-## Addresses
+## Addresses (Arbitrum Sepolia, chain 421614)
 
-Not deployed yet. Once deployed, `deployments/arbitrum-testnet.json` and
-`deployments/arbitrum-testnet-rwa.json` in
-[`programmable-network/ethereum`](../ethereum/deployments) hold them, read
-back from the network.
+Deployed on 2026-10-06 from commit `c9a2a60` and read back from the network
+(`scripts/verify-deployments.ts`: 30 contracts, all match). The full record,
+with each vault's parts and factories, is
+[`deployments/arbitrum-testnet.json`](../ethereum/deployments/arbitrum-testnet.json);
+the mock RWA tokens are in `deployments/arbitrum-testnet-rwa.json`.
+
+| Contract | Address |
+|---|---|
+| Light client | `0x53e1291BdAff473694BbbB8DD257f9844e5f9F3c` |
+| Price of data (`ArbDataFee`) | `0xF43DF008d31995690C75982937a368545953564A` |
+| Protocol | `0x35e564d74B90a3A5bfcA8Dec65b1325C83d2e822` |
+| Conversion | `0xB7054E399E31A2cFE181c4fD59C7235562a6d45d` |
+| BetaBaskets | `0xE8780640839860F9049132606d18c916956A44A5` |
+| Vault with Solana (its pair account `5rPkBfeB…T2ek`) | `0x8b9efF66C7D93816Eadf702cC6cE273e8B2b03e7` |
+| Vault with Ethereum | `0xcE962Aa05135638f82eCFC15e3f114EEda4DF823` |
+| Vault with Base | `0x0496e48C51E3783F5a059AC82B70F5D398448D3A` |
+| Vault with Robinhood | `0x10C9C79C8c46c1f9f07D7A258Bbd42B4ED6f973E` |
+| Vault with Hyperliquid | `0x01BE560A22e91201C9414b634f0a61085F84dD08` |

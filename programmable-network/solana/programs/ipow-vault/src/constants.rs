@@ -37,6 +37,8 @@ pub const MAX_RECORDS: usize = 32;
 
 /// A receipt has its token's decimals, at most 9 (section 11.9).
 pub const MAX_DECIMALS: u8 = 9;
+/// The longest genesis a pair may be set up with (D144).
+pub const MAX_GENESIS: i64 = 30 * 24 * 60 * 60;
 
 /// This network's number (D133). Its peer's is the pair's configuration's
 /// (D132): one program serves every peer.

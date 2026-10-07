@@ -37,70 +37,168 @@
       "name": "Tether Gold (Sepolia Greatwall)",
       "decimals": 18,
       "faucet": "1",
-      "vaultAsset": 5
+      "vaultAsset": 5,
+      "pairAssets": {
+        "2": 5,
+        "3": 1,
+        "4": 1,
+        "7": 1,
+        "9": 1
+      }
     },
     "STRCx": {
       "address": "0xB364813e60dB761FCF7FebFa9b1caD062797a9D6",
       "name": "Strategy PP Variable xStock (Sepolia Greatwall)",
       "decimals": 18,
       "faucet": "5",
-      "vaultAsset": 6
+      "vaultAsset": 6,
+      "pairAssets": {
+        "2": 6,
+        "3": 2,
+        "4": 2,
+        "7": 2,
+        "9": 2
+      }
     },
     "IVVon": {
       "address": "0x866D9360E35c3DaE8B1ad98aeCC729647C093852",
       "name": "iShares Core S&P 500 ETF (Ondo) (Sepolia Greatwall)",
       "decimals": 18,
       "faucet": "5",
-      "vaultAsset": 7
+      "vaultAsset": 7,
+      "pairAssets": {
+        "2": 7,
+        "3": 3,
+        "4": 3,
+        "7": 3,
+        "9": 3
+      }
     },
     "QQQon": {
       "address": "0x6c472F0404179BE1985D92C759Fd9293252Ab858",
       "name": "Invesco QQQ (Ondo) (Sepolia Greatwall)",
       "decimals": 18,
       "faucet": "5",
-      "vaultAsset": 8
+      "vaultAsset": 8,
+      "pairAssets": {
+        "2": 8,
+        "3": 4,
+        "4": 4,
+        "7": 4,
+        "9": 4
+      }
     },
     "NVDAon": {
       "address": "0xE8F52D763CF87154DC443fa36F9f6D65f44CCaE0",
       "name": "NVIDIA (Ondo) (Sepolia Greatwall)",
       "decimals": 18,
       "faucet": "5",
-      "vaultAsset": 9
+      "vaultAsset": 9,
+      "pairAssets": {
+        "2": 9,
+        "3": 5,
+        "4": 5,
+        "7": 5,
+        "9": 5
+      }
     },
     "SLVon": {
       "address": "0xc22Ca2B75825cE64a3937F155698C968848d9645",
       "name": "iShares Silver Trust (Ondo) (Sepolia Greatwall)",
       "decimals": 18,
       "faucet": "5",
-      "vaultAsset": 10
+      "vaultAsset": 10,
+      "pairAssets": {
+        "2": 10,
+        "3": 6,
+        "4": 6,
+        "7": 6,
+        "9": 6
+      }
     },
     "IEFAon": {
       "address": "0x3baaC1a56A8431fea5d0ee0636f285d4F996Bc4C",
       "name": "iShares Core MSCI EAFE ETF (Ondo) (Sepolia Greatwall)",
       "decimals": 18,
       "faucet": "5",
-      "vaultAsset": 11
+      "vaultAsset": 11,
+      "pairAssets": {
+        "2": 11,
+        "3": 7,
+        "4": 7,
+        "7": 7,
+        "9": 7
+      }
     },
     "AMDon": {
       "address": "0x04b4Cfe08b2C79fFeBc083E5e7091CfAC142c201",
       "name": "AMD (Ondo) (Sepolia Greatwall)",
       "decimals": 18,
       "faucet": "5",
-      "vaultAsset": 12
+      "vaultAsset": 12,
+      "pairAssets": {
+        "2": 12,
+        "3": 8,
+        "4": 8,
+        "7": 8,
+        "9": 8
+      }
     },
     "SOFIon": {
       "address": "0xA83EE721F0f398A920f4c35Eb04aa244d2c5d1fC",
       "name": "SoFi Technologies (Ondo) (Sepolia Greatwall)",
       "decimals": 18,
       "faucet": "5",
-      "vaultAsset": 13
+      "vaultAsset": 13,
+      "pairAssets": {
+        "2": 13,
+        "3": 9,
+        "4": 9,
+        "7": 9,
+        "9": 9
+      }
     },
     "HIMSon": {
       "address": "0x2c8b859ff059554ff363dED4a484062E247E03BC",
       "name": "Hims & Hers Health (Ondo) (Sepolia Greatwall)",
       "decimals": 18,
       "faucet": "5",
-      "vaultAsset": 14
+      "vaultAsset": 14,
+      "pairAssets": {
+        "2": 14,
+        "3": 10,
+        "4": 10,
+        "7": 10,
+        "9": 10
+      }
+    },
+    "VTIon": {
+      "address": "0x0082296c24D2c994DC6DC5DEa74e77ddFC0A0895",
+      "name": "Vanguard Total Stock Market ETF (Ondo) (Sepolia Greatwall)",
+      "decimals": 18,
+      "faucet": "5",
+      "vaultAsset": 15,
+      "pairAssets": {
+        "2": 15,
+        "3": 11,
+        "4": 11,
+        "7": 11,
+        "9": 11
+      }
+    },
+    "IEMGon": {
+      "address": "0xb934E173e34e8F3e9e6E6B2F7A901B75c9D8C7F8",
+      "name": "iShares Core MSCI Emerging Markets ETF (Ondo) (Sepolia Greatwall)",
+      "decimals": 18,
+      "faucet": "5",
+      "vaultAsset": 16,
+      "pairAssets": {
+        "2": 16,
+        "3": 12,
+        "4": 12,
+        "7": 12,
+        "9": 12
+      }
     }
   }
 }

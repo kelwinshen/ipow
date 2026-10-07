@@ -28,6 +28,12 @@ pub struct Config {
     /// Locks of them.
     pub lock_count: u64,
     pub bump: u8,
+    /// Genesis (docs/drafts/ipow-vault-genesis.md, D142 to D147): the key
+    /// that may make receipts and issue named locks until it finalizes or
+    /// `genesis_end`; the default key when the pair has no genesis.
+    pub genesis_key: Pubkey,
+    pub genesis_end: i64,
+    pub genesis_done: bool,
 }
 
 /// An asset whose home is Solana (section 11.9): SOL, number 0, or a token

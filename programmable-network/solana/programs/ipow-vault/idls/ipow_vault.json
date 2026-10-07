@@ -1,5 +1,5 @@
 {
-  "address": "2e1ZUB5eqA6bQfH3f9pbfvibfie7WnvEJeKif53VAm7p",
+  "address": "3TZ1LJ4fVZVKbBUyzVMRjJ9FNPGaqVmGX56JuT5QdXEy",
   "metadata": {
     "name": "ipow_vault",
     "version": "0.1.0",
@@ -1138,6 +1138,232 @@
       ]
     },
     {
+      "name": "finalize_genesis",
+      "discriminator": [
+        14,
+        52,
+        206,
+        170,
+        165,
+        216,
+        46,
+        149
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true
+        },
+        {
+          "name": "key",
+          "signer": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "genesis_issue",
+      "discriminator": [
+        185,
+        234,
+        139,
+        224,
+        39,
+        117,
+        116,
+        245
+      ],
+      "accounts": [
+        {
+          "name": "mark",
+          "docs": [
+            "missing, in the handler."
+          ],
+          "writable": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "mint",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  99,
+                  101,
+                  105,
+                  112,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "config"
+              },
+              {
+                "kind": "arg",
+                "path": "asset"
+              }
+            ]
+          }
+        },
+        {
+          "name": "holding"
+        },
+        {
+          "name": "to",
+          "docs": [
+            "The recipient's account of the receipt: its owner is the lock's recipient."
+          ],
+          "writable": true
+        },
+        {
+          "name": "key",
+          "docs": [
+            "The genesis key, which also pays."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "lock_id",
+          "type": "u64"
+        },
+        {
+          "name": "asset",
+          "type": "u32"
+        },
+        {
+          "name": "value",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "genesis_make_receipt",
+      "discriminator": [
+        91,
+        21,
+        222,
+        32,
+        149,
+        178,
+        194,
+        198
+      ],
+      "accounts": [
+        {
+          "name": "config"
+        },
+        {
+          "name": "mint",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  99,
+                  101,
+                  105,
+                  112,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "config"
+              },
+              {
+                "kind": "arg",
+                "path": "asset"
+              }
+            ]
+          }
+        },
+        {
+          "name": "holding",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  108,
+                  100,
+                  105,
+                  110,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "config"
+              },
+              {
+                "kind": "arg",
+                "path": "asset"
+              }
+            ]
+          }
+        },
+        {
+          "name": "key",
+          "docs": [
+            "The genesis key, which also pays."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "asset",
+          "type": "u32"
+        },
+        {
+          "name": "token",
+          "type": {
+            "array": [
+              "u8",
+              20
+            ]
+          }
+        },
+        {
+          "name": "decimals",
+          "type": "u8"
+        }
+      ]
+    },
+    {
       "name": "give_up",
       "discriminator": [
         75,
@@ -1324,6 +1550,14 @@
         {
           "name": "min_certifying_escrow",
           "type": "u64"
+        },
+        {
+          "name": "genesis_key",
+          "type": "pubkey"
+        },
+        {
+          "name": "genesis_end",
+          "type": "i64"
         }
       ]
     },
@@ -4495,6 +4729,47 @@
       ]
     }
   ],
+  "events": [
+    {
+      "name": "GenesisFinalized",
+      "discriminator": [
+        95,
+        88,
+        165,
+        229,
+        106,
+        30,
+        73,
+        160
+      ]
+    },
+    {
+      "name": "GenesisIssued",
+      "discriminator": [
+        230,
+        28,
+        239,
+        245,
+        205,
+        239,
+        136,
+        23
+      ]
+    },
+    {
+      "name": "GenesisReceipt",
+      "discriminator": [
+        184,
+        22,
+        149,
+        66,
+        65,
+        53,
+        130,
+        235
+      ]
+    }
+  ],
   "errors": [
     {
       "code": 6000,
@@ -4640,6 +4915,16 @@
     {
       "code": 6035,
       "name": "Underfunded"
+    },
+    {
+      "code": 6036,
+      "name": "NotGenesis",
+      "msg": "Not the genesis key, or the pair's genesis is over"
+    },
+    {
+      "code": 6037,
+      "name": "BadGenesis",
+      "msg": "A genesis ends in the future and within 30 days; with no key, none"
     }
   ],
   "types": [
@@ -5021,6 +5306,23 @@
           {
             "name": "bump",
             "type": "u8"
+          },
+          {
+            "name": "genesis_key",
+            "docs": [
+              "Genesis (docs/drafts/ipow-vault-genesis.md, D142 to D147): the key",
+              "that may make receipts and issue named locks until it finalizes or",
+              "`genesis_end`; the default key when the pair has no genesis."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "genesis_end",
+            "type": "i64"
+          },
+          {
+            "name": "genesis_done",
+            "type": "bool"
           }
         ]
       }
@@ -5163,6 +5465,74 @@
           },
           {
             "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "GenesisFinalized",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "GenesisIssued",
+      "docs": [
+        "What backs a lock issued at genesis (D145): the lock on Ethereum by its",
+        "number and asset, the value minted and its recipient."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "lock_id",
+            "type": "u64"
+          },
+          {
+            "name": "asset",
+            "type": "u32"
+          },
+          {
+            "name": "value",
+            "type": "u64"
+          },
+          {
+            "name": "recipient",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "GenesisReceipt",
+      "docs": [
+        "What backs a receipt made at genesis (D145)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "asset",
+            "type": "u32"
+          },
+          {
+            "name": "token",
+            "type": {
+              "array": [
+                "u8",
+                20
+              ]
+            }
+          },
+          {
+            "name": "decimals",
             "type": "u8"
           }
         ]

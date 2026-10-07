@@ -351,6 +351,12 @@ struct World {
 
 impl World {
     fn new() -> Self {
+        Self::build(false, 0).unwrap().0
+    }
+
+    /// A world whose pair is set up with a genesis key (funded, returned)
+    /// when `with_key`, and `genesis_end`; `new` has no genesis.
+    fn build(with_key: bool, genesis_end: i64) -> Result<(Self, Keypair), String> {
         let ctx = AnchorLiteSVM::build_with_programs(&[
             (ipow_light_client::ID, include_bytes!("../../../target/deploy-test/ipow_light_client.so")),
             (ipow_protocol::ID, include_bytes!("../../../target/deploy/ipow_protocol.so")),
@@ -377,6 +383,8 @@ impl World {
         let mut easy = [0u8; 32];
         easy[..3].copy_from_slice(&[0x7f, 0xff, 0xff]);
         let payer = w.stranger.insecure_clone();
+        let key = w.ctx.svm.create_funded_account(1_000 * SOL).unwrap();
+        let genesis_key = if with_key { key.pubkey() } else { Pubkey::default() };
         w.send(
             w.ix(
                 ipow_light_client::ID,
@@ -418,11 +426,17 @@ impl World {
                     protocol_program: ipow_protocol::ID,
                     system_program: SYSTEM,
                 },
-                ipow_vault::client::args::Initialize { peer: ETHEREUM, peer_vault: ETHEREUM_VAULT, deposit: DEPOSIT, min_certifying_escrow: MIN_CERTIFYING_ESCROW },
+                ipow_vault::client::args::Initialize {
+                    peer: ETHEREUM,
+                    peer_vault: ETHEREUM_VAULT,
+                    deposit: DEPOSIT,
+                    min_certifying_escrow: MIN_CERTIFYING_ESCROW,
+                    genesis_key,
+                    genesis_end,
+                },
             ),
             &[&payer],
-        )
-        .unwrap();
+        )?;
         w.start_chain();
 
         // The operator's protocol bond and chain head, for checkpoint jobs.
@@ -470,7 +484,48 @@ impl World {
             &[&op],
         )
         .unwrap();
-        w
+        Ok((w, key))
+    }
+
+    // Genesis (docs/drafts/ipow-vault-genesis.md)
+
+    fn genesis_make_receipt(&mut self, key: &Keypair, asset: u32, decimals: u8) -> Result<(), String> {
+        let ix = self.ix(
+            ipow_vault::ID,
+            ipow_vault::client::accounts::GenesisMakeReceipt {
+                config: config(),
+                mint: receipt(asset),
+                holding: holding(asset),
+                key: key.pubkey(),
+                token_program: TOKEN,
+                system_program: SYSTEM,
+            },
+            ipow_vault::client::args::GenesisMakeReceipt { asset, token: [0; 20], decimals },
+        );
+        self.send(ix, &[key])
+    }
+
+    fn genesis_issue(&mut self, key: &Keypair, lock_id: u64, asset: u32, value: u64, to: Pubkey) -> Result<(), String> {
+        let ix = self.ix(
+            ipow_vault::ID,
+            ipow_vault::client::accounts::GenesisIssue {
+                mark: lock_pda(lock_id),
+                config: config(),
+                mint: receipt(asset),
+                holding: holding(asset),
+                to,
+                key: key.pubkey(),
+                token_program: TOKEN,
+                system_program: SYSTEM,
+            },
+            ipow_vault::client::args::GenesisIssue { lock_id, asset, value },
+        );
+        self.send(ix, &[key])
+    }
+
+    fn finalize_genesis(&mut self, who: &Keypair) -> Result<(), String> {
+        let ix = self.ix(ipow_vault::ID, ipow_vault::client::accounts::FinalizeGenesis { config: config(), key: who.pubkey() }, ipow_vault::client::args::FinalizeGenesis {});
+        self.send(ix, &[who])
     }
 
     fn ix<A: anchor_lang::ToAccountMetas, D: anchor_lang::InstructionData>(&self, program: Pubkey, a: A, d: D) -> Instruction {
@@ -1355,6 +1410,91 @@ fn with_veth(w: &mut World, amount: u64, more: Vec<Vec<u8>>) -> (Pair, Ref, Pubk
     let to = w.veth_account(&user);
     w.issue(2, &lock, to).unwrap();
     (pair, real, to)
+}
+
+// ---------------------------------------------------------------------
+// Genesis (docs/drafts/ipow-vault-genesis.md, D142 to D147)
+// ---------------------------------------------------------------------
+
+#[test]
+fn genesis_is_set_up_only_with_an_end_in_the_future_and_within_30_days() {
+    expect_err(World::build(true, T0).map(|_| ()), "BadGenesis");
+    expect_err(World::build(true, T0 + 31 * DAY).map(|_| ()), "BadGenesis");
+    expect_err(World::build(false, T0 + DAY).map(|_| ()), "BadGenesis");
+    // With no key, none: its actions are refused.
+    let (mut w, key) = World::build(false, 0).unwrap();
+    expect_err(w.genesis_make_receipt(&key, 0, 9), "NotGenesis");
+    assert!(World::build(true, T0 + 14 * DAY).is_ok());
+}
+
+#[test]
+fn genesis_makes_vETH_and_issues_a_named_lock_once_which_no_claim_issues_again() {
+    // The longest genesis (30 days): the two claims below take 7 days each.
+    let (mut w, key) = World::build(true, T0 + 30 * DAY).unwrap();
+    let user = w.user.insecure_clone();
+    let stranger = w.stranger.insecure_clone();
+    expect_err(w.genesis_make_receipt(&stranger, 0, 9), "NotGenesis");
+    expect_err(w.genesis_make_receipt(&key, 0, 10), "WrongRecord");
+    w.genesis_make_receipt(&key, 0, 9).unwrap();
+    assert!(w.genesis_make_receipt(&key, 0, 9).is_err());
+
+    // Lock 1 on Ethereum: 1 ETH and a fast fee of 3 gwei, to the user.
+    let lock = eth_lock(1, GWEI_PER_ETH, &user.pubkey(), 0, 3);
+    let to = w.veth_account(&user.pubkey());
+    expect_err(w.genesis_issue(&stranger, 1, 0, GWEI_PER_ETH + 3, to), "NotGenesis");
+    expect_err(w.genesis_issue(&key, 1, 0, 0, to), "ZeroAmount");
+    w.genesis_issue(&key, 1, 0, GWEI_PER_ETH + 3, to).unwrap();
+    assert_eq!(w.tokens(&to), GWEI_PER_ETH + 3);
+    expect_err(w.genesis_issue(&key, 1, 0, 1, to), "AlreadyDone");
+
+    // The operator later carries vETH's ASSET record and lock 1: neither the
+    // receipt nor the lock is made or issued again, nor can it be given up.
+    let first = [veth_asset(), bond_rec(ETHEREUM, ETHEREUM, 0, 100 * GWEI_PER_ETH), bond_rec(ETHEREUM, SOLANA, 0, 100 * SOL)].concat();
+    let (pair, real) = w.ready(vec![first, lock.clone()]);
+    w.sub(&pair, 0, real, &[]).unwrap();
+    w.accept_last();
+    assert!(w.make_receipt(1, 0, veth_asset()).is_err());
+    w.sub(&pair, 1, real, &[]).unwrap();
+    let id = w.accept_last();
+    expect_err(w.issue(id, &lock, to), "AlreadyDone");
+    // give_up makes the lock's mark, which genesis made: refused, as for any issued lock.
+    assert!(w.give_up(id, &lock, &user).is_err());
+    assert_eq!(w.tokens(&to), GWEI_PER_ETH + 3);
+
+    // Finalized: genesis is over for good.
+    expect_err(w.finalize_genesis(&stranger), "NotGenesis");
+    w.finalize_genesis(&key).unwrap();
+    expect_err(w.genesis_issue(&key, 2, 0, GWEI_PER_ETH, to), "NotGenesis");
+    expect_err(w.genesis_make_receipt(&key, 1, 9), "NotGenesis");
+    expect_err(w.finalize_genesis(&key), "NotGenesis");
+}
+
+#[test]
+fn genesis_refuses_a_lock_a_claim_issued_first() {
+    let (mut w, key) = World::build(true, T0 + 30 * DAY).unwrap();
+    let user = w.user.pubkey();
+    // vETH made by its claim, then lock 1 issued by its own claim.
+    let (_pair, _real, to) = with_veth(&mut w, GWEI_PER_ETH, vec![]);
+    assert_eq!(w.tokens(&to), GWEI_PER_ETH);
+    expect_err(w.genesis_issue(&key, 1, 0, GWEI_PER_ETH, to), "AlreadyDone");
+    // And G1 finds the receipt made.
+    assert!(w.genesis_make_receipt(&key, 0, 9).is_err());
+    assert_eq!(w.tokens(&to), GWEI_PER_ETH);
+    let _ = user;
+}
+
+#[test]
+fn genesis_ends_at_its_end_with_no_finalize() {
+    let (mut w, key) = World::build(true, T0 + 14 * DAY).unwrap();
+    let user = w.user.pubkey();
+    w.genesis_make_receipt(&key, 0, 9).unwrap();
+    let to = w.veth_account(&user);
+    w.genesis_issue(&key, 1, 0, GWEI_PER_ETH, to).unwrap();
+    w.later(14 * DAY);
+    expect_err(w.genesis_issue(&key, 2, 0, GWEI_PER_ETH, to), "NotGenesis");
+    expect_err(w.finalize_genesis(&key), "NotGenesis");
+    // What genesis issued stays.
+    assert_eq!(w.tokens(&to), GWEI_PER_ETH);
 }
 
 // ---------------------------------------------------------------------
@@ -2276,7 +2416,7 @@ fn keeps_each_pair_apart() {
                 protocol_program: ipow_protocol::ID,
                 system_program: SYSTEM,
             },
-            ipow_vault::client::args::Initialize { peer, peer_vault: [0x33; 20], deposit: DEPOSIT, min_certifying_escrow: MIN_CERTIFYING_ESCROW },
+            ipow_vault::client::args::Initialize { peer, peer_vault: [0x33; 20], deposit: DEPOSIT, min_certifying_escrow: MIN_CERTIFYING_ESCROW, genesis_key: Pubkey::default(), genesis_end: 0 },
         )
     };
     let ix = init(&w, 3);

@@ -33,6 +33,9 @@ pub mod close_message;
 pub mod credit;
 pub mod decide;
 pub mod fast_pay;
+pub mod finalize_genesis;
+pub mod genesis_issue;
+pub mod genesis_make_receipt;
 pub mod give_up;
 pub mod home_lock;
 pub mod initialize;
@@ -125,11 +128,19 @@ pub(crate) use take_request_fee::__client_accounts_take_request_fee;
 pub use withdraw_deposits::WithdrawDeposits;
 pub(crate) use withdraw_deposits::__client_accounts_withdraw_deposits;
 pub use write_buffer::WriteBuffer;
+pub use finalize_genesis::FinalizeGenesis;
+pub(crate) use finalize_genesis::__client_accounts_finalize_genesis;
+pub use genesis_issue::GenesisIssue;
+pub(crate) use genesis_issue::__client_accounts_genesis_issue;
+pub use genesis_make_receipt::GenesisMakeReceipt;
+pub(crate) use genesis_make_receipt::__client_accounts_genesis_make_receipt;
 pub(crate) use write_buffer::__client_accounts_write_buffer;
 
 use state::Btc;
 
-declare_id!("2e1ZUB5eqA6bQfH3f9pbfvibfie7WnvEJeKif53VAm7p");
+// A new program for genesis (docs/drafts/ipow-vault-genesis.md): its
+// config holds the genesis key. The program before it, 2e1ZUB5e…, stays.
+declare_id!("3TZ1LJ4fVZVKbBUyzVMRjJ9FNPGaqVmGX56JuT5QdXEy");
 
 #[program]
 pub mod ipow_vault {
@@ -137,8 +148,22 @@ pub mod ipow_vault {
 
     // Settings and real Bitcoin (D108, D116, D118)
 
-    pub fn initialize(ctx: Context<Initialize>, peer: u8, peer_vault: [u8; 20], deposit: u64, min_certifying_escrow: u64) -> Result<()> {
-        initialize::handler(ctx, peer, peer_vault, deposit, min_certifying_escrow)
+    pub fn initialize(ctx: Context<Initialize>, peer: u8, peer_vault: [u8; 20], deposit: u64, min_certifying_escrow: u64, genesis_key: Pubkey, genesis_end: i64) -> Result<()> {
+        initialize::handler(ctx, peer, peer_vault, deposit, min_certifying_escrow, genesis_key, genesis_end)
+    }
+
+    // Genesis (docs/drafts/ipow-vault-genesis.md, D142 to D147)
+
+    pub fn genesis_make_receipt(ctx: Context<GenesisMakeReceipt>, asset: u32, token: [u8; 20], decimals: u8) -> Result<()> {
+        genesis_make_receipt::handler(ctx, asset, token, decimals)
+    }
+
+    pub fn genesis_issue(ctx: Context<GenesisIssue>, lock_id: u64, asset: u32, value: u64) -> Result<()> {
+        genesis_issue::handler(ctx, lock_id, asset, value)
+    }
+
+    pub fn finalize_genesis(ctx: Context<FinalizeGenesis>) -> Result<()> {
+        finalize_genesis::handler(ctx)
     }
 
     pub fn record_real_from_job(ctx: Context<RecordRealFromJob>, job_id: u64) -> Result<()> {

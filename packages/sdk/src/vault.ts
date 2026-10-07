@@ -74,6 +74,44 @@ function pairOf(d: Deployment, pair: number) {
   return p;
 }
 
+// Genesis (docs/drafts/ipow-vault-genesis.md): a pair's receipts part may
+// start in genesis, when its genesis key makes receipts and issues named
+// locks of the peer until it finalizes or its end.
+
+/** Pair `pair`'s genesis on this network: its key (null with none), its
+ *  end (seconds), and whether it is open now. */
+export async function genesisOf(provider: Provider, d: Deployment, pair = 0): Promise<{ key: string | null; end: number; finalized: boolean; open: boolean }> {
+  const r = new Contract(pairOf(d, pair).receipts, ABIS.vaultReceipts, provider);
+  const [key, end, finalized, open] = await Promise.all([r.genesisKey(), r.genesisEnd(), r.genesisFinalized(), r.genesisOpen()]);
+  return { key: key === ZeroAddress ? null : key, end: Number(end), finalized, open };
+}
+
+/** G1: makes the receipt here of the peer's asset `asset`: its token there
+ *  (32 bytes; zero for the coin) and its record decimals there. */
+export async function genesisMakeReceipt(signer: Signer, d: Deployment, pair: number, asset: number, token: string, decimals: number, overrides: Record<string, unknown> = {}): Promise<string> {
+  const r = new Contract(pairOf(d, pair).receipts, ABIS.vaultReceipts, signer);
+  const tx = await r.genesisMakeReceipt(asset, token, decimals, overrides);
+  await tx.wait();
+  return tx.hash;
+}
+
+/** G2: issues the peer's lock `lockId` of `asset`, its value (amount and
+ *  fast fee, record units) to `to` here. */
+export async function genesisIssue(signer: Signer, d: Deployment, pair: number, lockId: bigint | number, asset: number, value: bigint, to: string, overrides: Record<string, unknown> = {}): Promise<string> {
+  const r = new Contract(pairOf(d, pair).receipts, ABIS.vaultReceipts, signer);
+  const tx = await r.genesisIssue(lockId, asset, value, to, overrides);
+  await tx.wait();
+  return tx.hash;
+}
+
+/** Ends pair `pair`'s genesis on this network for good. */
+export async function finalizeGenesis(signer: Signer, d: Deployment, pair = 0, overrides: Record<string, unknown> = {}): Promise<string> {
+  const r = new Contract(pairOf(d, pair).receipts, ABIS.vaultReceipts, signer);
+  const tx = await r.finalizeGenesis(overrides);
+  await tx.wait();
+  return tx.hash;
+}
+
 /**
  * A recipient on the pair's other network in the 32 bytes a vault takes:
  * a Solana account from base58, or an EVM address padded on the left.
@@ -97,12 +135,9 @@ export function encodeRecipient(peer: number, address: string): string {
 export async function homeAssets(provider: Provider, d: Deployment, pair = 0): Promise<HomeAsset[]> {
   const home = new Contract(pairOf(d, pair).home, ABIS.vaultHome, provider);
   const count = Number(await home.assetCount());
-  const out: HomeAsset[] = [];
-  for (let i = 0; i < count; i++) {
-    const a = await home.getAsset(i);
-    out.push({ number: i, token: a.token, decimals: Number(a.decimals), recordDecimals: Number(a.recordDecimals), unit: a.unit });
-  }
-  return out;
+  // Read together: one round trip's wait, not one per asset.
+  const all = await Promise.all(Array.from({ length: count }, (_, i) => home.getAsset(i)));
+  return all.map((a, i) => ({ number: i, token: a.token, decimals: Number(a.decimals), recordDecimals: Number(a.recordDecimals), unit: a.unit }));
 }
 
 /** The receipts made on this network of the other network's assets, by
@@ -152,15 +187,17 @@ function event(contract: Contract, receipt: any, name: string) {
 
 /** Locks for the receipt on the other network, to `recipient` there. A
  *  token is approved first, for exactly what the lock takes. */
-export async function lock(signer: Signer, d: Deployment, quote: LockQuote, recipient: string): Promise<{ lockId: bigint; txHash: string }> {
+/** `overrides` are set on each transaction it sends (e.g. a legacy gas
+ *  price where a network's relay misprices typed ones, as Hedera's). */
+export async function lock(signer: Signer, d: Deployment, quote: LockQuote, recipient: string, overrides: Record<string, unknown> = {}): Promise<{ lockId: bigint; txHash: string }> {
   if (quote.network !== d.name) throw new Error(`a quote for ${quote.network}, not ${d.name}`);
   const p = pairOf(d, quote.pair);
   const home = new Contract(p.home, ABIS.vaultHome, signer);
   if (quote.asset.token !== ZeroAddress) {
     const token = new Contract(quote.asset.token, ["function approve(address,uint256) returns (bool)"], signer);
-    await (await token.approve(p.home, quote.total)).wait();
+    await (await token.approve(p.home, quote.total, overrides)).wait();
   }
-  const tx = await home.lock(quote.asset.number, encodeRecipient(p.peer, recipient), quote.amount, quote.fee, quote.fastFee, { value: quote.value });
+  const tx = await home.lock(quote.asset.number, encodeRecipient(p.peer, recipient), quote.amount, quote.fee, quote.fastFee, { ...overrides, value: quote.value });
   const receipt = await tx.wait();
   return { lockId: event(home, receipt, "Locked").lockId as bigint, txHash: tx.hash };
 }

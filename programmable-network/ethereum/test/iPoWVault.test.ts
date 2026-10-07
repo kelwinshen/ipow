@@ -963,6 +963,89 @@ describe("iPoWVault: receipts of Solana's assets (section 11.9)", function () {
   });
 });
 
+describe("iPoWVault: genesis (docs/drafts/ipow-vault-genesis.md, D142 to D147)", function () {
+  /** A receipts part on a core that accepts every claim, made in genesis for `key` until `end`. */
+  async function genesisPart(key: string, end: number) {
+    const core = await ethers.deployContract("AcceptingCore");
+    const factory = await ethers.deployContract("VaultReceiptsFactory");
+    const at = await factory.makeGenesis.staticCall(await core.getAddress(), ETHEREUM, SOLANA, key, end);
+    await factory.makeGenesis(await core.getAddress(), ETHEREUM, SOLANA, key, end);
+    expect(await factory.made(at)).to.equal(true);
+    return ethers.getContractAt("VaultReceipts", at);
+  }
+
+  it("is made only with an end in the future and within 30 days, and a vault made with no key has none", async function () {
+    const [, key] = await ethers.getSigners();
+    const core = await ethers.deployContract("AcceptingCore");
+    const factory = await ethers.deployContract("VaultReceiptsFactory");
+    const now = await latestTime();
+    const c = await core.getAddress();
+    const receipts = await ethers.getContractAt("VaultReceipts", await factory.make.staticCall(c, ETHEREUM, SOLANA));
+    await expect(factory.makeGenesis(c, ETHEREUM, SOLANA, key.address, now)).to.be.revertedWithCustomError(receipts, "BadGenesis");
+    await expect(factory.makeGenesis(c, ETHEREUM, SOLANA, key.address, now + 31 * DAY)).to.be.revertedWithCustomError(receipts, "BadGenesis");
+    await expect(factory.makeGenesis(c, ETHEREUM, SOLANA, ethers.ZeroAddress, now + DAY)).to.be.revertedWithCustomError(receipts, "BadGenesis");
+    await factory.make(c, ETHEREUM, SOLANA);
+    expect(await receipts.genesisOpen()).to.equal(false);
+    await expect(receipts.genesisMakeReceipt(0, ethers.ZeroHash, 9)).to.be.revertedWithCustomError(receipts, "NotGenesis");
+  });
+
+  it("lets only the key make a receipt and issue a named lock, once, and no claim or attest issues it again", async function () {
+    const [, key, user, stranger] = await ethers.getSigners();
+    const receipts = await genesisPart(key.address, (await latestTime()) + 14 * DAY);
+    expect(await receipts.genesisOpen()).to.equal(true);
+    await expect(receipts.connect(stranger).genesisMakeReceipt(0, ethers.ZeroHash, 9)).to.be.revertedWithCustomError(receipts, "NotGenesis");
+    // G2 needs the receipt made.
+    await expect(receipts.connect(key).genesisIssue(1n, 0, E, user.address)).to.be.revertedWithCustomError(receipts, "UnknownAsset");
+    await expect(receipts.connect(key).genesisMakeReceipt(0, ethers.ZeroHash, 9)).to.emit(receipts, "GenesisReceipt").withArgs(0, ethers.ZeroHash, 9);
+    const vSol = await ethers.getContractAt("VaultReceipt", await receipts.receiptOf(0));
+    expect([await vSol.symbol(), await vSol.decimals()]).to.deep.equal(["vSOL", 9n]);
+    // Made once: neither G1 again nor a later ASSET claim makes it twice.
+    await expect(receipts.connect(key).genesisMakeReceipt(0, ethers.ZeroHash, 9)).to.be.revertedWithCustomError(receipts, "AssetExists");
+    await expect(receipts.makeReceipt(1n, rec.asset(SOLANA, 0, ethers.ZeroHash, 9))).to.be.revertedWithCustomError(receipts, "AssetExists");
+    await expect(receipts.connect(key).genesisMakeReceipt(1, ethers.id("a mint"), 10)).to.be.revertedWithCustomError(receipts, "WrongRecord");
+
+    // Lock 7 on Solana: 3 SOL and a fast fee of 2, to the user.
+    await expect(receipts.connect(stranger).genesisIssue(7n, 0, 3n * E + 2n, user.address)).to.be.revertedWithCustomError(receipts, "NotGenesis");
+    await expect(receipts.connect(key).genesisIssue(7n, 0, 0n, user.address)).to.be.revertedWithCustomError(receipts, "ZeroAmount");
+    await expect(receipts.connect(key).genesisIssue(7n, 0, 3n * E + 2n, ethers.ZeroAddress)).to.be.revertedWithCustomError(receipts, "ZeroAddress");
+    await expect(receipts.connect(key).genesisIssue(7n, 0, 3n * E + 2n, user.address)).to.emit(receipts, "GenesisIssued").withArgs(7n, 0, 3n * E + 2n, user.address);
+    expect(await vSol.balanceOf(user.address)).to.equal(3n * E + 2n);
+    expect((await receipts.getMark(7n)).issued).to.equal(true);
+    await expect(receipts.connect(key).genesisIssue(7n, 0, 1n, user.address)).to.be.revertedWithCustomError(receipts, "AlreadyDone");
+    // The operator later carries lock 7 in a claim: it is issued already.
+    const lock = rec.lock(SOLANA, 0, 7n, 3n * E, a32(user.address), 0n, 2n, 100n);
+    await expect(receipts.issue(1n, lock)).to.be.revertedWithCustomError(receipts, "AlreadyDone");
+    await expect(receipts.connect(stranger).attestLock(lock)).to.be.revertedWithCustomError(receipts, "AlreadyDone");
+    await expect(receipts.connect(user).giveUp(1n, lock)).to.be.revertedWithCustomError(receipts, "AlreadyDone");
+    expect(await vSol.balanceOf(user.address)).to.equal(3n * E + 2n);
+    // A lock already issued by a claim is not issued again at genesis.
+    const other = rec.lock(SOLANA, 0, 8n, E, a32(user.address));
+    await receipts.issue(1n, other);
+    await expect(receipts.connect(key).genesisIssue(8n, 0, E, user.address)).to.be.revertedWithCustomError(receipts, "AlreadyDone");
+  });
+
+  it("ends for good at the key's finalize, and at its end with no finalize", async function () {
+    const [, key, user] = await ethers.getSigners();
+    const receipts = await genesisPart(key.address, (await latestTime()) + 14 * DAY);
+    await receipts.connect(key).genesisMakeReceipt(0, ethers.ZeroHash, 9);
+    await expect(receipts.connect(user).finalizeGenesis()).to.be.revertedWithCustomError(receipts, "NotGenesis");
+    await expect(receipts.connect(key).finalizeGenesis()).to.emit(receipts, "GenesisFinalized");
+    expect(await receipts.genesisOpen()).to.equal(false);
+    await expect(receipts.connect(key).genesisIssue(1n, 0, E, user.address)).to.be.revertedWithCustomError(receipts, "NotGenesis");
+    await expect(receipts.connect(key).genesisMakeReceipt(1, ethers.ZeroHash, 9)).to.be.revertedWithCustomError(receipts, "NotGenesis");
+    await expect(receipts.connect(key).finalizeGenesis()).to.be.revertedWithCustomError(receipts, "NotGenesis");
+
+    const later = await genesisPart(key.address, (await latestTime()) + 14 * DAY);
+    await later.connect(key).genesisMakeReceipt(0, ethers.ZeroHash, 9);
+    await later.connect(key).genesisIssue(1n, 0, E, user.address);
+    await mineAt((await latestTime()) + 14 * DAY);
+    expect(await later.genesisOpen()).to.equal(false);
+    await expect(later.connect(key).genesisIssue(2n, 0, E, user.address)).to.be.revertedWithCustomError(later, "NotGenesis");
+    // What genesis issued stays issued.
+    expect((await later.getMark(1n)).issued).to.equal(true);
+  });
+});
+
 describe("iPoWVault: the fast path of locks on Solana (section 11.7)", function () {
   /** The operator holds 10 vSOL; `locks` are LOCK records of Solana, all in message 2. */
   async function withVsol(ctx: Ctx, locks: string[]) {

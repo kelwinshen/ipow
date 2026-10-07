@@ -9,70 +9,140 @@
       "name": "Global Dollar (Robinhood Testnet Greatwall)",
       "decimals": 18,
       "faucet": "100",
-      "vaultAsset": 1
+      "vaultAsset": 1,
+      "pairAssets": {
+        "1": 1,
+        "2": 1,
+        "3": 1,
+        "7": 1,
+        "9": 1
+      }
     },
     "SPYr": {
       "address": "0xCA39c4e5d4f938A380E61475bF4CeF8D1B7d6190",
       "name": "SPDR S&P 500 ETF Trust Robinhood Token (Robinhood Testnet Greatwall)",
       "decimals": 18,
       "faucet": "5",
-      "vaultAsset": 2
+      "vaultAsset": 2,
+      "pairAssets": {
+        "1": 2,
+        "2": 2,
+        "3": 2,
+        "7": 2,
+        "9": 2
+      }
     },
     "NVDAr": {
       "address": "0x07eFF65A853f36cBA8FEFbC495eb6A0D98d26a75",
       "name": "NVIDIA Robinhood Token (Robinhood Testnet Greatwall)",
       "decimals": 18,
       "faucet": "5",
-      "vaultAsset": 3
+      "vaultAsset": 3,
+      "pairAssets": {
+        "1": 3,
+        "2": 3,
+        "3": 3,
+        "7": 3,
+        "9": 3
+      }
     },
     "SPCXr": {
       "address": "0x6c692BEdCa89292D0FEfc6e86b82f451E371f11D",
       "name": "SpaceX Class A Common Stock Robinhood Token (Robinhood Testnet Greatwall)",
       "decimals": 18,
       "faucet": "5",
-      "vaultAsset": 4
+      "vaultAsset": 4,
+      "pairAssets": {
+        "1": 4,
+        "2": 4,
+        "3": 4,
+        "7": 4,
+        "9": 4
+      }
     },
     "METAr": {
       "address": "0xB75ABD27218B2b31ABb5B0F61F11a107377bEA06",
       "name": "Meta Platforms Robinhood Token (Robinhood Testnet Greatwall)",
       "decimals": 18,
       "faucet": "5",
-      "vaultAsset": 5
+      "vaultAsset": 5,
+      "pairAssets": {
+        "1": 5,
+        "2": 5,
+        "3": 5,
+        "7": 5,
+        "9": 5
+      }
     },
     "COINr": {
       "address": "0x525D70BBc90149345a171F5E308C923A4B8b109A",
       "name": "Coinbase Robinhood Token (Robinhood Testnet Greatwall)",
       "decimals": 18,
       "faucet": "5",
-      "vaultAsset": 6
+      "vaultAsset": 6,
+      "pairAssets": {
+        "1": 6,
+        "2": 6,
+        "3": 6,
+        "7": 6,
+        "9": 6
+      }
     },
     "USOr": {
       "address": "0xeF3A9120a087cf5795a60BB2e9FfF15b8E35c69e",
       "name": "United States Oil Fund Robinhood Token (Robinhood Testnet Greatwall)",
       "decimals": 18,
       "faucet": "5",
-      "vaultAsset": 7
+      "vaultAsset": 7,
+      "pairAssets": {
+        "1": 7,
+        "2": 7,
+        "3": 7,
+        "7": 7,
+        "9": 7
+      }
     },
     "GMEr": {
       "address": "0x1bF2c8784e5e801BeAb042791fE161156e771B66",
       "name": "GameStop Robinhood Token (Robinhood Testnet Greatwall)",
       "decimals": 18,
       "faucet": "5",
-      "vaultAsset": 8
+      "vaultAsset": 8,
+      "pairAssets": {
+        "1": 8,
+        "2": 8,
+        "3": 8,
+        "7": 8,
+        "9": 8
+      }
     },
     "PLTRr": {
       "address": "0x3Fc561125a24C7Bb02f1edd1f8F773e16185799f",
       "name": "Palantir Technologies Robinhood Token (Robinhood Testnet Greatwall)",
       "decimals": 18,
       "faucet": "5",
-      "vaultAsset": 9
+      "vaultAsset": 9,
+      "pairAssets": {
+        "1": 9,
+        "2": 9,
+        "3": 9,
+        "7": 9,
+        "9": 9
+      }
     },
     "SGOVr": {
       "address": "0xdfB626fA52Ef04EAf2DfC4fA30e9B3d7E5fA90DC",
       "name": "iShares 0-3 Month Treasury Bond Robinhood Token (Robinhood Testnet Greatwall)",
       "decimals": 18,
       "faucet": "100",
-      "vaultAsset": 10
+      "vaultAsset": 10,
+      "pairAssets": {
+        "1": 10,
+        "2": 10,
+        "3": 10,
+        "7": 10,
+        "9": 10
+      }
     }
   }
 }

@@ -9,63 +9,140 @@
       "name": "Theo Short Duration US Treasury Fund (HyperEVM Testnet Greatwall)",
       "decimals": 18,
       "faucet": "100",
-      "vaultAsset": 1
+      "vaultAsset": 1,
+      "pairAssets": {
+        "1": 1,
+        "2": 1,
+        "3": 1,
+        "4": 1,
+        "9": 1
+      }
     },
     "USDH": {
       "address": "0xDaB99518afF82db3c16ad748B56884238bb2C5C5",
       "name": "USDH (HyperEVM Testnet Greatwall)",
       "decimals": 18,
       "faucet": "100",
-      "vaultAsset": 2
+      "vaultAsset": 2,
+      "pairAssets": {
+        "1": 2,
+        "2": 2,
+        "3": 2,
+        "4": 2,
+        "9": 2
+      }
     },
     "GMEx": {
       "address": "0xC034e3Fc38E88D12922A285D09470510d320a200",
       "name": "Gamestop xStock (HyperEVM Testnet Greatwall)",
       "decimals": 18,
       "faucet": "5",
-      "vaultAsset": 3
+      "vaultAsset": 3,
+      "pairAssets": {
+        "1": 3,
+        "2": 3,
+        "3": 3,
+        "4": 3,
+        "9": 3
+      }
     },
     "MUx": {
       "address": "0xCeee90F921AA994B837B97B4886c1A2AE56b2550",
       "name": "Micron Technology xStock (HyperEVM Testnet Greatwall)",
       "decimals": 18,
       "faucet": "5",
-      "vaultAsset": 4
+      "vaultAsset": 4,
+      "pairAssets": {
+        "1": 4,
+        "2": 4,
+        "3": 4,
+        "4": 4,
+        "9": 4
+      }
     },
     "USDHL": {
       "address": "0x8965958BC61220d8add02E227437Fa363E21D96f",
       "name": "Hyper USD (HyperEVM Testnet Greatwall)",
       "decimals": 18,
       "faucet": "100",
-      "vaultAsset": 5
+      "vaultAsset": 5,
+      "pairAssets": {
+        "1": 5,
+        "2": 5,
+        "3": 5,
+        "4": 5,
+        "9": 5
+      }
     },
     "SKHYx": {
       "address": "0xE101001bD62451c6f3337f44EF2cC4F166dd891D",
       "name": "SK hynix xStock (HyperEVM Testnet Greatwall)",
       "decimals": 18,
       "faucet": "5",
-      "vaultAsset": 6
+      "vaultAsset": 6,
+      "pairAssets": {
+        "1": 6,
+        "2": 6,
+        "3": 6,
+        "4": 6,
+        "9": 6
+      }
     },
     "NBISx": {
       "address": "0xFcbF76B91dDebbee0c21d808B26a9Fb8fcC0ca94",
       "name": "Nebius xStock (HyperEVM Testnet Greatwall)",
       "decimals": 18,
       "faucet": "5",
-      "vaultAsset": 7
+      "vaultAsset": 7,
+      "pairAssets": {
+        "1": 7,
+        "2": 7,
+        "3": 7,
+        "4": 7,
+        "9": 7
+      }
     },
     "IWMx": {
       "address": "0x1E5da6001764bB4e76321FD90Dfaf626cA1f3A83",
       "name": "Russell 2000 xStock (HyperEVM Testnet Greatwall)",
       "decimals": 18,
       "faucet": "5",
-      "vaultAsset": 8
+      "vaultAsset": 8,
+      "pairAssets": {
+        "1": 8,
+        "2": 8,
+        "3": 8,
+        "4": 8,
+        "9": 8
+      }
     },
     "CRWVx": {
       "address": "0xda238E5F844d01554b1A9F2342F733A8205d0586",
       "name": "CoreWeave xStock (HyperEVM Testnet Greatwall)",
       "decimals": 18,
       "faucet": "5",
-      "vaultAsset": 9
+      "vaultAsset": 9,
+      "pairAssets": {
+        "1": 9,
+        "2": 9,
+        "3": 9,
+        "4": 9,
+        "9": 9
+      }
+    },
+    "SPYx": {
+      "address": "0x48aA89dcB9355016c2010426f99d4c44D65281e9",
+      "name": "SP500 xStock (HyperEVM Testnet Greatwall)",
+      "decimals": 18,
+      "faucet": "5",
+      "vaultAsset": 10,
+      "pairAssets": {
+        "1": 10,
+        "2": 10,
+        "3": 10,
+        "4": 10,
+        "9": 10
+      }
     }
   }
 }
