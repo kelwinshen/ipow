@@ -1,7 +1,7 @@
 # The iPoW node: one program that runs the roles of the protocol (operator,
 # guardian, attester) on any number of networks. Spec:
-# docs/design/ipow-protocol.md. The old service in core/operator stays as the
-# reference for the old contracts.
+# docs/design/ipow-protocol.md. The old service for the old contracts,
+# core/operator, was removed; it stays in git at the tag legacy-v1.
 [workspace]
 members = ["crates/protocol", "crates/node", "crates/bitcoin", "crates/networks/evm", "crates/networks/svm", "crates/testing"]
 resolver = "3"

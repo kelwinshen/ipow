@@ -22,7 +22,8 @@ pub mod util;
 
 // Instruction modules sit at the crate root, and each `Accounts` struct's
 // client module is re-exported, to work around the anchor-lang 1.0
-// `#[program]` macro bug described in `programs/ipow/src/lib.rs`.
+// `#[program]` macro bug: it expects each `__client_accounts_<snake_case(struct)>`
+// module at `crate::<that name>` (https://github.com/solana-foundation/anchor/issues/3690).
 pub mod add_deposits;
 pub mod answer;
 pub mod attest_lock;

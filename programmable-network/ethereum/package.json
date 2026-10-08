@@ -6,8 +6,8 @@
     "compile": "hardhat compile",
     "test": "hardhat test",
     "node": "hardhat node",
-    "lint": "prettier contracts test ignition --check",
-    "lint:fix": "prettier contracts test ignition -w"
+    "lint": "prettier contracts test --check",
+    "lint:fix": "prettier contracts test -w"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-ignition": "^3.0.0",

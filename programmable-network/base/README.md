@@ -35,73 +35,14 @@ pair on Solana is the account `Gyhrq1CzHyU9BfECK5G8RW4ho75oaRPqMngXYYvLuduL`.
 | Vault paired with Robinhood testnet (2026-10-05) | `0xCA92aED3Bbb8Bab3e877Bf3092924aD51B2a00d4`; home `0x2E3Fe0bF1955188Da561EAb643f15bcd413A1512`, receipts `0x38E0Bf6cFcc850430D51f8b3E899e9F225aA8d5D`, its factories `0xD44a36ac5549EbE7c7A54642104867539b2d01A1` and `0xE610e70B799b3d169BeA946a9029655226985805` |
 | Vault paired with Sepolia (2026-10-05) | `0xCe6Cda46Ac4d02c6BbB3613de07821e0fd80b313`; home `0x5D0174Bd9f6d10840d4d9FEeA2CcBdBbAb5777C8`, receipts `0x54BC75a61D3F0D213F0828755Ef6E7ef1f2422c6`, its factories `0x4F479930C9f65FA41bb9aBF09bCaE668e0857DFE` and `0x46bC1Efc370FDe6945014a52756E75f919AD8067` |
 
-## Setup
+## Setup and deploying
 
-```sh
-pnpm install
-cp .env.example .env   # fill in BASE_SEPOLIA_RPC_URL and BASE_SEPOLIA_PRIVATE_KEY
-```
+This package holds only this README, `.env.example`, and the `.gitignore`
+that keeps the network's `.env` out of git
+(`cp .env.example .env`, then fill in `BASE_SEPOLIA_RPC_URL` and `BASE_SEPOLIA_PRIVATE_KEY`). The
+contracts, their tests and the deployment scripts are the one source in
+[`../ethereum`](../ethereum); see its README for deploying.
 
-## Testing
-
-```sh
-pnpm test
-```
-
-Same test suite as the Ethereum package (the contract source is
-identical) — see that package's README for the breakdown.
-
-## Deploying
-
-```sh
-npx hardhat ignition deploy ignition/modules/IPoW.ts --network baseSepolia
-```
-
-Chain ID 84532. Current deployment: `0xB7054E399E31A2cFE181c4fD59C7235562a6d45d`.
-
-### BetaVault (design/ipow-implementation.md §6/§8)
-
-```sh
-npx hardhat ignition deploy ignition/modules/BetaVault.ts --network baseSepolia \
-  --parameters '{"BetaVaultModule":{"ipowHeaders":"<iPoW address above>"}}'
-```
-
-Current deployment: `0x6354779b4Dbb564c712ea91c179eCF521C15BE73` (plus a
-`MockERC20` test token at `0xE8780640839860F9049132606d18c916956A44A5`,
-deployed alongside it purely to exercise §8.13's ERC20 local-leg
-support — not part of the protocol itself).
-
-### BetaHub (design/ipow-implementation.md §8.18/§8.19)
-
-```sh
-npx hardhat ignition deploy ignition/modules/BetaHub.ts --network baseSepolia
-```
-
-Current deployment: `0x24765955eCbffAaACB48a8c3747975d6C750C075`
-(`HubToken`/"iBETA" alongside it).
-
-### iPoWConversion (design/ipow-implementation.md §1–§2/§9.2)
-
-The permissionless-auction Conversion base primitive — its own dedicated
-`iPoW` header source, deliberately separate from Beta's above (same
-split every other network uses). No operator automation needed — this
-one is permissionless by design.
-
-```sh
-npx hardhat ignition deploy ignition/modules/IPoWConversion.ts --network baseSepolia
-```
-
-Current deployment: `0xa43f67C41Fc6e8474278d5a7C1540862CC2a16bA`
-(its own `iPoW`: `0x5F63BF3638f8E2BcBD56a4E43cEC7D39637A6f80`).
-Cross-registered with every other network's own `iPoWConversion` via
-`addNetwork` — see design/ipow-implementation.md §9.2.
-
-## Post-deploy configuration
-
-`scripts/configure.ts` follows the standard 18-decimal weibar convention
-(see `hedera/README.md` if you need the tinybar-scaling caveat that
-applies there instead).
-
-```sh
-ACTION=status npx hardhat run scripts/configure.ts --network baseSepolia
-```
+The old contract generation that was deployed here (`iPoW`,
+`iPoWConversion`, `BetaHub`, `BetaVault`), with its Hardhat package, was
+removed; it stays in git at the tag `legacy-v1`.

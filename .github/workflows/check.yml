@@ -5,21 +5,14 @@ on:
     branches: [dev, master]
   pull_request:
 
+env:
+  # The Solana CLI the programs are built and tested with locally.
+  SOLANA_VERSION: v3.1.10
+
 jobs:
-  evm-networks:
-    name: contracts (${{ matrix.network }})
+  ethereum:
+    name: contracts (programmable-network/ethereum)
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        network:
-          - ethereum
-          - hedera
-          - polkadot
-          - base
-          - robinhood
-          - hyperliquid
-          - tempo
     steps:
       - uses: actions/checkout@v4
 
@@ -29,37 +22,17 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
 
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Compile + test (local network only, no live RPC/keys needed)
-        run: pnpm --dir programmable-network/${{ matrix.network }} test
-
-  operator:
-    name: core/operator (cargo build + test)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: core/operator
-
-      - name: Build
-        working-directory: core/operator
-        run: cargo build --workspace
-
-      - name: Test
-        working-directory: core/operator
-        run: cargo test --workspace
+        run: pnpm --dir programmable-network/ethereum test
 
   solana:
-    name: solana programs (anchor build + test)
+    name: solana programs (build + test)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -72,19 +45,110 @@ jobs:
 
       - name: Install Solana CLI
         run: |
-          sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+          sh -c "$(curl -sSfL https://release.anza.xyz/${SOLANA_VERSION}/install)"
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
 
-      - name: Install Anchor CLI (via AVM)
-        run: |
-          cargo install --git https://github.com/coral-xyz/anchor avm --locked --force
-          avm install latest
-          avm use latest
-
-      - name: Build (cargo, no local validator needed for these litesvm tests)
+      # The litesvm tests load the built programs: the production builds in
+      # target/deploy, and the test builds (feature test-limits) of the light
+      # client and the vault in target/deploy-test. Built at their declared
+      # ids; no program keypair is needed or kept. One program at a time: a
+      # workspace build unifies features, and the programs' dependents enable
+      # no-entrypoint on the programs they call, which empties those builds.
+      - name: Build the programs
         working-directory: programmable-network/solana
-        run: cargo build --workspace
+        run: |
+          for p in beta-basket conversion ipow-light-client ipow-protocol ipow-vault; do
+            cargo build-sbf --manifest-path programs/$p/Cargo.toml
+          done
+          cargo build-sbf --manifest-path programs/ipow-light-client/Cargo.toml --features test-limits --sbf-out-dir target/deploy-test
+          cargo build-sbf --manifest-path programs/ipow-vault/Cargo.toml --features test-limits --sbf-out-dir target/deploy-test
 
       - name: Test
         working-directory: programmable-network/solana
         run: cargo test --workspace
+
+      - name: Keep the built programs for the node and SDK jobs
+        uses: actions/upload-artifact@v4
+        with:
+          name: solana-programs
+          path: |
+            programmable-network/solana/target/deploy/*.so
+            programmable-network/solana/target/deploy-test/*.so
+          if-no-files-found: error
+
+  node:
+    name: core/node (cargo build + test)
+    needs: solana
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # The node's tests start Hardhat from programmable-network/ethereum.
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Get the built programs
+        uses: actions/download-artifact@v4
+        with:
+          name: solana-programs
+          path: programmable-network/solana/target
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core/node
+
+      - name: Build
+        working-directory: core/node
+        run: cargo build --workspace
+
+      - name: Test
+        working-directory: core/node
+        run: cargo test --workspace
+
+  sdk:
+    name: packages/sdk (build + test)
+    needs: solana
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The Solana tests run a local validator with the built programs.
+      - name: Install Solana CLI
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/${SOLANA_VERSION}/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+
+      - name: Get the built programs
+        uses: actions/download-artifact@v4
+        with:
+          name: solana-programs
+          path: programmable-network/solana/target
+
+      - name: Build
+        run: pnpm --dir packages/sdk build
+
+      - name: Test
+        run: pnpm --dir packages/sdk test

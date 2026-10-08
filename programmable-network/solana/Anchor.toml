@@ -7,23 +7,17 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-ipow = "EsmGbkui9ZFC6Fch9J6xoyNRZSp6TwfvcjS88beP1Vem"
-ipow_conversion = "FbwXLABMqUeRPw85C7MpMS2LQi4mveXR9a9fA79DfS3V"
-# beta_mint (old program D9RgvEFXetbXKkaKZd4EzrmUyjA8VPLHn8fYwkLUKW3R) is
-# superseded by beta_factory below — its local source was removed as dead
-# code (design/ipow-implementation.md §9.1); the old on-chain deployment itself is untouched.
-# 2026-09-23: fresh program ID for DESIGN_V2 §8's composition support —
-# breaking account-layout changes, not an in-place upgrade of the old one.
-# Old pre-§8 beta_factory (still live, its own pending settles unaffected):
-# 3GUPbVjjBRNEYafHprb2fnh6Wzyif9a4gWphSrhkPVEf
-beta_factory = "BkNb9JfNbfbn3rMiA3j3z2pnFdNibxiYWWsKZ9VdzoD1"
+ipow_light_client = "Ctotq1SSaDJ2EUSe4sMdau92qBesyutH7GPaTRiYp4vJ"
+ipow_protocol = "ChYhovM8vm2tuMRaRFn4m6etG979bjixVa71fXBDwjPL"
+ipow_vault = "3TZ1LJ4fVZVKbBUyzVMRjJ9FNPGaqVmGX56JuT5QdXEy"
+conversion = "9Argk3M83p8t5pWG92PhwEhYzysWt5n82siEWyb29w7D"
+beta_basket = "3DuG4iNPptEyCAA7FM1YQja43G6HkTAwrswT3Ds2d94R"
 
 [provider]
 cluster = "devnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
-init = "npx ts-node scripts/init.ts"
-test = "cargo test"
+test = "cargo test --workspace"
 
 [hooks]

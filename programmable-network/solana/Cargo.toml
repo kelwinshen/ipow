@@ -1,6 +1,12 @@
 [workspace]
+# Listed by name, not "programs/*": a removed program's git-ignored files
+# (its target/ keypair) can stay on disk without being a member.
 members = [
-    "programs/*"
+    "programs/beta-basket",
+    "programs/conversion",
+    "programs/ipow-light-client",
+    "programs/ipow-protocol",
+    "programs/ipow-vault",
 ]
 resolver = "2"
 

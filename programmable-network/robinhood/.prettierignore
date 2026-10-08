@@ -1,8 +1,0 @@
-.DS_Store
-node_modules
-artifacts
-cache
-cache_ignition
-types
-dist
-build

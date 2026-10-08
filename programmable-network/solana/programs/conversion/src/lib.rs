@@ -21,7 +21,8 @@ pub mod state;
 
 // Instruction modules sit at the crate root and are named after their
 // `Accounts` struct, to work around the anchor-lang 1.0 `#[program]` macro
-// bug described in `programs/ipow/src/lib.rs`.
+// bug: it expects each `__client_accounts_<snake_case(struct)>` module at
+// `crate::<that name>` (https://github.com/solana-foundation/anchor/issues/3690).
 pub mod buy;
 pub mod cancel;
 pub mod compensate;

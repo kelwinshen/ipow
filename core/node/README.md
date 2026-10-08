@@ -8,8 +8,8 @@ Ethereum and Solana are built and tested (`cargo test`): on a local Hardhat netw
 in-process Solana, with the contracts and programs of
 `programmable-network`, against a Bitcoin held in memory. The explorer
 client has read Bitcoin mainnet. Nothing has run against a live network
-yet. The service for the old contracts is [`core/operator`](../operator),
-kept as reference.
+yet. The service for the old contracts, `core/operator`, was removed; it
+stays in git at the tag `legacy-v1`.
 
 ## Roles
 
@@ -142,8 +142,8 @@ cargo test -p ipow-bitcoin -- --ignored           # reads Bitcoin mainnet from m
 
 Needs `programmable-network/ethereum` installed (`pnpm install`) and the
 Solana programs built (`programmable-network/solana/target/deploy/ipow_protocol.so`
-and the test builds `target/deploy-test/ipow_light_client.so` and
-`target/deploy-test/ipow_vault.so`, built with the `test-limits` feature). The tests
+and `target/deploy/conversion.so`, the test builds `target/deploy-test/ipow_light_client.so` and
+`target/deploy-test/ipow_vault.so`, built with the `test-limits` feature; see `programmable-network/solana/README.md`). The tests
 start Hardhat themselves and stop it when done. The test contracts and the
 test light client keep every rule but accept blocks mined at a low
 difficulty.

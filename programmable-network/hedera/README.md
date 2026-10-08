@@ -30,81 +30,21 @@ pair on Solana is the account `7Wwn5bjARBmdCjNT7KUBwB7LR3JYSLFAWSSm98pxvE2S`.
 | Its home part | `0xb57684c90C266F5d93913fC3C22249dD89858DaB` |
 | Its receipts part | `0xC0BF165BCbfF23A83f824C84c818994Ea57078fd` |
 
-## Setup
+## Setup and deploying
 
-```sh
-pnpm install
-cp .env.example .env   # fill in HEDERA_TESTNET_RPC_URL and HEDERA_TESTNET_PRIVATE_KEY
-```
+This package holds only this README, `.env.example`, and the `.gitignore`
+that keeps the network's `.env` out of git
+(`cp .env.example .env`, then fill in `HEDERA_TESTNET_RPC_URL` and `HEDERA_TESTNET_PRIVATE_KEY`). The
+contracts, their tests and the deployment scripts are the one source in
+[`../ethereum`](../ethereum); see its README for deploying.
 
-## Testing
+The old contract generation that was deployed here (`iPoW`,
+`iPoWConversion`, `BetaHub`, `BetaVault`), with its Hardhat package, was
+removed; it stays in git at the tag `legacy-v1`.
 
-```sh
-pnpm test
-```
+## Hedera's units
 
-Same 83-test suite as the Ethereum package (the contract source is
-identical) — see that package's README for the breakdown.
-
-## Deploying
-
-```sh
-npx hardhat ignition deploy ignition/modules/IPoW.ts --network hederaTestnet
-```
-
-Chain ID 296. Current Hedera Testnet deployment:
-`0x36D7F82F8B2E800C877592F8DFFF0E8CFAc96CF3`.
-
-### BetaVault (design/ipow-implementation.md §6/§8)
-
-```sh
-npx hardhat ignition deploy ignition/modules/BetaVault.ts --network hederaTestnet
-```
-
-Points at the iPoW address above by default. Current deployment:
-`0xba35203CD4389A66926e2280C66F7DD0646DBF35` (plus a `MockERC20` test token
-at `0x37CdDd23F5fa910A7f1D909F0ACB4a5137771432`, deployed alongside it
-purely to exercise §8.13's ERC20 local-leg support — not part of the
-protocol itself). Its `Params` are tinybar-scaled (8 decimals), not the
-usual 18-decimal weibar convention — see the module's own comment and the
-tinybar note below.
-
-### BetaHub (design/ipow-implementation.md §8.18/§8.19)
-
-```sh
-npx hardhat ignition deploy ignition/modules/BetaHub.ts --network hederaTestnet
-```
-
-Current deployment: `0x3cDba300797351664dEE4D5F0D3F7Be28e186bdA`
-(`HubToken`/"iBETA" alongside it).
-
-### iPoWConversion (design/ipow-implementation.md §1–§2/§9.2)
-
-The permissionless-auction Conversion base primitive — a genuinely
-separate deployment from the `iPoW` above (that one is Beta's own
-header source; this one gets its own, matching every other network's
-same deliberate split). No operator automation needed for this one —
-claimants act on their own.
-
-```sh
-npx hardhat ignition deploy ignition/modules/IPoWConversion.ts --network hederaTestnet
-```
-
-Current deployment: `0xF5FE37E0bAE715FC61D6FF0f724c4c7E070F8057`
-(its own `iPoW` header source: `0x578DD99E07593F72D402E6C7095E0F2C41A0dcc9`).
-Cross-registered with every other network's own `iPoWConversion` via
-`addNetwork` — see design/ipow-implementation.md §9.2.
-
-## Post-deploy configuration
-
-`scripts/configure.ts` works the same way as the Ethereum package's, with
-one real difference worth knowing about: on Hedera, `msg.value` as seen
-*inside* executing contract code is scaled to HBAR's native 8-decimal
-tinybar unit, not the usual 18-decimal weibar convention that Hashio
-presents everywhere else (e.g. `eth_getBalance`). The script accounts for
-this when reading/writing `nativeLiquidity`, but it's worth knowing about if
-you're calling the contract directly rather than through the script.
-
-```sh
-ACTION=status npx hardhat run scripts/configure.ts --network hederaTestnet
-```
+On Hedera, `msg.value` as seen inside executing contract code is in HBAR's
+8-decimal tinybar, not the 18-decimal weibar that the Hashio relay presents
+elsewhere (for example `eth_getBalance`). Keep this in mind when calling a
+contract directly.

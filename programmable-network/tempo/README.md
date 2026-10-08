@@ -31,8 +31,7 @@ contract variants, not just config differences:
 Plain Hardhat/ethers can't speak Tempo's fee-sponsored, two-dimensional-
 nonce transaction model at all — every deploy/write against real Tempo in
 this package goes through `viem`'s native Tempo support instead (see
-`scripts/deploy_viem*.mjs`), not through Hardhat Ignition directly (Ignition
-is still used for local/test-network compiles and the test suite itself).
+`scripts/`).
 
 See the [root architecture doc](../../docs/design/ipow-implementation.md) for how a
 conversion flows, and [design/ipow-implementation.md §8](../../docs/design/ipow-implementation.md) /
@@ -65,66 +64,24 @@ on Solana is the account `7wvWJdeTW9WynaP17Le7dnWcBkV7qpVz78sR9TrA977Q`.
 | Its home part | `0xCC87ec659D54802077b6004901A1A72C646bF07A` |
 | Its receipts part | `0x6a4E25f0506C9cddfB1a469c9ED93633edC3eee0` |
 
-## Setup
+## Setup and deploying
 
-```sh
-pnpm install
-cp .env.example .env   # fill in TEMPO_TESTNET_RPC_URL and TEMPO_TESTNET_PRIVATE_KEY
-```
+The contracts and their tests are the one source in
+[`../ethereum`](../ethereum). This package holds this README, the network's
+git-ignored `.env` (`cp .env.example .env`, then fill in
+`TEMPO_TESTNET_RPC_URL` and `TEMPO_TESTNET_PRIVATE_KEY`), and Tempo's own
+deployment scripts, which send Tempo's transaction type with `viem`
+(`pnpm install` here for `viem` and `ethers`; compile in `../ethereum`
+first). Each script's header comment says how to run it:
 
-## Testing
+- [`scripts/deploy-new-protocol.ts`](scripts/deploy-new-protocol.ts) — the protocol, and vaults paired with Solana.
+- [`scripts/deploy-mock-rwa.ts`](scripts/deploy-mock-rwa.ts) — Greatwall's mock RWA tokens.
+- [`scripts/genesis-tempo.ts`](scripts/genesis-tempo.ts) — Tempo's part of the vaults' genesis.
 
-```sh
-pnpm test
-```
+Chain ID 42431. Never trust a Tempo deploy receipt's address (above); the
+scripts work it out from the nonce and read the code back.
 
-127 tests: the same Ethereum-package suite (contract source mostly
-identical) plus `test/BetaHubPathUSD.test.ts` / `test/iPoWConversionPathUSD.test.ts`,
-which stand up a mock PathUSD ERC20 and exercise the same scenarios
-against the PathUSD variants specifically — including that the inherited,
-native-value-`payable` originals stay present but are permanently
-unreachable, not a live footgun.
-
-## Deploying
-
-Real deploys go through the viem-native scripts, never plain
-`hardhat ignition deploy` (see the constraints above):
-
-```sh
-node scripts/deploy_viem.mjs              # iPoW + BetaVault + MockERC20
-node scripts/deploy_viem_betahub.mjs      # BetaHub + HubToken ("iBETA")
-node scripts/deploy_betavault_pathusd.mjs        # BetaVaultPathUSD
-node scripts/deploy_betahub_pathusd.mjs          # BetaHubPathUSD
-node scripts/deploy_ipowconversion_pathusd.mjs # iPoWConversionPathUSD
-```
-
-Each script prints the transaction's *reported* address — independently
-verify it before using it anywhere (see above).
-
-Chain ID 42431.
-
-## Currently live (Moderato testnet)
-
-| Contract | Address |
-| --- | --- |
-| `iPoW` (shared header source — Beta *and* Conversion both point at this one instance here, unlike most other networks) | `0x53e1291BdAff473694BbbB8DD257f9844e5f9F3c` |
-| `BetaVaultPathUSD` (the working spoke — plain `BetaVault` is unreachable here) | `0x8b9efF66C7D93816Eadf702cC6cE273e8B2b03e7` |
-| `BetaHubPathUSD` (the working hub — plain `BetaHub` can never register a party here) | `0x900D54050f9Fe47ca56cC67A281947Da2EeE2cD1` |
-| `iPoWConversionPathUSD` | `0xC40003975B6ff70E46999Bac8f3b06a9908Fb333` |
-
-`BetaHub`/`BetaVault` (the plain, native-value originals) are also
-deployed here but structurally can't work — nothing can ever register a
-party or fund a bond through them, since that always requires a nonzero
-`msg.value`. Kept deployed for the historical record, not usable.
-
-## Post-deploy configuration
-
-`scripts/configure.ts` follows the standard 18-decimal weibar convention
-for the plain contracts (see `hedera/README.md` if you need the
-tinybar-scaling caveat that applies there instead) — irrelevant for the
-PathUSD variants, whose amounts are already in PathUSD's own 6-decimal
-unit.
-
-```sh
-ACTION=status npx hardhat run scripts/configure.ts --network tempoTestnet
-```
+The old contract generation that was deployed here (`iPoW`, `BetaVault`,
+`BetaHub` and their PathUSD variants, `iPoWConversionPathUSD`), with its
+Hardhat package and `scripts/deploy_*.mjs`, was removed; it stays in git at
+the tag `legacy-v1`.

@@ -8,5 +8,5 @@
     "allowImportingTsExtensions": true,
     "noEmit": true
   },
-  "include": ["hardhat.config.ts", "ignition", "test", "scripts"]
+  "include": ["hardhat.config.ts", "deploy", "test", "scripts"]
 }

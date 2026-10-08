@@ -2,3 +2,7 @@ node_modules
 
 # macOS
 .DS_Store
+
+# The removed old operator service (tag legacy-v1): its config (with keys),
+# lock file and build can stay on a developer's disk, never in git.
+core/operator/

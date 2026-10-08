@@ -34,13 +34,18 @@ pair on Solana is the account `5Ks1r25VGX5S7dUMf8c5oP6qzXfFvckQ67wgtqywnDAN`.
 
 ## Contracts
 
-- `contracts/iPoW.sol` — main contract: commit/approve/settle logic,
-  header relay, liquidity management.
-- `contracts/base/iPoWTypes.sol` — shared errors, events, structs,
-  enums, and constants. `iPoW` inherits this, so it all compiles into the
-  same deployed contract.
-- `contracts/libraries/BitcoinPrimitives.sol` — Bitcoin transaction/header
-  parsing and proof-of-work verification, as an internal library.
+- `contracts/protocol/` — the protocol: the light client
+  (`iPoWLightClient`), the protocol (`iPoWProtocol`, `iPoWProtocolToken`),
+  its data fee, the vault (`iPoWVault`, `iPoWVaultToken`) and the vault's
+  parts in `contracts/protocol/vault/`.
+- `contracts/apps/` — the applications on it: Conversion and BETA
+  (`BetaBaskets`).
+- `contracts/testnet/` — the test networks' mock RWA token.
+- `contracts/test/` — harnesses and mocks used only by the tests.
+
+The old contract generation (`iPoW`, `iPoWConversion`, `BetaHub`,
+`BetaVault`) was removed; its source and Ignition deployment records stay
+in git at the tag `legacy-v1`.
 
 ## Setup
 
@@ -55,37 +60,11 @@ cp .env.example .env   # fill in SEPOLIA_RPC_URL and SEPOLIA_PRIVATE_KEY
 pnpm test
 ```
 
-83 tests across five suites (`test/iPoW.Admin.test.ts`,
-`test/iPoW.CommitValidation.test.ts`, `test/iPoW.HeaderRelay.test.ts`,
-`test/iPoW.Liquidity.test.ts`, `test/BitcoinPrimitives.test.ts`) — the
-last one runs against `contracts/test/BitcoinPrimitivesHarness.sol`, a
-thin harness that exposes the library's `internal` functions for testing,
-since Solidity libraries can't be called directly from outside a contract.
-
 ## Deploying
 
-Deployment is managed by Hardhat Ignition (`ignition/modules/IPoW.ts`):
-
-```sh
-npx hardhat ignition deploy ignition/modules/IPoW.ts --network sepolia
-```
-
-Ignition tracks deployments by network under
-`ignition/deployments/chain-<id>/`; re-running the same module against a
-network that already has a tracked deployment reuses it rather than
-redeploying. Pass `--reset` to force a fresh deployment instead.
-
-Current Sepolia deployment: `0x3a6b4B540BAc87056618696dc3fE6929c28e9b6C`.
-
-## Post-deploy configuration
-
-`scripts/configure.ts` is the admin CLI for a deployed contract — it's the
-one place to register other iPoW networks, manage liquidity, adjust fees,
-or hand off the operator role. It's driven entirely by environment
-variables (see the comment block at the top of the file for the full
-command list), for example:
-
-```sh
-ACTION=status npx hardhat run scripts/configure.ts --network sepolia
-ACTION=add-liquidity AMOUNT=0.5 npx hardhat run scripts/configure.ts --network sepolia
-```
+Deployments are scripts over the shared deploy function
+(`deploy/deploy.ts`) and each network's settings (`deploy/networks.ts`);
+each writes the addresses it reads back to `deployments/`. See the comment
+at the top of each: `scripts/deploy-network.ts` (one network),
+`scripts/deploy-testnets.sh` (the test networks in order), and
+`scripts/verify-deployments.ts` (reads every deployment back).

@@ -30,10 +30,11 @@ before(async () => {
   await pr.methods.initializeProtocol().accountsStrict({
     protocol: pda(pr.programId, [Buffer.from("protocol")]), vault: pda(pr.programId, [Buffer.from("vault")]), payer: authority.publicKey, systemProgram: SystemProgram.programId,
   }).rpc();
-  // Two pairs, so a reader of one is shown not to see the other's.
+  // Two pairs, so a reader of one is shown not to see the other's; with the
+  // default genesis key and no end, neither starts in genesis.
   for (const peer of [ETHEREUM, BASE]) {
     const config = pda(vt.programId, [Buffer.from("config"), Buffer.from([peer])]);
-    await vt.methods.initialize(peer, Array.from(Buffer.from(EVM_VAULT.slice(2), "hex")), new BN(1_000_000), new BN(10_000_000)).accountsStrict({
+    await vt.methods.initialize(peer, Array.from(Buffer.from(EVM_VAULT.slice(2), "hex")), new BN(1_000_000), new BN(10_000_000), PublicKey.default, new BN(0)).accountsStrict({
       config,
       sol: pda(vt.programId, [Buffer.from("asset"), config.toBuffer(), Buffer.from([0, 0, 0, 0])]),
       application: pda(pr.programId, [Buffer.from("application"), config.toBuffer()]),

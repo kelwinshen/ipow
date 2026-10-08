@@ -35,73 +35,14 @@ pair on Solana is the account `Dydhoos4EgX15LFLJR5a6DvGtuzmNjegpzzynJSJbF5`.
 | Vault paired with Base Sepolia (2026-10-05) | `0x3221102aC4159048960e061FC0ADb81De3133496`; home `0xa6629b7F085114535f1F64deE27BE880e67D876C`, receipts `0x00c360219F11Cc6f4D0472353d411dd0D7891CB8`, its factories `0x85A86D77357898D79b49c464ccaB03411109e722` and `0x96AC11A1Cf37C5c9704ecc080b539Eb7F81d9b81` |
 | Vault paired with Sepolia (2026-10-05) | `0x170685feEe5ac2bCddAE20DAe66747658E6fA7c0`; home `0x27824021Cd136F59C357C902b24b35CbE64e0C6A`, receipts `0x4994B8161A265CF219385Bd02Af23C033CC000F2`, its factories `0x592659De4a7D5F31cfE95C1c6c2A0456343b82E0` and `0xC0fE6c22b0034E559CeBB4c064098aB887818E32` |
 
-## Setup
+## Setup and deploying
 
-```sh
-pnpm install
-cp .env.example .env   # fill in ROBINHOOD_TESTNET_RPC_URL and ROBINHOOD_TESTNET_PRIVATE_KEY
-```
+This package holds only this README, `.env.example`, and the `.gitignore`
+that keeps the network's `.env` out of git
+(`cp .env.example .env`, then fill in `ROBINHOOD_TESTNET_RPC_URL` and `ROBINHOOD_TESTNET_PRIVATE_KEY`). The
+contracts, their tests and the deployment scripts are the one source in
+[`../ethereum`](../ethereum); see its README for deploying.
 
-## Testing
-
-```sh
-pnpm test
-```
-
-Same test suite as the Ethereum package (the contract source is
-identical) — see that package's README for the breakdown.
-
-## Deploying
-
-```sh
-npx hardhat ignition deploy ignition/modules/IPoW.ts --network robinhoodTestnet
-```
-
-Chain ID 46630. Current deployment: `0x53e1291BdAff473694BbbB8DD257f9844e5f9F3c`.
-
-### BetaVault (design/ipow-implementation.md §6/§8)
-
-```sh
-npx hardhat ignition deploy ignition/modules/BetaVault.ts --network robinhoodTestnet \
-  --parameters '{"BetaVaultModule":{"ipowHeaders":"<iPoW address above>"}}'
-```
-
-Current deployment: `0x35e564d74B90a3A5bfcA8Dec65b1325C83d2e822` (plus a
-`MockERC20` test token at `0xF43DF008d31995690C75982937a368545953564A`,
-deployed alongside it purely to exercise §8.13's ERC20 local-leg
-support — not part of the protocol itself).
-
-### BetaHub (design/ipow-implementation.md §8.18/§8.19)
-
-```sh
-npx hardhat ignition deploy ignition/modules/BetaHub.ts --network robinhoodTestnet
-```
-
-Current deployment: `0xB7054E399E31A2cFE181c4fD59C7235562a6d45d`
-(`HubToken`/"iBETA" alongside it).
-
-### iPoWConversion (design/ipow-implementation.md §1–§2/§9.2)
-
-The permissionless-auction Conversion base primitive — its own dedicated
-`iPoW` header source, deliberately separate from Beta's above (same
-split every other network uses). No operator automation needed — this
-one is permissionless by design.
-
-```sh
-npx hardhat ignition deploy ignition/modules/IPoWConversion.ts --network robinhoodTestnet
-```
-
-Current deployment: `0xaFBdaC4A4e7428C4bA1Bc7E95B7D4A33B2F564f5`
-(its own `iPoW`: `0x4C5769e3213496a0641E139e2F0E94ce7625374C`).
-Cross-registered with every other network's own `iPoWConversion` via
-`addNetwork` — see design/ipow-implementation.md §9.2.
-
-## Post-deploy configuration
-
-`scripts/configure.ts` follows the standard 18-decimal weibar convention
-(see `hedera/README.md` if you need the tinybar-scaling caveat that
-applies there instead).
-
-```sh
-ACTION=status npx hardhat run scripts/configure.ts --network robinhoodTestnet
-```
+The old contract generation that was deployed here (`iPoW`,
+`iPoWConversion`, `BetaHub`, `BetaVault`), with its Hardhat package, was
+removed; it stays in git at the tag `legacy-v1`.
