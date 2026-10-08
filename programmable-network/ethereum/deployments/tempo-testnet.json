@@ -7,22 +7,27 @@
   "protocol": "0x0496e48C51E3783F5a059AC82B70F5D398448D3A",
   "conversion": "0xc729b1a6d0325ae559614b6826127e11E51703c1",
   "betaBaskets": "0x6AA1F2dd1a0A28F5FC3a88ec8A219e89987A57aB",
-  "homeFactory": "0xd6b425c7908E171a33dF2a4e6C5687eDF0D2d6c3",
-  "receiptsFactory": "0xb856906fEBAFBB21A06DdC35E9BCe476139A86BA",
+  "homeFactory": "0x8A5EB387b8b1CBd5cBAFBE2088aCE6d589eb4F59",
+  "receiptsFactory": "0x07eFF65A853f36cBA8FEFbC495eb6A0D98d26a75",
   "vaults": [
     {
       "peer": 2,
-      "peerVault": "0x6737fbdb7526d8a66dca5c3e72272d891cb3c828f9e41d39b4b9c7b5895bd93b",
-      "vault": "0x10C9C79C8c46c1f9f07D7A258Bbd42B4ED6f973E",
-      "home": "0xCC87ec659D54802077b6004901A1A72C646bF07A",
-      "receipts": "0x6a4E25f0506C9cddfB1a469c9ED93633edC3eee0"
+      "peerVault": "0x6f09023c0b71eb7915f63c88513db7912875eecf78b5c842c4547d05491fcda1",
+      "vault": "0x6c692BEdCa89292D0FEfc6e86b82f451E371f11D",
+      "home": "0xb811b6DFd8855EA19d3aCd6ea06FEB762DE66278",
+      "receipts": "0x713D05559eD598a077D42818aABfB1a7873f579F",
+      "homeFactory": "0x8A5EB387b8b1CBd5cBAFBE2088aCE6d589eb4F59",
+      "receiptsFactory": "0x07eFF65A853f36cBA8FEFbC495eb6A0D98d26a75",
+      "source": "f97885eb2169aefcd1665d7ce4f33f73c3abb686",
+      "genesisEnd": 1792603075,
+      "at": "2026-10-07T17:18:23.507Z"
     }
   ],
   "source": "10e5cf51c7291018f3e5f47251a555bb8320980f",
   "deployer": "0x9784B80BC7b95753f2a2732649F3a1136b4c2BF1",
   "minHeight": 965567,
   "maxSats": "100000",
-  "solanaPairAccount": "7wvWJdeTW9WynaP17Le7dnWcBkV7qpVz78sR9TrA977Q",
+  "solanaPairAccount": "8USDsC8MpsnKZmt8KAkVDr18R6s5g71Fro8Jr2JMJmmr",
   "at": "2026-10-02T18:37:03.660Z",
   "sources": {
     "Conversion": "a9493c7"

@@ -75,7 +75,9 @@ async function blockAt(provider: JsonRpcProvider, time: number): Promise<number>
   while (lo < hi) {
     const mid = Math.floor((lo + hi) / 2);
     const b = await provider.getBlock(mid);
-    if (b && b.timestamp < time) lo = mid + 1;
+    // A block the endpoint no longer keeps (HyperEVM prunes old ones) is
+    // older than any vault: search above it.
+    if (!b || b.timestamp < time) lo = mid + 1;
     else hi = mid;
   }
   return lo;
@@ -98,9 +100,12 @@ for (const name of Object.keys(SDK_NAME)) {
   for (const v of record.vaults as { peer: number; receipts: string; genesisEnd?: number; at?: string }[]) {
     if (!v.genesisEnd) continue;
     const { provider } = evm(name);
-    const from = v.at ? await blockAt(provider, Math.floor(Date.parse(v.at) / 1000) - 3_600) : 0;
     const home = nameOfNumber(v.peer);
-    for (const log of await logs(provider, v.receipts, from, await provider.getBlockNumber())) {
+    process.stdout.write(`reading ${name}'s vault with ${home}: `);
+    const from = v.at ? await blockAt(provider, Math.floor(Date.parse(v.at) / 1000) - 3_600) : 0;
+    const found = await logs(provider, v.receipts, from, await provider.getBlockNumber());
+    console.log(`${found.length} genesis events`);
+    for (const log of found) {
       const p = GENESIS.parseLog(log)!;
       if (p.name === "GenesisReceipt") made.push({ side: name, home, asset: Number(p.args.asset), token: String(p.args.token).toLowerCase(), decimals: Number(p.args.decimals) });
       else issued.push({ side: name, home, lockId: BigInt(p.args.lockId), asset: Number(p.args.asset), value: BigInt(p.args.value), to: getAddress(p.args.to) });
@@ -114,6 +119,8 @@ for (const name of Object.keys(SDK_NAME)) {
   const config = PublicKey.findProgramAddressSync([Buffer.from("config"), Buffer.from([peer])], programId)[0];
   if (!(await connection.getAccountInfo(config))) continue;
   let before: string | undefined;
+  let read = 0;
+  process.stdout.write(`reading Solana's pair with ${name}: `);
   for (;;) {
     const page: ConfirmedSignatureInfo[] = await connection.getSignaturesForAddress(config, { before, limit: 1000 });
     if (!page.length) break;
@@ -123,13 +130,17 @@ for (const name of Object.keys(SDK_NAME)) {
       for (const ev of parser.parseLogs(tx?.meta?.logMessages ?? [])) {
         const d: any = ev.data;
         if (ev.name === "GenesisReceipt") made.push({ side: "solana", home: name, asset: Number(d.asset), token: getAddress("0x" + Buffer.from(d.token).toString("hex")).toLowerCase(), decimals: Number(d.decimals) });
-        if (ev.name === "GenesisIssued") issued.push({ side: "solana", home: name, lockId: BigInt(d.lockId.toString()), asset: Number(d.asset), value: BigInt(d.value.toString()), to: new PublicKey(d.recipient).toBase58() });
+        if (ev.name === "GenesisIssued") issued.push({ side: "solana", home: name, lockId: BigInt((d.lockId ?? d.lock_id).toString()), asset: Number(d.asset), value: BigInt(d.value.toString()), to: new PublicKey(d.recipient).toBase58() });
       }
     }
+    read += page.length;
+    process.stdout.write(`${read} transactions… `);
     before = page[page.length - 1].signature;
   }
+  console.log("done");
 }
 
+console.log(`checking ${made.length} receipts and ${issued.length} issues against their homes…`);
 // Each receipt made states its home asset.
 for (const m of made) {
   const tag = `${m.home}→${m.side} receipt of asset ${m.asset}`;
@@ -188,9 +199,14 @@ for (const m of made) {
 // The run's ledger against the chain, both ways.
 const ledgerFile = join(pn, "ethereum", "deployments", "genesis-testnet.json");
 if (existsSync(ledgerFile)) {
-  const entries: { home: string; receiptSide: string; asset: number; lockId?: string; value?: string; issueTx?: string }[] = JSON.parse(readFileSync(ledgerFile, "utf8")).entries;
+  const entries: { home: string; receiptSide: string; asset: number; round?: number; lockId?: string; value?: string; issueTx?: string }[] = JSON.parse(readFileSync(ledgerFile, "utf8")).entries;
+  const seen = new Set<string>();
   for (const e of entries) {
-    if (!e.issueTx) findings.push(`ledger ${e.home}→${e.receiptSide} asset ${e.asset}: not issued yet`);
+    // One lock is one entry: a lock two entries name was locked once, not twice.
+    const key = `${e.home}|${e.receiptSide}|${e.lockId}`;
+    if (e.lockId && seen.has(key)) findings.push(`ledger ${e.home}→${e.receiptSide} lock ${e.lockId}: named by two entries`);
+    seen.add(key);
+    if (!e.issueTx) findings.push(`ledger ${e.home}→${e.receiptSide} asset ${e.asset}${e.round ? ` round ${e.round}` : ""}: not issued yet`);
     else if (!issued.some((g) => g.home === e.home && g.side === e.receiptSide && String(g.lockId) === e.lockId && String(g.value) === e.value)) findings.push(`ledger ${e.home}→${e.receiptSide} lock ${e.lockId}: no GenesisIssued on chain matches it`);
   }
   for (const g of issued) if (!entries.some((e) => e.home === g.home && e.receiptSide === g.side && e.lockId === String(g.lockId))) findings.push(`${g.home}→${g.side} lock ${g.lockId}: issued by genesis, not in the ledger`);

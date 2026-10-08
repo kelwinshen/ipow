@@ -124,7 +124,12 @@ for (const [network, number] of PEERS) {
   const config = pda(vt.programId, [Buffer.from("config"), Buffer.from([number])]);
   // The EVM vault must name this account as its peer: the account recorded,
   // and the 32 bytes the vault holds, decoded here by Solana's own library.
-  if (d.solanaPairAccount !== config.toBase58()) throw new Error(`${network}: its vault names ${d.solanaPairAccount}, the pair account is ${config.toBase58()}`);
+  // A network whose vault was not redeployed for this program (left out,
+  // as Hedera was in genesis) names another pair account: skipped.
+  if (d.solanaPairAccount !== config.toBase58()) {
+    console.log(`vault pair ${network} (${number}): its vault names ${d.solanaPairAccount}, not this program's ${config.toBase58()}; skipped`);
+    continue;
+  }
   const held = "0x" + Buffer.from(config.toBytes()).toString("hex");
   if (held.toLowerCase() !== solanaPair.peerVault.toLowerCase()) throw new Error(`${network}: its vault holds ${solanaPair.peerVault}, the pair account is ${held}`);
   if (await exists(config)) console.log(`vault pair ${network} (${number}): set up already`);

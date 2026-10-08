@@ -157,7 +157,8 @@ mod tests {
     }
 
     /// The real MINT statement built and successfully processed on Base
-    /// this session (see `live_multi_network_fix_party.mjs`'s `base` entry):
+    /// on 2026-09-23 (the `base` entry of that run's
+    /// `live_multi_network_fix_party.mjs`, removed; in git history at 9f5b691):
     /// compositionId=2, componentIndex=1, lockId=1, hubUser=this session's
     /// Solana wallet's raw pubkey bytes, nonce=2, units=1,
     /// deadline=1790724106.

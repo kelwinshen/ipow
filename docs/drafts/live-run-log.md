@@ -163,6 +163,13 @@ variant documented in `ipow-implementation.md`. Because the MINT anchor's
 operator had already self-attested, the mint exercised immediately rather
 than waiting for the full challenge window.
 
+The scripts that drove these two runs were one-off and hard-coded to them
+(Bitcoin block 968203, parties 0x05/0x06, composition 2, the old
+BetaVault), and were removed on 2026-10-09:
+`programmable-network/ethereum/scripts/live_multi_network_{evm,commit_and_process,fix_party}.mjs`
+and `programmable-network/solana/scripts/live_multi_network_{mint,solana_process}.ts`.
+They remain in git history at commit `9f5b691`.
+
 ## 2026-10-03: Conversion redeployed for the tunnel (T1, T2)
 
 Conversion with `sellInWindow` and `buyFor`

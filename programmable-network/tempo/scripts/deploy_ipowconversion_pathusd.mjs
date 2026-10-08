@@ -5,7 +5,7 @@
 // never-trust-the-reported-address discipline as every other Tempo
 // deploy script here.
 //
-//   node scripts/deploy_ipowv1conversion_pathusd.mjs
+//   node scripts/deploy_ipowconversion_pathusd.mjs
 import fs from "node:fs";
 import { createClient, http, withRelay, Account } from "viem/tempo";
 import { encodeDeployData } from "viem";

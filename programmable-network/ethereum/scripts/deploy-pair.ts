@@ -35,6 +35,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { codeMatches } from "../deploy/deploy.ts";
+import { RetryProvider } from "../deploy/retry-provider.ts";
 import { NETWORKS, type NetworkSettings } from "../deploy/networks.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -51,6 +52,8 @@ if (!nameA || !nameB || nameA === nameB) throw new Error("usage: deploy-pair.ts 
 /** The least a side should hold: the parts and the vault take about 12M gas. */
 const MIN_BALANCE = parseEther("0.01");
 const WAIT_MS = 180_000;
+/** A network's own endpoint, used on big blocks. */
+const OWN_RPC: Record<string, string> = { hyperliquid: "https://rpc.hyperliquid-testnet.xyz/evm" };
 
 const artifact = (file: string, name: string) => JSON.parse(readFileSync(join(here, "..", "artifacts", "contracts", file, `${name}.json`), "utf8"));
 const FACTORIES = "protocol/vault/VaultFactories.sol";
@@ -69,9 +72,10 @@ async function side(name: string): Promise<Side> {
     const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*"?([^"\n]*)"?/);
     if (m) vars[m[1]] = m[2].trim();
   }
-  const request = new FetchRequest(vars[s.rpcEnv.testnet]);
-  request.setHeader("user-agent", "ipow-deploy-pair");
-  const provider = new JsonRpcProvider(request, undefined, { staticNetwork: true });
+  // On big blocks, the network's own endpoint: its gas estimate knows the
+  // deployer's big blocks, where Alchemy's HyperEVM estimates against small
+  // ones (3M gas) and refuses the parts (2026-10-08).
+  const provider = new RetryProvider(s.bigBlocks && bigBlocks && OWN_RPC[name] ? OWN_RPC[name] : vars[s.rpcEnv.testnet], "ipow-deploy-pair");
   const key = vars[s.keyEnv.testnet];
   const wallet = new Wallet(key.startsWith("0x") ? key : "0x" + key, provider);
   const chainId = Number((await provider.getNetwork()).chainId);
@@ -88,7 +92,9 @@ const B = await side(nameB);
 if (A.wallet.address !== B.wallet.address) throw new Error("the two networks' deployers differ; this script predicts the second vault from one deployer's nonce");
 for (const x of [A, B]) {
   const other = x === A ? B : A;
-  if (x.d.vaults.some((v: any) => v.peer === other.s.number)) throw new Error(`${x.name} already has a vault paired with ${other.name}`);
+  const existing = x.d.vaults.find((v: any) => v.peer === other.s.number);
+  // A genesis redeploy replaces a pair's vault, but never one already in genesis.
+  if (existing && (!genesisDays || existing.genesisEnd)) throw new Error(`${x.name} already has a ${existing.genesisEnd ? "genesis " : ""}vault paired with ${other.name}`);
 }
 
 /** Fees on a big-block network, capped at twice the big-block price now. */

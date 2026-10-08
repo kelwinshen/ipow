@@ -4,7 +4,7 @@
 // that lock issued on the receipt side (G2). Run once the vaults are
 // redeployed in genesis and `pnpm sync` has written their addresses:
 //
-//   node scripts/genesis.ts --operator-evm <0x…> --operator-solana <base58> [--coin <network>=<amount> …] [--rwa <whole tokens>] [--only <network>] [--dry]
+//   node scripts/genesis.ts --operator-evm <0x…> --operator-solana <base58> [--coin <network>=<amount> …] [--rwa <whole tokens>] [--symbols A,B,…] [--coins-only] [--round N] [--only <network>] [--dry]
 //
 // - Tokens: every test RWA token of the home network (ethereum/deployments/
 //   <network>-testnet-rwa.json, solana/testnet-rwa.json), registered with
@@ -14,6 +14,10 @@
 //   many whole tokens each lock is: 10,000 by default.
 // - Coins: locked only where --coin names an amount (in whole coins, e.g.
 //   --coin ethereum=0.2 --coin solana=20): testnet coins come from faucets.
+//   --coins-only leaves the RWA tokens out of the run.
+// - Rounds: one lock per asset and pair per round. --round 2 (and on) locks
+//   again what round 1 locked, as a top-up while genesis is open; its
+//   entries are kept apart in the ledger by their round.
 // - Keys: each EVM network's deployer from programmable-network/<network>/.env
 //   (the genesis key of its vaults), Solana's from ~/.config/solana/id.json.
 //   Nothing secret is printed.
@@ -34,16 +38,29 @@ import { NETWORKS } from "../../../programmable-network/ethereum/deploy/networks
 import { SolanaVault, genesisIssue, genesisMakeReceipt, homeAssets, lock, locksOf, network, quoteLock, receiptMark, receiptTokens, type Deployment } from "../src/index.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
+// A dropped connection inside a library's own background request (a read
+// timing out on a busy RPC) must not end a long run: it is logged, and the
+// step it belonged to fails and is retried on the next run.
+process.on("unhandledRejection", (e) => console.log(`  network error, carrying on: ${(e as Error)?.message ?? e}`));
 const pn = join(here, "..", "..", "..", "programmable-network");
 const argv = process.argv.slice(2);
 const flag = (name: string) => (argv.includes(name) ? argv[argv.indexOf(name) + 1] : undefined);
 const flags = (name: string) => argv.flatMap((a, i) => (a === name ? [argv[i + 1]] : []));
 const DRY = argv.includes("--dry");
 const ONLY = flag("--only");
+/** Pairs with any of these networks are left for another run (--skip hyperliquid,tempo). */
+const SKIP = (flag("--skip") ?? "").split(",").filter(Boolean);
 const RWA_WHOLE = flag("--rwa") ?? "10000";
 const OPERATOR_EVM = getAddress(flag("--operator-evm") ?? "");
 const OPERATOR_SOLANA = new PublicKey(flag("--operator-solana") ?? "").toBase58();
+/** Only these RWA symbols, when given (--symbols AAPL,TSLA,…); every one otherwise. */
+const SYMBOLS = flag("--symbols")?.split(",").map((x) => x.trim().toUpperCase());
+const COINS_ONLY = argv.includes("--coins-only");
+const wantSymbol = (symbol: string) => !COINS_ONLY && (!SYMBOLS || SYMBOLS.includes(symbol.toUpperCase()));
 const COIN: Record<string, string> = Object.fromEntries(flags("--coin").map((c) => c.split("=") as [string, string]));
+/** The round of this run: round 1's entries carry no round, as the ledger was first written. */
+const ROUND = Number(flag("--round") ?? "1");
+if (!(Number.isInteger(ROUND) && ROUND >= 1)) throw new Error("--round: a whole number from 1");
 const SOLANA_RPC = process.env.SOLANA_RPC_URL ?? "https://api.devnet.solana.com";
 
 const TOKEN_PROGRAM = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
@@ -69,15 +86,19 @@ type Entry = {
   /** The value issued, record units: the lock's amount and fast fee. */
   value?: string;
   recipient: string;
+  /** The round, when not the first (--round). */
+  round?: number;
   lockTx?: string;
   issueTx?: string;
 };
 const LEDGER = join(pn, "ethereum", "deployments", "genesis-testnet.json");
 const ledger: { started: string; entries: Entry[] } = existsSync(LEDGER) ? JSON.parse(readFileSync(LEDGER, "utf8")) : { started: new Date().toISOString(), entries: [] };
 const save = () => !DRY && writeFileSync(LEDGER, JSON.stringify(ledger, null, 2) + "\n");
+/** Whether another ledger entry of this direction already holds the lock (in any round). */
+const held = (e: Entry, lockId: bigint) => ledger.entries.some((x) => x !== e && x.home === e.home && x.receiptSide === e.receiptSide && x.lockId === String(lockId));
 function entry(home: string, receiptSide: string, asset: number, init: Omit<Entry, "home" | "receiptSide" | "asset">): Entry {
-  let e = ledger.entries.find((x) => x.home === home && x.receiptSide === receiptSide && x.asset === asset);
-  if (!e) ledger.entries.push((e = { home, receiptSide, asset, ...init }));
+  let e = ledger.entries.find((x) => x.home === home && x.receiptSide === receiptSide && x.asset === asset && (x.round ?? 1) === ROUND);
+  if (!e) ledger.entries.push((e = { home, receiptSide, asset, ...init, ...(ROUND > 1 ? { round: ROUND } : {}) }));
   return e;
 }
 
@@ -216,7 +237,7 @@ async function fromEvm(home: string, side: string) {
   const vaultHome = new Contract(h.d.vaults[pair].home, HOME_ABI, h.signer);
   const wanted: { symbol: string; token: string; whole: string; decimals: number }[] = [];
   if (COIN[home]) wanted.push({ symbol: "coin", token: ZeroAddress, whole: COIN[home], decimals: h.nativeDecimals });
-  for (const t of evmRwa(home)) wanted.push({ symbol: t.symbol, token: t.address, whole: RWA_WHOLE, decimals: t.decimals });
+  for (const t of evmRwa(home).filter((t) => wantSymbol(t.symbol))) wanted.push({ symbol: t.symbol, token: t.address, whole: RWA_WHOLE, decimals: t.decimals });
   for (const w of wanted) await each(`${home}→${side} ${w.symbol}`, async () => {
     // Registered with this pair's home vault (asset 0 is the coin).
     let n = w.token === ZeroAddress ? 0 : Number(await vaultHome.assetOfToken(w.token)) - 1;
@@ -226,9 +247,21 @@ async function fromEvm(home: string, side: string) {
         return;
       }
       await (await vaultHome.registerAsset(w.token, h.overrides)).wait();
+      // An RPC a block behind may not show the registration yet: read again.
       n = Number(await vaultHome.assetOfToken(w.token)) - 1;
+      for (let i = 0; n < 0 && i < 12; i++) {
+        await new Promise((r) => setTimeout(r, 5_000));
+        n = Number(await vaultHome.assetOfToken(w.token)) - 1;
+      }
     }
-    const a = (await homeAssets(h.provider, h.d, pair)).find((x) => x.number === n)!;
+    // A registration just made may not be readable yet (an RPC behind by a
+    // block): read again for up to a minute.
+    let a = (await homeAssets(h.provider, h.d, pair)).find((x) => x.number === n);
+    for (let i = 0; !a && i < 12; i++) {
+      await new Promise((r) => setTimeout(r, 5_000));
+      a = (await homeAssets(h.provider, h.d, pair)).find((x) => x.number === n);
+    }
+    if (!a) throw new Error(`asset ${n} is registered but not readable yet; run again`);
     const e = entry(home, side, n, { symbol: w.symbol, token: w.token, recordDecimals: a.recordDecimals, recipient });
     if (e.issueTx) return;
     if (!(await receiptMade(home, side, n))) {
@@ -250,14 +283,25 @@ async function fromEvm(home: string, side: string) {
       const want = side === "solana" ? "0x" + new PublicKey(recipient).toBuffer().toString("hex") : zeroPadValue(recipient, 32);
       const mine = await locksOf(h.provider, h.d, await h.signer.getAddress(), 50, pair);
       const earlier = [];
-      for (const l of mine) if (l.asset === n && l.amount === q.amount && String(l.recipient).toLowerCase() === want.toLowerCase() && !(await issuedOn(home, side, l.lockId))) earlier.push(l);
+      for (const l of mine) if (l.asset === n && l.amount === q.amount && String(l.recipient).toLowerCase() === want.toLowerCase() && !held(e, l.lockId) && !(await issuedOn(home, side, l.lockId))) earlier.push(l);
       if (earlier.length) {
         Object.assign(e, { lockId: String(earlier[0].lockId), value: String(earlier[0].amount + earlier[0].fastFee), lockTx: "found on the chain" });
         save();
       } else {
         console.log(`  ${home}→${side} ${w.symbol}: lock ${w.whole} (${q.amount} record units) to ${recipient}`);
         if (DRY) return;
-        const l = await lock(h.signer, h.d, q, recipient, h.overrides);
+        // An RPC a block behind may not see the approval (or the mint) yet:
+        // the lock's estimate then fails, and is tried again shortly.
+        let l: Awaited<ReturnType<typeof lock>> | undefined;
+        for (let attempt = 0; !l; attempt++) {
+          try {
+            l = await lock(h.signer, h.d, q, recipient, h.overrides);
+          } catch (err) {
+            const behind = /InsufficientAllowance|InsufficientBalance|0xfb8f41b2|0xe450d38c|transfer amount exceeds/i.test(String((err as any)?.data ?? "") + String((err as Error).message));
+            if (!behind || attempt >= 5) throw err;
+            await new Promise((r) => setTimeout(r, 6_000));
+          }
+        }
         Object.assign(e, { lockId: String(l.lockId), value: String(q.amount + q.fastFee), lockTx: l.txHash });
         save();
       }
@@ -272,7 +316,7 @@ async function fromSolana(side: string) {
   const v = solanaVault(r.d.number);
   const wanted: { symbol: string; mint: string | null; whole: string; decimals: number }[] = [];
   if (COIN.solana) wanted.push({ symbol: "SOL", mint: null, whole: COIN.solana, decimals: 9 });
-  for (const t of solanaRwa) wanted.push({ symbol: t.symbol, mint: t.mint, whole: RWA_WHOLE, decimals: t.decimals });
+  for (const t of solanaRwa.filter((t) => wantSymbol(t.symbol))) wanted.push({ symbol: t.symbol, mint: t.mint, whole: RWA_WHOLE, decimals: t.decimals });
   for (const w of wanted) await each(`solana→${side} ${w.symbol}`, async () => {
     let a = w.mint === null ? (await v.assets())[0] : await v.assetOfMint(w.mint);
     if (!a) {
@@ -321,7 +365,7 @@ async function fromSolana(side: string) {
       // write was lost: use it rather than lock again.
       const mine = await v.locksOf(solanaKey.publicKey.toBase58(), 50);
       const earlier = [];
-      for (const l of mine) if (l.asset === n && l.amount === value && getAddress(l.recipient) === OPERATOR_EVM && !(await issuedOn("solana", side, l.lockId))) earlier.push(l);
+      for (const l of mine) if (l.asset === n && l.amount === value && getAddress(l.recipient) === OPERATOR_EVM && !held(e, l.lockId) && !(await issuedOn("solana", side, l.lockId))) earlier.push(l);
       if (earlier.length) {
         Object.assign(e, { lockId: String(earlier[0].lockId), value: String(earlier[0].amount + earlier[0].fastFee), lockTx: "found on the chain" });
         save();
@@ -344,7 +388,9 @@ async function fromSolana(side: string) {
 const pairs: [string, string][] = [];
 for (const name of Object.keys(SDK_NAME)) {
   const d = network(SDK_NAME[name] as any);
-  for (const v of d.vaults) {
+  for (const v of d.vaults as readonly { peer: number; genesisEnd?: number }[]) {
+    // Only vaults made in genesis (a network left out, as Hedera, keeps its old ones).
+    if (!v.genesisEnd) continue;
     if (v.peer === SOLANA) pairs.push([name, "solana"]);
     else {
       const other = Object.keys(SDK_NAME).find((k) => network(SDK_NAME[k] as any).number === v.peer);
@@ -352,10 +398,11 @@ for (const name of Object.keys(SDK_NAME)) {
     }
   }
 }
-console.log(`genesis: ${pairs.length} pairs; operator ${OPERATOR_EVM} / ${OPERATOR_SOLANA}; ${RWA_WHOLE} of each RWA token; coins ${JSON.stringify(COIN)}${DRY ? " (dry run)" : ""}`);
+console.log(`genesis: ${pairs.length} pairs; operator ${OPERATOR_EVM} / ${OPERATOR_SOLANA}; ${RWA_WHOLE} of each RWA token; coins ${JSON.stringify(COIN)}${COINS_ONLY ? ", coins only" : ""}${ROUND > 1 ? `, round ${ROUND}` : ""}${DRY ? " (dry run)" : ""}`);
 const skipped: string[] = [];
 for (const [a, b] of pairs) {
   if (ONLY && a !== ONLY && b !== ONLY) continue;
+  if (SKIP.includes(a) || SKIP.includes(b)) continue;
   if (a === "tempo" || b === "tempo") {
     skipped.push(`${a}–${b}: Tempo's own transactions need its sender`);
     continue;

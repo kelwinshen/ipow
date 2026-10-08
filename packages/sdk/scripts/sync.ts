@@ -19,6 +19,9 @@ const out = join(here, "..", "src", "generated");
 const deployments: Record<string, unknown> = {};
 for (const file of readdirSync(join(eth, "deployments")).filter((f) => f.endsWith("-testnet.json")).sort()) {
   const d = JSON.parse(readFileSync(join(eth, "deployments", file), "utf8"));
+  // Not every *-testnet.json is a network's deployment (genesis-testnet.json
+  // is the genesis run's ledger): only a record naming a network is one.
+  if (!d.network || !NETWORKS[d.network]) continue;
   const s = NETWORKS[d.network];
   deployments[`${d.network}-testnet`] = {
     name: `${d.network}-testnet`,

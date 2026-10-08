@@ -6,7 +6,11 @@
 // Solana is replaced; the protocol and the other pairs are left as they are.
 // Run from programmable-network/ethereum after the contracts are committed:
 //
-//   node scripts/redeploy-solana-vault.ts <network> <solanaPairAccount> [--genesis-days N] [--big-blocks]
+//   node scripts/redeploy-solana-vault.ts <network> <solanaPairAccount> [--genesis-days N] [--big-blocks] [--rpc <url>]
+//
+// --rpc sends through another endpoint than the .env's: HyperEVM's own
+// (https://rpc.hyperliquid-testnet.xyz/evm), whose gas estimate knows the
+// deployer's big blocks, where Alchemy's estimates against small blocks.
 //
 // <solanaPairAccount> is ["config", <network number>] of the Solana vault
 // program the pair is set up on (for genesis, the new program; its init
@@ -20,13 +24,15 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { contractsSource, deployNetwork, solanaAccountBytes } from "../deploy/deploy.ts";
+import { RetryProvider } from "../deploy/retry-provider.ts";
 import { NETWORKS } from "../deploy/networks.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
 const at = args.indexOf("--genesis-days");
 const genesisDays = at >= 0 ? Number(args[at + 1]) : 0;
-const [network, solanaPair] = args.filter((a, i) => !a.startsWith("--") && args[i - 1] !== "--genesis-days");
+const [network, solanaPair] = args.filter((a, i) => !a.startsWith("--") && args[i - 1] !== "--genesis-days" && args[i - 1] !== "--rpc");
+const rpcOverride = args.includes("--rpc") ? args[args.indexOf("--rpc") + 1] : undefined;
 if (!network || !solanaPair) throw new Error("usage: redeploy-solana-vault.ts <network> <solanaPairAccount> [--genesis-days N] [--big-blocks]");
 if (at >= 0 && !(genesisDays > 0 && genesisDays <= 30)) throw new Error("--genesis-days: 1 to 30");
 const bigBlocks = args.includes("--big-blocks");
@@ -48,9 +54,7 @@ const source = contractsSource();
 const file = join(here, "..", "deployments", `${network}-testnet.json`);
 const record = JSON.parse(readFileSync(file, "utf8"));
 const vars = readEnv(join(here, "..", "..", network, ".env"));
-const request = new FetchRequest(vars[settings.rpcEnv.testnet!]);
-request.setHeader("user-agent", "ipow-deploy");
-const provider = new JsonRpcProvider(request, undefined, { staticNetwork: true });
+const provider = new RetryProvider(rpcOverride ?? vars[settings.rpcEnv.testnet!]);
 const key = vars[settings.keyEnv.testnet!];
 const signer = new Wallet(key.startsWith("0x") ? key : "0x" + key, provider);
 if (signer.address.toLowerCase() !== String(record.deployer).toLowerCase()) {

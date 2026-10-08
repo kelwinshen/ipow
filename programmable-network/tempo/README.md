@@ -95,7 +95,7 @@ node scripts/deploy_viem.mjs              # iPoW + BetaVault + MockERC20
 node scripts/deploy_viem_betahub.mjs      # BetaHub + HubToken ("iBETA")
 node scripts/deploy_betavault_pathusd.mjs        # BetaVaultPathUSD
 node scripts/deploy_betahub_pathusd.mjs          # BetaHubPathUSD
-node scripts/deploy_ipowv1conversion_pathusd.mjs # iPoWConversionPathUSD
+node scripts/deploy_ipowconversion_pathusd.mjs # iPoWConversionPathUSD
 ```
 
 Each script prints the transaction's *reported* address — independently
