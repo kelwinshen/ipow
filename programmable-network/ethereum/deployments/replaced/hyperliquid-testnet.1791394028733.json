@@ -1,0 +1,86 @@
+{
+  "network": "hyperliquid",
+  "env": "testnet",
+  "chainId": 998,
+  "lightClient": "0x15390C4901e11D3732489825c2FBa33A2E3e5b37",
+  "dataFee": null,
+  "protocol": "0x2Dd456fCe7B3574AbD76b2899d3106CaB6ff5b9B",
+  "conversion": "0x07eFF65A853f36cBA8FEFbC495eb6A0D98d26a75",
+  "betaBaskets": "0x51d0bc4CE62Fa394242415d0DAa167A5AF6Bb45B",
+  "homeFactory": "0x0CC2e21348A17A528e1C8B0579a36bA57bC01618",
+  "receiptsFactory": "0x26f612E33d470E447d3616dBA42dF9D2cFbC315B",
+  "vaults": [
+    {
+      "peer": 2,
+      "peerVault": "0x739c5d3047e413039424bb9f7982319b24a3cd8f3c03a783e1f15b4036b26f7a",
+      "vault": "0x06bc2ADf2ab336AF6948dfBe8829e4ec161946a9",
+      "home": "0x397B84d2AC6Ca63F03F726580383e985530101Da",
+      "receipts": "0xc87e2Ad4Fc985B1fF15a532f37d872465218e2cd",
+      "homeFactory": "0x0CC2e21348A17A528e1C8B0579a36bA57bC01618",
+      "receiptsFactory": "0x26f612E33d470E447d3616dBA42dF9D2cFbC315B",
+      "source": "f97885eb2169aefcd1665d7ce4f33f73c3abb686",
+      "genesisEnd": 1792602752,
+      "at": "2026-10-07T17:17:07.255Z"
+    },
+    {
+      "peer": 1,
+      "peerVault": "0x000000000000000000000000181e3c5d35e4ecac682fefc375dec9cc5d1d3a91",
+      "vault": "0xc949e35812679fF3Be6aF0B025e2ddFff16bC2b9",
+      "home": "0x03397024aC9191D9a13014d6A9aEAaFdAE7f3774",
+      "receipts": "0xE346843867B4756859Ea1a176cBC636d2074fFFA",
+      "homeFactory": "0x7F0211E1BEA9A940f4E2F4A21B52f2f69C6e8dD5",
+      "receiptsFactory": "0x405FaC50eB5d0134cf971310EBd6cdcDF2721b86",
+      "source": "63668a5",
+      "at": "2026-10-05T14:27:07.533Z"
+    },
+    {
+      "peer": 3,
+      "peerVault": "0x000000000000000000000000a4f697d5ed3bcb96ca147c13a157779dae11d2aa",
+      "vault": "0xAfC5e11a1e2A0443248844757C9a2256Da5A742A",
+      "home": "0x70Cceb80c265168D1837030daD812e5e06f00321",
+      "receipts": "0x115C9E3c93F384E9f8fb177aA49538D09061B0cD",
+      "homeFactory": "0x6B70Af8a21a16F0c36dF37Ff1BAC581Cd3894Cb7",
+      "receiptsFactory": "0xB6C7e5Db33F34D86102C8Df0AcACAd7052699162",
+      "source": "63668a5",
+      "at": "2026-10-05T14:32:04.230Z"
+    },
+    {
+      "peer": 4,
+      "peerVault": "0x00000000000000000000000051cd31ac42a838d225f3b42f830af72d99eb003a",
+      "vault": "0x62EDd87078a43B9e915aF91FF0ea137b34e9d7CB",
+      "home": "0x36E1d9CFb7CBf13eC1ea6c80E4B5405f5327CfED",
+      "receipts": "0xe4aC5A816a24A0c7Ad56DCCdbcfB36F329e76F3a",
+      "homeFactory": "0xCF87B06B09754ed3c9855b64Ae6FD295a7a1da10",
+      "receiptsFactory": "0xCe6Cda46Ac4d02c6BbB3613de07821e0fd80b313",
+      "source": "63668a5",
+      "at": "2026-10-05T14:37:05.750Z"
+    },
+    {
+      "peer": 9,
+      "peerVault": "0x00000000000000000000000001be560a22e91201c9414b634f0a61085f84dd08",
+      "vault": "0x62c8feb829Fb9249F822DAFA89F55E9c6F82dEA4",
+      "home": "0xaDEB437D3904fAc0AfD1530D76C69441E56c0D54",
+      "receipts": "0x8b34983fdFc4509dE68D132fC95cdfe557bdDb72",
+      "homeFactory": "0x1580b5a10631a57cBb90EfEfEC55025983578CD1",
+      "receiptsFactory": "0xCA92aED3Bbb8Bab3e877Bf3092924aD51B2a00d4",
+      "source": "current",
+      "at": "2026-10-05T23:23:21.665Z"
+    }
+  ],
+  "deployer": "0x9784B80BC7b95753f2a2732649F3a1136b4c2BF1",
+  "minHeight": 965567,
+  "maxSats": "100000",
+  "solanaPairAccount": "8nJB7bCtN6DpeZGHNtLxaE11rdKnRkFhGR4LJUTsCffo",
+  "at": "2026-10-02T15:26:06.953Z",
+  "source": "a9493c7",
+  "vaultParts": "made by the vault",
+  "previousConversion": "0x8A5EB387b8b1CBd5cBAFBE2088aCE6d589eb4F59",
+  "unusedConversions": [
+    "0xCA39c4e5d4f938A380E61475bF4CeF8D1B7d6190"
+  ],
+  "sources": {
+    "Conversion": "current",
+    "BetaBaskets": "current"
+  },
+  "previousBetaBaskets": "0x36BA462fF711C7261C4894Af40E5f0c49C98b280"
+}

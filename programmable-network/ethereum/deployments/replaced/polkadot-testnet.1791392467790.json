@@ -1,0 +1,28 @@
+{
+  "network": "polkadot",
+  "env": "testnet",
+  "chainId": 420420417,
+  "lightClient": "0x2E2b4eFf60659AFc08ae85E8A124a515008AEb9f",
+  "dataFee": null,
+  "protocol": "0x5D38c6Bec531A3290f121C39C1f88231fa4B49b9",
+  "conversion": "0x3221102aC4159048960e061FC0ADb81De3133496",
+  "betaBaskets": "0xB001c1Eb3B2D6dF4380682E119dDF1e3a9F18D89",
+  "homeFactory": "0x2ab2c9487cC8f83816d556Da149132c705B82e48",
+  "receiptsFactory": "0x895584abec0b2971A97c5De927BBE46cFAb9A618",
+  "vaults": [
+    {
+      "peer": 2,
+      "peerVault": "0x9da9ffc71e435197906a8329b9c764aac4f7d6d1599ea9c04c4614b296881798",
+      "vault": "0x77ef03207173b08A82d6511a35f970033E185d6c",
+      "home": "0xC69EBc691174a55E240552674896bBE651ebBad2",
+      "receipts": "0x6708f6882d9a0F0335aDAbe944c8436936679435"
+    }
+  ],
+  "deployer": "0x9784B80BC7b95753f2a2732649F3a1136b4c2BF1",
+  "minHeight": 965567,
+  "maxSats": "100000",
+  "solanaPairAccount": "BcTMgkGcknJu9GW6XQ7HoRdXdP3Jo6iRt8ZjKe6fm7r7",
+  "at": "2026-10-02T14:31:01.428Z",
+  "source": "a9493c7",
+  "vaultParts": "made by the vault"
+}

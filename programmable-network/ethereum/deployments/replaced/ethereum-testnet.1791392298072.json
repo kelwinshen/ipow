@@ -1,0 +1,81 @@
+{
+  "network": "ethereum",
+  "env": "testnet",
+  "chainId": 11155111,
+  "lightClient": "0x8e09508deF58997f8481FF678cd7f278DFe22C3F",
+  "dataFee": null,
+  "protocol": "0x21348ef459dDBa5607732Ca1e9992968B4cC5611",
+  "conversion": "0x3896b0B95D853655A62CCb83079509716E77962d",
+  "betaBaskets": "0x7311B038A8e2c1F1C2b6a266E6cA38ed3804F3BF",
+  "homeFactory": "0xfeD6F6DbA0860C9E8cECDf33d4BE60B0Da6980b3",
+  "receiptsFactory": "0x3Dda5326A3380E8b24D6a482CC1c3205Ae535502",
+  "vaults": [
+    {
+      "peer": 2,
+      "peerVault": "0x4043c1013b9ac5a7b0d6e41df72999295abc02c0b7e824f17a79154e9ab76bb7",
+      "vault": "0xD18b7d290f8c94fe561710A78F17494ff2520302",
+      "home": "0x89b83188c77172dB53873e4E67181a627753eD6d",
+      "receipts": "0xd72b80270BB25AD1Cb826e4C43ee1359dBB2DC79"
+    },
+    {
+      "peer": 3,
+      "peerVault": "0x000000000000000000000000ce6cda46ac4d02c6bbb3613de07821e0fd80b313",
+      "vault": "0x7901fd0a77124EBA55cB4599F67b0405F43E00c3",
+      "home": "0x71b935346d2A8F7709abeE700fb7a2470A6F19A1",
+      "receipts": "0x50Cb86cdB69b08a89C8a1e02C5cAA5177B1cf2B0",
+      "homeFactory": "0xF4475a11a71940CF09468e6397565321AE49d333",
+      "receiptsFactory": "0xD630Fe315F8F1b78e0aE2095dc9F93Dc64D43988",
+      "source": "63668a5",
+      "at": "2026-10-05T13:53:21.271Z"
+    },
+    {
+      "peer": 4,
+      "peerVault": "0x000000000000000000000000170685feee5ac2bcddae20dae66747658e6fa7c0",
+      "vault": "0x995D56414b04Fe2699978C7E0B945FF623c1326b",
+      "home": "0x0e81c951966FFE6E6067266a2Ff237AfE35E6729",
+      "receipts": "0x44DeBbBB5f4d91a1de3228C7796C7193a648c6Be",
+      "homeFactory": "0xe5aA792d82281Bd86fD297290ac7eEe72C79b1C1",
+      "receiptsFactory": "0x5B9148d4f4f91A83CD9642d3cd6E08F01bbd0826",
+      "source": "63668a5",
+      "at": "2026-10-05T14:21:51.127Z"
+    },
+    {
+      "peer": 7,
+      "peerVault": "0x000000000000000000000000c949e35812679ff3be6af0b025e2ddfff16bc2b9",
+      "vault": "0x181e3C5D35E4ecaC682FEFC375dEc9CC5D1d3A91",
+      "home": "0x122f0C67aa722861E68d03682707AA7C061cDE48",
+      "receipts": "0x947BcdA4F8F6787B38484A8389077c901e9e8A39",
+      "homeFactory": "0xCC6B502c4bb87ffD2fBA3412F8EcC7c27659B12A",
+      "receiptsFactory": "0x769d3CB24E20C77b45Bb0FCec35c7750f7E02CfC",
+      "source": "63668a5",
+      "at": "2026-10-05T14:27:07.517Z"
+    },
+    {
+      "peer": 9,
+      "peerVault": "0x000000000000000000000000ce962aa05135638f82ecfc15e3f114eeda4df823",
+      "vault": "0x3D62A18F49709A580c4f0d7494d2073770791573",
+      "home": "0xde29522fb6c8018bcdf9F1fb2DD32a7e6712878A",
+      "receipts": "0x1A1377d77BaA54Db55680AD9B40651B622Ac13cA",
+      "homeFactory": "0xd1473d4279C539760CBf5880504773d4f26F505e",
+      "receiptsFactory": "0x68342460861C0825fa913CD0528f87867139f7D3",
+      "source": "current",
+      "at": "2026-10-05T23:09:51.633Z"
+    }
+  ],
+  "deployer": "0x9784B80BC7b95753f2a2732649F3a1136b4c2BF1",
+  "minHeight": 965567,
+  "maxSats": "100000",
+  "solanaPairAccount": "5Ks1r25VGX5S7dUMf8c5oP6qzXfFvckQ67wgtqywnDAN",
+  "at": "2026-10-02T14:24:04.066Z",
+  "source": "a9493c7",
+  "vaultParts": "made by the vault",
+  "previousConversion": "0xFB82B968e1529E740588aAE0F6379c956BF6683C",
+  "unusedConversions": [
+    "0x7082Eba69c5804773E6731EeA3103154025e7fEC"
+  ],
+  "sources": {
+    "Conversion": "current",
+    "BetaBaskets": "current"
+  },
+  "previousBetaBaskets": "0x80f99051921754C0b2F7BeC7468b72a0E6e2850b"
+}
