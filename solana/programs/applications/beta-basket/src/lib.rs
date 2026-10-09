@@ -34,7 +34,7 @@ use anchor_spl::token_2022::spl_token_2022::extension::default_account_state::De
 use anchor_spl::token_2022::spl_token_2022::state::{Account as SplAccount, AccountState, Mint as SplMint};
 use anchor_spl::token_interface::{self, TransferChecked};
 
-declare_id!("3DuG4iNPptEyCAA7FM1YQja43G6HkTAwrswT3Ds2d94R");
+declare_id!("CDaso21vQBdsrWYRB1a7LTunJjNrfJ6sweUGPQzSkdV2");
 
 /// At most 8 parts, one per network.
 pub const MAX_PARTS: usize = 8;

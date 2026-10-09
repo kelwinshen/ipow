@@ -11,7 +11,7 @@ ipow_light_client = "Ctotq1SSaDJ2EUSe4sMdau92qBesyutH7GPaTRiYp4vJ"
 ipow_protocol = "ChYhovM8vm2tuMRaRFn4m6etG979bjixVa71fXBDwjPL"
 ipow_vault = "3TZ1LJ4fVZVKbBUyzVMRjJ9FNPGaqVmGX56JuT5QdXEy"
 conversion = "9Argk3M83p8t5pWG92PhwEhYzysWt5n82siEWyb29w7D"
-beta_basket = "3DuG4iNPptEyCAA7FM1YQja43G6HkTAwrswT3Ds2d94R"
+beta_basket = "CDaso21vQBdsrWYRB1a7LTunJjNrfJ6sweUGPQzSkdV2"
 
 [provider]
 cluster = "devnet"
