@@ -5,7 +5,8 @@
 
 // Imported, not global: in a browser this is the `buffer` package.
 import { Buffer } from "buffer";
-import { AnchorProvider, BN, Program, parseIdlErrors, translateError } from "@coral-xyz/anchor";
+import { AnchorProvider, Program, parseIdlErrors, translateError } from "@coral-xyz/anchor";
+import BN from "bn.js";
 import { AddressLookupTableProgram, ComputeBudgetProgram, Connection, PublicKey, SystemProgram, Transaction, TransactionInstruction, TransactionMessage, VersionedTransaction, AddressLookupTableAccount, type AccountMeta } from "@solana/web3.js";
 
 import { IDLS, SOLANA } from "./generated/solana.ts";

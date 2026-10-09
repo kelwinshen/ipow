@@ -6,7 +6,8 @@
 
 // Imported, not global: in a browser this is the `buffer` package.
 import { Buffer } from "buffer";
-import { AnchorProvider, BN, Program } from "@coral-xyz/anchor";
+import { AnchorProvider, Program } from "@coral-xyz/anchor";
+import BN from "bn.js";
 import { ComputeBudgetProgram, Connection, PublicKey, SystemProgram } from "@solana/web3.js";
 
 import { addressToScript, scriptToAddress } from "./btcAddress.ts";

@@ -34,6 +34,10 @@ solana-program = "3.0.0"
 solana-signer = "3.0.0"
 solana-keypair = "3.0.1"
 litesvm-token = "0.11.0"
+# litesvm-token pulls in the associated token program with its entrypoint;
+# linked into the same test binary as this program's, Linux's linker refuses
+# the second `entrypoint` (macOS's doesn't). Tests only: the build is unchanged.
+spl-associated-token-account = { version = "8.0.0", features = ["no-entrypoint"] }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }

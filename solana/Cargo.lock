@@ -690,6 +690,7 @@ dependencies = [
  "solana-keypair",
  "solana-program",
  "solana-signer",
+ "spl-associated-token-account",
 ]
 
 [[package]]
@@ -946,6 +947,7 @@ dependencies = [
  "solana-keypair",
  "solana-program",
  "solana-signer",
+ "spl-associated-token-account",
 ]
 
 [[package]]
@@ -1563,6 +1565,7 @@ dependencies = [
  "solana-keypair",
  "solana-program",
  "solana-signer",
+ "spl-associated-token-account",
 ]
 
 [[package]]
