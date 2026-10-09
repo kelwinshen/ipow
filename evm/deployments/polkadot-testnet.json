@@ -1,0 +1,37 @@
+{
+  "network": "polkadot",
+  "env": "testnet",
+  "chainId": 420420417,
+  "lightClient": "0x2E2b4eFf60659AFc08ae85E8A124a515008AEb9f",
+  "dataFee": null,
+  "protocol": "0x5D38c6Bec531A3290f121C39C1f88231fa4B49b9",
+  "conversion": "0x3221102aC4159048960e061FC0ADb81De3133496",
+  "betaBaskets": "0xB001c1Eb3B2D6dF4380682E119dDF1e3a9F18D89",
+  "homeFactory": "0x51cD31AC42a838d225f3B42F830Af72d99Eb003a",
+  "receiptsFactory": "0x48aA89dcB9355016c2010426f99d4c44D65281e9",
+  "vaults": [
+    {
+      "peer": 2,
+      "peerVault": "0x1f2aed15f9956c7fe823c6cd155bf997cc95764bd64c63504ca006e96d675cce",
+      "vault": "0xf0768cD3fDab897d6913De24fba571f103E3565F",
+      "home": "0x1aaB5EcCA56064b4bDa2507841717295677849FB",
+      "receipts": "0xD7881C39F422d01d4989930C3645f4983bCa9D4b",
+      "homeFactory": "0x51cD31AC42a838d225f3B42F830Af72d99Eb003a",
+      "receiptsFactory": "0x48aA89dcB9355016c2010426f99d4c44D65281e9",
+      "source": "f97885eb2169aefcd1665d7ce4f33f73c3abb686",
+      "genesisEnd": 1792602003,
+      "at": "2026-10-07T17:01:07.792Z"
+    }
+  ],
+  "deployer": "0x9784B80BC7b95753f2a2732649F3a1136b4c2BF1",
+  "minHeight": 965567,
+  "maxSats": "100000",
+  "solanaPairAccount": "36fbxW7aLxS5VFBo4HUcNFweBo4WRQTm2SorKuMzqSfX",
+  "at": "2026-10-02T14:31:01.428Z",
+  "source": "a9493c7",
+  "vaultParts": "made by the vault",
+  "sources": {
+    "VaultHomeFactory": "f97885eb2169aefcd1665d7ce4f33f73c3abb686",
+    "VaultReceiptsFactory": "f97885eb2169aefcd1665d7ce4f33f73c3abb686"
+  }
+}

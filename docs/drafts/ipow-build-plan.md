@@ -152,7 +152,7 @@ conversion, are added in stage 6.
 |---|---|---|
 | Conversion | Section 10.3. It checks the BTC amount, defines the close, and accepts the user's own payment proof | D8, D10, D18, D36, D51 |
 | The vault | Section 11: a protocol part beside the protocol contract, on Ethereum then Solana, then the node's operator (carrying batches), guardian (objecting) roles | D104 to D117 |
-| BETA | A basket of receipts on Solana, with creator fees: [`ipow-beta-app.md`](ipow-beta-app.md). Replaces section 10.2 | D104 |
+| BETA | A basket of receipts on Solana, with creator fees: [`ipow-beta-app.md`](../specs/ipow-beta-app.md). Replaces section 10.2 | D104 |
 
 Conversion is first because it is smaller.
 

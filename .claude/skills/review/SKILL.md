@@ -28,77 +28,91 @@ this skill from a clean context, and relay its findings.
 
 ## Criteria
 
-1. **Solidity correctness & security**
-   - Access control: is a function's actual modifier (`onlyOperator`,
-     nothing, or a custom check) what the design doc says it should be?
-     This repo deliberately mixes fully-permissionless (Conversion
-     claims), operator-first-with-permissionless-fallback (header relay,
-     §6.9), and fully-operator-gated (liquidity, network admin) access —
-     the wrong one on the wrong function is a real bug, not a style nit.
-   - Reentrancy: state updated before external calls/value transfers;
-     `nonReentrant` present wherever value moves.
-   - Bond/fee/timeout arithmetic: no silent overflow/rounding assumptions;
-     `BPS_DENOM`-style scaling applied consistently; watch for `as u128`/
-     float-to-int casts that truncate rather than round (a real,
-     pre-existing characteristic in `chain_operator.rs`'s payout math —
-     don't introduce a new one without a comment explaining it, the way
-     that one is documented).
-   - Every conversion/composition state machine needs a permissionless
-     exit if the counterparty (operator or claimant) never shows up —
-     check whether a new state has one.
+1. **Solidity correctness & security** (`evm/contracts/`)
+   - Access control: the protocol, light client, vault and applications
+     have no owner and no key, and nothing can be changed after deployment
+     (D59 in `docs/design/ipow-protocol.md`). A new privileged role, an
+     owner, a setter or an upgrade path is a design deviation unless the
+     spec names it (the vault's genesis key, `docs/specs/ipow-vault-genesis.md`,
+     is the one such key, and it must expire). Check that each `only*`
+     check (`onlyCore`, `onlyApp`, `onlyGenesis`) admits exactly the caller
+     the spec says.
+   - Money is credited and withdrawn, never pushed to an address: a new
+     transfer to a caller-chosen address in the middle of a state change is
+     a finding. State is updated before external calls; `nonReentrant`
+     wherever value moves.
+   - Both builds of the protocol and the vault (native coin and token,
+     D136 to D138) get the change, and the token build refuses native
+     value. Decimals and units: amounts in record units vs native units,
+     Tempo's 6-decimal PathUSD, Hedera's 8-decimal HBAR (D139).
+   - Bond, escrow, fee and timeout arithmetic: no silent overflow or
+     rounding; a rounding direction that favours the user over the bond
+     (or the reverse) is stated in a comment.
+   - Every job, swap, claim or lock needs a permissionless exit if its
+     counterparty (operator, user, guardian) never shows up: an expiry, a
+     refund, a give-up. Check that a new state has one.
+   - Contract size: the protocol and the vault core sit near the 24,576-byte
+     limit (Build status row 7); a change that grows them states the new
+     margin.
 
-2. **Rust (`core/operator`, Anchor programs) correctness & security**
+2. **Rust correctness & security** (`node/`, `solana/programs/`)
    - No unexplained `unwrap()`/`expect()` on data that isn't guaranteed
      (acceptable in tests only).
    - Arithmetic on user-influenced values uses `checked_*`/`saturating_*`,
      never a bare operator that can panic or silently wrap.
    - Anchor account validation: every account a handler trusts is actually
-     constrained (`#[account(...)]`, `has_one`, signer checks), not just
-     typed.
-   - A changed adapter method (`ChainStack`, `BetaHubAdapter`,
-     `ConvertingAdapter`, etc.) matches the trait's documented contract for
-     *every* implementor (EVM and SVM), not just the one this change
-     touched.
-   - Genuinely pure logic (no I/O, no `Arc<dyn Trait>`) extracted into a
-     named function and unit tested, rather than left inline and untested
-     inside an async tick function — see `chain_operator.rs`'s
-     `evaluate_rbf`/`compute_safe_native_amount`/etc. for the pattern.
+     constrained (`#[account(...)]`, seeds, `has_one`, signer checks), not
+     just typed. Only `initialize` may require the upgrade authority.
+   - The Solana program and the EVM contract of the same part keep the
+     same rules; a difference is one the spec's Build status lists as
+     "differences made by Solana", or it is a finding.
+   - A changed method of the node's network interfaces (`ProtocolNetwork`,
+     `ConversionApp`, `VaultApp` in `node/crates/protocol`) matches its documented contract
+     in *every* adapter (`node/crates/networks/evm` and
+     `node/crates/networks/svm`), not just the one this change touched.
+   - Pure logic (no I/O) extracted into a named function and unit tested,
+     not left inline and untested inside an async round of a role.
 
 3. **Cross-network consistency**
-   - A change to one `programmable-network/<chain>` package's contracts
-     that isn't mirrored across the others when it should be — check
-     whether the difference is chain-specific for a stated reason
-     (Hyperliquid's gas limit, Tempo's native-value rejection) or an
-     accidental divergence.
-   - Never trust a transaction receipt's reported address/result on Tempo
-     without independent on-chain verification
-     (`docs/design/ipow-implementation.md`'s Tempo section) — flag any new
-     Tempo deploy/write script that skips this.
-   - A new cross-network registration (`addNetwork`) should be reciprocal
-     — check both directions got registered, not just one.
+   - Every EVM network runs the same source in `evm/contracts`, chosen and
+     configured per network in `evm/deploy/networks.ts` (D134). A copy of a
+     contract for one network is a finding; a per-network build is allowed
+     only where a decision names it (the token builds, D136 to D138;
+     Hedera's, D139; Polkadot's, D140).
+   - Never trust a transaction receipt's reported address or result on
+     Tempo without reading the chain back
+     ([`networks/tempo/README.md`](../../../networks/tempo/README.md)) —
+     flag any new Tempo deploy/write script that skips this.
+   - A vault pair is two-sided: both vaults name each other, and on Solana
+     the pair's `["config", peer]` account names the EVM vault. Check both
+     directions.
    - A claim about live/deployed state (a new address, "this is live now")
-     must be independently verifiable — an on-chain read, not just a
-     trusted receipt or a script's stdout.
+     must be independently verifiable — an on-chain read
+     (`evm/scripts/verify-deployments.ts`, `solana program show`), not just
+     a trusted receipt or a script's stdout. A redeploy updates the
+     network's README, `evm/deployments/`, and the SDK's generated files
+     (`pnpm sync` in `sdk`).
 
 4. **Testing**
    - New contract/program behavior has a test for both the happy path and
-     its permissionless-cleanup/failure path.
+     its permissionless-cleanup/failure path, on EVM and on Solana when
+     both have it.
    - A bug fix has a regression test that would have failed before the
      fix.
 
 5. **Design alignment** — invoke the `design-alignment` skill and follow
    its procedure in full; this point is a summary, not a substitute. Any
-   deviation from `docs/design/ipow.md` or `docs/design/ipow-implementation.md`
-   must be flagged as `⚠️ DESIGN DEVIATION`, citing the doc/section and the
-   code location; conform to the design or update the design doc with
-   rationale in the same change.
+   deviation from `docs/design/ipow-protocol.md` or a spec in `docs/specs/`
+   must be flagged as `⚠️ DESIGN DEVIATION`, citing the doc/section (and
+   decision number) and the code location; conform to the design or update
+   the design doc with rationale in the same change.
 
 6. **Documentation & hygiene**
    - A live address, a new deployed contract, or a changed mechanism
      claimed as "done" is independently verifiable, not just described.
-   - No `.env` or `config.yml` staged (`git check-ignore -v` any new file
-     in a package that has real secrets before trusting the existing
-     `.gitignore` covers it).
+   - No `.env`, `.env.operator-btc`, `config.yml` or key file staged
+     (`git check-ignore -v` any new file in a package that has real
+     secrets before trusting the existing `.gitignore` covers it).
    - Commits carry no AI-attribution trailers (per this repo's
      `CLAUDE.md`/`AGENTS.md`).
 

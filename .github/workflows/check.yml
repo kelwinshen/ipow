@@ -11,7 +11,7 @@ env:
 
 jobs:
   ethereum:
-    name: contracts (programmable-network/ethereum)
+    name: contracts (evm)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,7 +29,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Compile + test (local network only, no live RPC/keys needed)
-        run: pnpm --dir programmable-network/ethereum test
+        run: pnpm --dir evm test
 
   solana:
     name: solana programs (build + test)
@@ -41,7 +41,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: programmable-network/solana
+          workspaces: solana
 
       - name: Install Solana CLI
         run: |
@@ -55,16 +55,16 @@ jobs:
       # workspace build unifies features, and the programs' dependents enable
       # no-entrypoint on the programs they call, which empties those builds.
       - name: Build the programs
-        working-directory: programmable-network/solana
+        working-directory: solana
         run: |
-          for p in beta-basket conversion ipow-light-client ipow-protocol ipow-vault; do
+          for p in protocol/ipow-light-client protocol/ipow-protocol protocol/ipow-vault applications/conversion applications/beta-basket; do
             cargo build-sbf --manifest-path programs/$p/Cargo.toml
           done
-          cargo build-sbf --manifest-path programs/ipow-light-client/Cargo.toml --features test-limits --sbf-out-dir target/deploy-test
-          cargo build-sbf --manifest-path programs/ipow-vault/Cargo.toml --features test-limits --sbf-out-dir target/deploy-test
+          cargo build-sbf --manifest-path programs/protocol/ipow-light-client/Cargo.toml --features test-limits --sbf-out-dir target/deploy-test
+          cargo build-sbf --manifest-path programs/protocol/ipow-vault/Cargo.toml --features test-limits --sbf-out-dir target/deploy-test
 
       - name: Test
-        working-directory: programmable-network/solana
+        working-directory: solana
         run: cargo test --workspace
 
       - name: Keep the built programs for the node and SDK jobs
@@ -72,12 +72,12 @@ jobs:
         with:
           name: solana-programs
           path: |
-            programmable-network/solana/target/deploy/*.so
-            programmable-network/solana/target/deploy-test/*.so
+            solana/target/deploy/*.so
+            solana/target/deploy-test/*.so
           if-no-files-found: error
 
   node:
-    name: core/node (cargo build + test)
+    name: node (cargo build + test)
     needs: solana
     runs-on: ubuntu-latest
     steps:
@@ -92,7 +92,7 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      # The node's tests start Hardhat from programmable-network/ethereum.
+      # The node's tests start Hardhat from evm.
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
 
@@ -100,24 +100,24 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: solana-programs
-          path: programmable-network/solana/target
+          path: solana/target
 
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: core/node
+          workspaces: node
 
       - name: Build
-        working-directory: core/node
+        working-directory: node
         run: cargo build --workspace
 
       - name: Test
-        working-directory: core/node
+        working-directory: node
         run: cargo test --workspace
 
   sdk:
-    name: packages/sdk (build + test)
+    name: sdk (build + test)
     needs: solana
     runs-on: ubuntu-latest
     steps:
@@ -145,10 +145,10 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: solana-programs
-          path: programmable-network/solana/target
+          path: solana/target
 
       - name: Build
-        run: pnpm --dir packages/sdk build
+        run: pnpm --dir sdk build
 
       - name: Test
-        run: pnpm --dir packages/sdk test
+        run: pnpm --dir sdk test

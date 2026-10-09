@@ -1,7 +1,8 @@
 packages:
-  - 'programmable-network/*'
-  - 'core/*'
-  - 'packages/*'
+  - 'evm'
+  - 'solana'
+  - 'sdk'
+  - 'networks/*'
 allowBuilds:
   bufferutil: true
   esbuild: true

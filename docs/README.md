@@ -3,43 +3,57 @@
 ```
 docs/
 ├── design/
-│   ├── ipow.md                 — canonical: what the system is, why, trust model
-│   ├── ipow-implementation.md  — canonical: exact mechanisms, state machines, per-network detail
-│   └── ipow-protocol.md        — canonical: the approved protocol design, being built, not live
-└── drafts/                     — unratified proposals, superseded designs, and a dated live-run log
+│   └── ipow-protocol.md   — canonical: the protocol (light client, operators, jobs, claims, vault), its decisions, build status
+├── specs/                 — specs of the built applications and features
+├── drafts/                — the build plan, dated live-run records, unratified proposals
+└── archive/               — the retired generation's design docs and other history
 ```
 
-- **`design/`** is the source of truth — the three docs above. Changes
-  require review — see [`.github/CODEOWNERS`](../.github/CODEOWNERS).
-  Reason and implement *from* them.
-- **`drafts/`** holds two different things, neither authoritative: an
-  unratified/WIP proposal not yet promoted into `design/`, and
-  superseded/removed designs plus a dated live-run log, kept
-  for context on why the current design looks the way it does — see
+- **`design/ipow-protocol.md`** is the source of truth. Changes to it
+  require review, see [`.github/CODEOWNERS`](../.github/CODEOWNERS).
+  Reason and implement *from* it. Its "Build status" section says what is
+  built, tested and deployed.
+- **`specs/`** holds the specs of what is built on or added to the
+  protocol, cited from the code; each states its own approval and status. Also
+  review-gated in CODEOWNERS:
+  - [`ipow-conversion-app.md`](specs/ipow-conversion-app.md) — Conversion: a network's coin or a token swapped for real BTC and back.
+  - [`ipow-conversion-tunnel.md`](specs/ipow-conversion-tunnel.md) — conversion between two programmable networks: two Conversion legs linked by one Bitcoin payment.
+  - [`ipow-beta-app.md`](specs/ipow-beta-app.md) — BETA: a token backed by a basket of vault receipts.
+  - [`ipow-vault-claims.md`](specs/ipow-vault-claims.md) — the discussion behind the vault and its receipts (now section 11 of the design doc, which is authoritative).
+  - [`ipow-vault-genesis.md`](specs/ipow-vault-genesis.md) — the testnet vaults' one-time genesis step.
+  - [`ipow-stage7-networks.md`](specs/ipow-stage7-networks.md) — what each network beyond Ethereum and Solana needs.
+  - [`ipow-sdk.md`](specs/ipow-sdk.md) — the TypeScript SDK.
+- **`drafts/`** is not authoritative: the build plan, the dated live-run
+  records, and any proposal not yet built. See
   [`drafts/README.md`](drafts/README.md).
+- **`archive/`** is not authoritative: the design docs of the generation
+  retired at the git tag `legacy-v1`
+  ([`ipow.md`](archive/ipow.md),
+  [`ipow-implementation.md`](archive/ipow-implementation.md)) and the
+  earlier designs they replaced
+  ([`superseded-beta-designs.md`](archive/superseded-beta-designs.md),
+  [`abandoned-cpi-funding-attempt.md`](archive/abandoned-cpi-funding-attempt.md)).
+  Kept for history.
 
 ## Where to start
 
-- **[Root README](../README.md)** — what the system is, package layout.
-- **[`design/ipow.md`](design/ipow.md)** — the problem, the two-layer
-  architecture (Conversion + Beta), trust model, security model.
-- **[`design/ipow-implementation.md`](design/ipow-implementation.md)** —
-  exact mechanisms: Conversion's two generations, Beta's statement-bus
-  lifecycle, composition, per-network contract variants and why each
-  exists.
-- **[`design/ipow-protocol.md`](design/ipow-protocol.md)** — the approved
-  design of the new protocol (light client, operators, jobs, claims).
-  Being built, not live. Its "Build status" says what exists.
-- **[`SECURITY.md`](../SECURITY.md)** — current trust model: what's
-  trustless today vs. still centralized.
-- **[`CLAUDE.md`](../CLAUDE.md)** (repo root) — agent/contributor rules
-  and the full source-of-truth map (which file to read for which
-  question).
+- **[Root README](../README.md)** — what iPoW is, the repository layout,
+  how to build and test.
+- **[`design/ipow-protocol.md`](design/ipow-protocol.md)** — the
+  protocol, section by section, and the decision index (D1 onwards).
+- **[`SECURITY.md`](../SECURITY.md)** — the present trust model: what is
+  permissionless today and what the deployer still controls.
+- **[`CLAUDE.md`](../CLAUDE.md)** (repo root) — agent and contributor
+  rules and the source-of-truth map.
 - **[Contributing](../CONTRIBUTING.md)** — setup, PR process, code style.
 
-## Per-network / per-service docs
+## Per-package and per-network docs
 
-Each `programmable-network/<chain>` package and `core/operator` has its
-own README with setup, build, test, and real deployed-address details
-specific to that package. Live addresses are tracked there, not in the
-design docs.
+[`evm`](../evm/README.md), [`solana`](../solana/README.md),
+[`node`](../node/README.md) and [`sdk`](../sdk/README.md) each have a
+README with setup, build and test. Deployed addresses are in each
+network's README: Sepolia in [`evm/README.md`](../evm/README.md), Solana
+devnet in [`solana/README.md`](../solana/README.md), the others in
+`networks/<network>/README.md`; the records they follow are
+`evm/deployments/<network>-testnet.json` and
+`solana/deployments/devnet.json`. They are not in the design docs.

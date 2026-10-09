@@ -1,0 +1,275 @@
+# The node on the test networks deployed on 2026-10-02/03 (spec Build
+# status, row 8), on Sepolia and Solana devnet: as a guardian, and as an
+# operator taking jobs on Sepolia, Base Sepolia, HyperEVM testnet and
+# Robinhood testnet, where its bond is locked (on Solana it waits for a
+# bond, spending nothing). Addresses from evm/
+# deployments/ethereum-testnet.json and solana/README.md.
+# No secrets: run-testnet.sh loads the keys and endpoints this names.
+
+roles: [operator, guardian]
+
+bitcoin:
+  explorer: https://mempool.space/api
+  # mempool.space times out often from this machine; blockstream.info answers.
+  fallback_explorers: [https://blockstream.info/api]
+  # The operator wallet's mainnet WIF key, loaded by run-testnet.sh.
+  wallet_key_env: BTC_WALLET_KEY
+  # At most 5 sat/vB (Bitcoin asks about 1 on 2026-10-04): the wallet holds
+  # a few thousand sats, and a tunnel is promised only when it can pay the
+  # sats plus a fee at this cap.
+  max_fee_rate: 5
+
+interval_seconds: 30
+
+networks:
+  - name: ethereum-sepolia
+    kind: evm
+    rpc_env: SEPOLIA_RPC_URL
+    key_env: SEPOLIA_PRIVATE_KEY
+    light_client: "0x8e09508deF58997f8481FF678cd7f278DFe22C3F"
+    protocol: "0x21348ef459dDBa5607732Ca1e9992968B4cC5611"
+    # A challenge's deposit, at most 0.01 ETH.
+    guardian: { max_deposit: "10000000000000000" }
+    # At most 0.05 ETH of bond locked for one job: a checkpoint's escrow is
+    # 5 times its fee, about 0.03 ETH at a base fee of 1 gwei.
+    operator: { max_bid: "50000000000000000" }
+    # Conversion with the tunnel (2026-10-03). Test coins have no market,
+    # and Bitcoin only carries the real transaction: fixed, representative
+    # rates, about a tenth of the market's; Greatwall reads them from the
+    # tunnel API's /assets, so a test swap is a few hundred sats.
+    # The RWA tokens are Greatwall's mock ones of
+    # deployments/ethereum-testnet-rwa.json (2026-10-05), priced per whole
+    # token at a hundredth of the market in sats (a stand-in rate, not a
+    # quote); the operator holds 1,000 of each.
+    conversion:
+      address: "0x3896b0B95D853655A62CCb83079509716E77962d"
+      coins:
+        - { token: native, symbol: ETH, decimals: 18, pay_sats: 300000, ask_sats: 300000 }
+        - { token: "0x1a7bd06F30b7ED12f6C698b0B3a289eBB379aaC9", symbol: XAUT, decimals: 18, pay_sats: 40000, ask_sats: 40000 }
+        - { token: "0xB364813e60dB761FCF7FebFa9b1caD062797a9D6", symbol: STRCx, decimals: 18, pay_sats: 1000, ask_sats: 1000 }
+        - { token: "0x866D9360E35c3DaE8B1ad98aeCC729647C093852", symbol: IVVon, decimals: 18, pay_sats: 6500, ask_sats: 6500 }
+        - { token: "0x6c472F0404179BE1985D92C759Fd9293252Ab858", symbol: QQQon, decimals: 18, pay_sats: 6000, ask_sats: 6000 }
+        - { token: "0xE8F52D763CF87154DC443fa36F9f6D65f44CCaE0", symbol: NVDAon, decimals: 18, pay_sats: 1800, ask_sats: 1800 }
+        - { token: "0xc22Ca2B75825cE64a3937F155698C968848d9645", symbol: SLVon, decimals: 18, pay_sats: 450, ask_sats: 450 }
+        - { token: "0x3baaC1a56A8431fea5d0ee0636f285d4F996Bc4C", symbol: IEFAon, decimals: 18, pay_sats: 900, ask_sats: 900 }
+        - { token: "0x04b4Cfe08b2C79fFeBc083E5e7091CfAC142c201", symbol: AMDon, decimals: 18, pay_sats: 1600, ask_sats: 1600 }
+        - { token: "0xA83EE721F0f398A920f4c35Eb04aa244d2c5d1fC", symbol: SOFIon, decimals: 18, pay_sats: 250, ask_sats: 250 }
+        - { token: "0x2c8b859ff059554ff363dED4a484062E247E03BC", symbol: HIMSon, decimals: 18, pay_sats: 500, ask_sats: 500 }
+        - { token: "0x0082296c24D2c994DC6DC5DEa74e77ddFC0A0895", symbol: VTIon, decimals: 18, pay_sats: 3200, ask_sats: 3200 }
+        - { token: "0xb934E173e34e8F3e9e6E6B2F7A901B75c9D8C7F8", symbol: IEMGon, decimals: 18, pay_sats: 650, ask_sats: 650 }
+
+  - name: base-sepolia
+    kind: evm
+    rpc_env: BASE_SEPOLIA_RPC_URL
+    key_env: BASE_SEPOLIA_PRIVATE_KEY
+    light_client: "0x10C9C79C8c46c1f9f07D7A258Bbd42B4ED6f973E"
+    protocol: "0x2Dd456fCe7B3574AbD76b2899d3106CaB6ff5b9B"
+    # A challenge's deposit, at most 0.01 ETH.
+    guardian: { max_deposit: "10000000000000000" }
+    # At most 0.01 ETH of bond locked for one job: a rollup's fees are a
+    # small fraction of Sepolia's, so the bond locked here is 0.03 ETH.
+    operator: { max_bid: "10000000000000000" }
+    # Conversion on Base Sepolia (2026-10-05): the coin and Greatwall's mock RWA
+    # tokens of deployments/base-testnet-rwa.json, at the same representative rates as Sepolia.
+    conversion:
+      address: "0x07eFF65A853f36cBA8FEFbC495eb6A0D98d26a75"
+      coins:
+        - { token: native, symbol: ETH, decimals: 18, pay_sats: 300000, ask_sats: 300000 }
+        - { token: "0xbc653e8dB02870f0562231BA55E6f4F182cAaF4c", symbol: GLDY, decimals: 18, pay_sats: 10, ask_sats: 10 }
+        - { token: "0x1FB8F1986E4a484d8A0E6b4F281A3066B8166a3d", symbol: JTRSY, decimals: 18, pay_sats: 10, ask_sats: 10 }
+        - { token: "0x2Cb59E06223ADdb03C7565b62b37FA834809BC77", symbol: AUDD, decimals: 18, pay_sats: 7, ask_sats: 7 }
+        - { token: "0xD8fC94eCa1cf8b7F227d8AD0e624ACAe5e997Ad4", symbol: JSPXA, decimals: 18, pay_sats: 1000, ask_sats: 1000 }
+        - { token: "0x3980adc2E7D776a5e8E264Aed684c9a43E736D5e", symbol: JSPX, decimals: 18, pay_sats: 1000, ask_sats: 1000 }
+        - { token: "0xd8e8c41817760cf312559dce320b5c5E0AaFecc1", symbol: bTSLA, decimals: 18, pay_sats: 4300, ask_sats: 4300 }
+        - { token: "0xce8DF6A9CbCE4c98c33B2ca8843cA57B8839e22d", symbol: USTBL, decimals: 18, pay_sats: 11, ask_sats: 11 }
+        - { token: "0xbf869aa1EAb77acdAF5419CD18C3c2d0A60A019a", symbol: wtNKE, decimals: 18, pay_sats: 700, ask_sats: 700 }
+        - { token: "0x763d74652203aab8341914D99C0C102640FcBb9E", symbol: AMZN.d, decimals: 18, pay_sats: 2200, ask_sats: 2200 }
+        - { token: "0x36BA462fF711C7261C4894Af40E5f0c49C98b280", symbol: wtMCD, decimals: 18, pay_sats: 3000, ask_sats: 3000 }
+        - { token: "0x5a7Af423913dbB082BaCEBF3c0Daac52789b1F4A", symbol: GLDx, decimals: 18, pay_sats: 3700, ask_sats: 3700 }
+
+  - name: hyperliquid-testnet
+    kind: evm
+    rpc_env: HYPEREVM_TESTNET_RPC_URL
+    key_env: HYPEREVM_TESTNET_PRIVATE_KEY
+    light_client: "0x15390C4901e11D3732489825c2FBa33A2E3e5b37"
+    protocol: "0x2Dd456fCe7B3574AbD76b2899d3106CaB6ff5b9B"
+    # A challenge's deposit, at most 0.01 HYPE.
+    guardian: { max_deposit: "10000000000000000" }
+    # At most 0.01 HYPE of bond locked for one job: a rollup's fees are a
+    # small fraction of Sepolia's, so the bond locked here is 0.03 HYPE.
+    operator: { max_bid: "10000000000000000" }
+    # Conversion on HyperEVM testnet (2026-10-05): the coin and Greatwall's mock RWA
+    # tokens of deployments/hyperliquid-testnet-rwa.json, at the same representative rates as Sepolia.
+    conversion:
+      address: "0x07eFF65A853f36cBA8FEFbC495eb6A0D98d26a75"
+      coins:
+        - { token: native, symbol: HYPE, decimals: 18, pay_sats: 40000, ask_sats: 40000 }
+        - { token: "0xbc653e8dB02870f0562231BA55E6f4F182cAaF4c", symbol: thBILL, decimals: 18, pay_sats: 10, ask_sats: 10 }
+        - { token: "0xDaB99518afF82db3c16ad748B56884238bb2C5C5", symbol: USDH, decimals: 18, pay_sats: 10, ask_sats: 10 }
+        - { token: "0xC034e3Fc38E88D12922A285D09470510d320a200", symbol: GMEx, decimals: 18, pay_sats: 250, ask_sats: 250 }
+        - { token: "0xCeee90F921AA994B837B97B4886c1A2AE56b2550", symbol: MUx, decimals: 18, pay_sats: 1800, ask_sats: 1800 }
+        - { token: "0x8965958BC61220d8add02E227437Fa363E21D96f", symbol: USDHL, decimals: 18, pay_sats: 10, ask_sats: 10 }
+        - { token: "0xE101001bD62451c6f3337f44EF2cC4F166dd891D", symbol: SKHYx, decimals: 18, pay_sats: 3000, ask_sats: 3000 }
+        - { token: "0xFcbF76B91dDebbee0c21d808B26a9Fb8fcC0ca94", symbol: NBISx, decimals: 18, pay_sats: 1000, ask_sats: 1000 }
+        - { token: "0x1E5da6001764bB4e76321FD90Dfaf626cA1f3A83", symbol: IWMx, decimals: 18, pay_sats: 2400, ask_sats: 2400 }
+        - { token: "0xda238E5F844d01554b1A9F2342F733A8205d0586", symbol: CRWVx, decimals: 18, pay_sats: 1200, ask_sats: 1200 }
+        - { token: "0x48aA89dcB9355016c2010426f99d4c44D65281e9", symbol: SPYx, decimals: 18, pay_sats: 6500, ask_sats: 6500 }
+
+  - name: robinhood-testnet
+    kind: evm
+    rpc_env: ROBINHOOD_TESTNET_RPC_URL
+    key_env: ROBINHOOD_TESTNET_PRIVATE_KEY
+    light_client: "0xc729b1a6d0325ae559614b6826127e11E51703c1"
+    protocol: "0xd6b425c7908E171a33dF2a4e6C5687eDF0D2d6c3"
+    # A challenge's deposit, at most 0.01 ETH.
+    guardian: { max_deposit: "10000000000000000" }
+    # At most 0.01 ETH of bond locked for one job: a rollup's fees are a
+    # small fraction of Sepolia's, so the bond locked here is 0.03 ETH.
+    operator: { max_bid: "10000000000000000" }
+    # Conversion on Robinhood testnet (2026-10-05): the coin and Greatwall's mock RWA
+    # tokens of deployments/robinhood-testnet-rwa.json, at the same representative rates as Sepolia.
+    conversion:
+      address: "0xf35A1C4A9dE7B7FffF62c7cEfda2ac91a71cB6cc"
+      coins:
+        - { token: native, symbol: ETH, decimals: 18, pay_sats: 300000, ask_sats: 300000 }
+        - { token: "0x01BE560A22e91201C9414b634f0a61085F84dD08", symbol: USDG, decimals: 18, pay_sats: 10, ask_sats: 10 }
+        - { token: "0xCA39c4e5d4f938A380E61475bF4CeF8D1B7d6190", symbol: SPYr, decimals: 18, pay_sats: 6500, ask_sats: 6500 }
+        - { token: "0x07eFF65A853f36cBA8FEFbC495eb6A0D98d26a75", symbol: NVDAr, decimals: 18, pay_sats: 1800, ask_sats: 1800 }
+        - { token: "0x6c692BEdCa89292D0FEfc6e86b82f451E371f11D", symbol: SPCXr, decimals: 18, pay_sats: 2000, ask_sats: 2000 }
+        - { token: "0xB75ABD27218B2b31ABb5B0F61F11a107377bEA06", symbol: METAr, decimals: 18, pay_sats: 7000, ask_sats: 7000 }
+        - { token: "0x525D70BBc90149345a171F5E308C923A4B8b109A", symbol: COINr, decimals: 18, pay_sats: 3000, ask_sats: 3000 }
+        - { token: "0xeF3A9120a087cf5795a60BB2e9FfF15b8E35c69e", symbol: USOr, decimals: 18, pay_sats: 750, ask_sats: 750 }
+        - { token: "0x1bF2c8784e5e801BeAb042791fE161156e771B66", symbol: GMEr, decimals: 18, pay_sats: 250, ask_sats: 250 }
+        - { token: "0x3Fc561125a24C7Bb02f1edd1f8F773e16185799f", symbol: PLTRr, decimals: 18, pay_sats: 1800, ask_sats: 1800 }
+        - { token: "0xdfB626fA52Ef04EAf2DfC4fA30e9B3d7E5fA90DC", symbol: SGOVr, decimals: 18, pay_sats: 1000, ask_sats: 1000 }
+
+  - name: arbitrum-sepolia
+    kind: evm
+    rpc_env: ARBITRUM_SEPOLIA_RPC_URL
+    key_env: ARBITRUM_SEPOLIA_PRIVATE_KEY
+    light_client: "0x53e1291BdAff473694BbbB8DD257f9844e5f9F3c"
+    protocol: "0x35e564d74B90a3A5bfcA8Dec65b1325C83d2e822"
+    # A challenge's deposit, at most 0.01 ETH.
+    guardian: { max_deposit: "10000000000000000" }
+    # At most 0.01 ETH of bond locked for one job, as on the other rollups.
+    operator: { max_bid: "10000000000000000" }
+    # Conversion (added by scripts/sync-testnet-coins.mjs): the coin and
+    # Greatwall's mock RWA tokens of deployments/arbitrum-testnet-rwa.json.
+    conversion:
+      address: "0xB7054E399E31A2cFE181c4fD59C7235562a6d45d"
+      coins:
+        - { token: native, symbol: ETH, decimals: 18, pay_sats: 300000, ask_sats: 300000 }
+        - { token: "0x4265A27605cDd45b69d36f17635Bad03351387e6", symbol: rINTC, decimals: 18, pay_sats: 350, ask_sats: 350 }
+        - { token: "0x75A1ADc3a4194f580eeCCa5473197Ff32414d2C1", symbol: rMSTR, decimals: 18, pay_sats: 3300, ask_sats: 3300 }
+        - { token: "0x525D70BBc90149345a171F5E308C923A4B8b109A", symbol: rMU, decimals: 18, pay_sats: 1800, ask_sats: 1800 }
+        - { token: "0xE101001bD62451c6f3337f44EF2cC4F166dd891D", symbol: rMRNA, decimals: 18, pay_sats: 280, ask_sats: 280 }
+        - { token: "0xbf869aa1EAb77acdAF5419CD18C3c2d0A60A019a", symbol: rOKLO, decimals: 18, pay_sats: 1000, ask_sats: 1000 }
+        - { token: "0x51d0bc4CE62Fa394242415d0DAa167A5AF6Bb45B", symbol: PGOLD, decimals: 18, pay_sats: 40000, ask_sats: 40000 }
+        - { token: "0xB6C7e5Db33F34D86102C8Df0AcACAd7052699162", symbol: rDRAM, decimals: 18, pay_sats: 300, ask_sats: 300 }
+        - { token: "0xE610e70B799b3d169BeA946a9029655226985805", symbol: rSPY, decimals: 18, pay_sats: 6500, ask_sats: 6500 }
+        - { token: "0x966Afd06E991A771F5f64DFf032465E42C02769D", symbol: rSNDK, decimals: 18, pay_sats: 1200, ask_sats: 1200 }
+        - { token: "0xEB4CF40eFFbec1758b0Fa6a6CC4b4E5a2091b1cF", symbol: rTSM, decimals: 18, pay_sats: 2900, ask_sats: 2900 }
+        - { token: "0x5cE276280542817547D075a51E6A0B563FF5D9c8", symbol: cbBTC, decimals: 18, pay_sats: 1000000, ask_sats: 1000000 }
+
+  - name: solana-devnet
+    kind: svm
+    rpc_env: SOLANA_RPC_URL
+    key_env: SOLANA_KEY
+    light_client: "Ctotq1SSaDJ2EUSe4sMdau92qBesyutH7GPaTRiYp4vJ"
+    protocol: "ChYhovM8vm2tuMRaRFn4m6etG979bjixVa71fXBDwjPL"
+    # At most 0.01 SOL.
+    guardian: { max_deposit: "10000000" }
+    # At most 0.02 SOL; no bond is locked on Solana yet.
+    operator: { max_bid: "20000000" }
+    conversion:
+      address: "9Argk3M83p8t5pWG92PhwEhYzysWt5n82siEWyb29w7D"
+      coins:
+        # SOL only: the node's token buys, and the SDK's token swaps, are not
+        # built on Solana yet (the mock tokens are in testnet-rwa.json).
+        - { token: native, symbol: SOL, decimals: 9, pay_sats: 15000, ask_sats: 15000 }
+
+# The vault pairs, left out while the operator first takes jobs: switched
+# on, the operator registers a pair chain on Bitcoin for each at once (a
+# real transaction from its wallet) and keeps bonds in both vaults. The
+# addresses are the genesis vaults of 2026-10-07 (evm/deployments/
+# <network>-testnet.json; Solana's is the vault program 3TZ1LJ4f…, whose
+# ["config", <network>] account is each EVM vault's pair): each EVM
+# network's pair with Solana, and the 10 EVM pairs. `assets` lists what it
+# carries.
+# vault:
+#   deposits: 1
+#   pairs:
+#     - networks: [ethereum-sepolia, solana-devnet]
+#       vaults: ["0x26187A8aC987c7d6d7610c64a497595698C9A77F", "3TZ1LJ4fVZVKbBUyzVMRjJ9FNPGaqVmGX56JuT5QdXEy"]
+#       journal: testnet-eth-sol.journal
+#       assets: []
+#     - networks: [base-sepolia, solana-devnet]
+#       vaults: ["0x82Fd247e3dBA26E5De0023043b262C5B1DBEe03c", "3TZ1LJ4fVZVKbBUyzVMRjJ9FNPGaqVmGX56JuT5QdXEy"]
+#       journal: testnet-base-sol.journal
+#       assets: []
+#     - networks: [robinhood-testnet, solana-devnet]
+#       vaults: ["0xf8374e052e5b3A8518f1834C527A09A91023F58C", "3TZ1LJ4fVZVKbBUyzVMRjJ9FNPGaqVmGX56JuT5QdXEy"]
+#       journal: testnet-hood-sol.journal
+#       assets: []
+#     - networks: [hyperliquid-testnet, solana-devnet]
+#       vaults: ["0x05EAD8b6dac6f78781cF4c582fF4311358F38118", "3TZ1LJ4fVZVKbBUyzVMRjJ9FNPGaqVmGX56JuT5QdXEy"]
+#       journal: testnet-hyper-sol.journal
+#       assets: []
+#     - networks: [arbitrum-sepolia, solana-devnet]
+#       vaults: ["0x170685feEe5ac2bCddAE20DAe66747658E6fA7c0", "3TZ1LJ4fVZVKbBUyzVMRjJ9FNPGaqVmGX56JuT5QdXEy"]
+#       journal: testnet-arb-sol.journal
+#       assets: []
+#     - networks: [ethereum-sepolia, base-sepolia]
+#       vaults: ["0x907b399028627110F42fa21aF1C9911BA41B7a66", "0x3CC9b0836d26d15153ee82b217bC77dA4738c8d5"]
+#       journal: testnet-eth-base.journal
+#       assets: []
+#     - networks: [ethereum-sepolia, robinhood-testnet]
+#       vaults: ["0xA555077E1497a870C3CefC0354D40c42D48Ce451", "0x576f2e4CdE5CfBe9b2035969B67Ec1C5967A4599"]
+#       journal: testnet-eth-hood.journal
+#       assets: []
+#     - networks: [ethereum-sepolia, hyperliquid-testnet]
+#       vaults: ["0x7170F74b56d7888FA6E2CE6C0542816Dff509b3A", "0x806782a1A113f8fb242F543c275DBC939A1956b9"]
+#       journal: testnet-eth-hyper.journal
+#       assets: []
+#     - networks: [ethereum-sepolia, arbitrum-sepolia]
+#       vaults: ["0x8aF9Fa14907cc385640971a1bA7B941EA7c4D99A", "0x3221102aC4159048960e061FC0ADb81De3133496"]
+#       journal: testnet-eth-arb.journal
+#       assets: []
+#     - networks: [base-sepolia, robinhood-testnet]
+#       vaults: ["0x9e5660845231AAb5572D26788119825DEa6eF102", "0xbe0dCDFC20B7e19Ee893206448dDb865e0b51374"]
+#       journal: testnet-base-hood.journal
+#       assets: []
+#     - networks: [base-sepolia, hyperliquid-testnet]
+#       vaults: ["0xf591f519fe87C851A7686cD4eD9b5DC5B62ce22e", "0x2110dEb3A2a01834A2d356470c4451Db9A5ba809"]
+#       journal: testnet-base-hyper.journal
+#       assets: []
+#     - networks: [base-sepolia, arbitrum-sepolia]
+#       vaults: ["0x6D206Eb0F742cF6ADbbF42Ae2724F3e0417a0d91", "0x51cD31AC42a838d225f3B42F830Af72d99Eb003a"]
+#       journal: testnet-base-arb.journal
+#       assets: []
+#     - networks: [robinhood-testnet, hyperliquid-testnet]
+#       vaults: ["0x63C581Be19c699e614D047d70A2db649469312eB", "0x75Ab3B99752f0DE0a2dB8AFa09f6503aACFb4576"]
+#       journal: testnet-hood-hyper.journal
+#       assets: []
+#     - networks: [robinhood-testnet, arbitrum-sepolia]
+#       vaults: ["0x25A155e97EA6e44E9e872b7Aa6866BC10991732e", "0x7063AA65e06d6d5759997c50c0134c1aF20be59D"]
+#       journal: testnet-hood-arb.journal
+#       assets: []
+#     - networks: [hyperliquid-testnet, arbitrum-sepolia]
+#       vaults: ["0x1d63844887FDd4C8a4fB21E50Ed75493ef817ef9", "0xDa8964472dd82C3a2d222aC352BF377ed364d33D"]
+#       journal: testnet-hyper-arb.journal
+#       assets: []
+
+# The tunnel API (docs/specs/ipow-conversion-tunnel.md): only Greatwall's
+# server calls it, with the key (its TUNNEL_API_URL and TUNNEL_API_KEY).
+# At most 2,000 sats a tunnel: the operator pays the BTC first, from a
+# wallet of a few thousand sats, keeping enough for the fee cap above.
+# It opens a tunnel only when the wallet can pay it on top of those open.
+# The user opens each tunnel's buy and pays its job fees; those fees are not
+# priced into the quote: in test ETH they are worth nothing, and at the test
+# rates they would exceed the few hundred sats of a swap.
+tunnel_api:
+  listen: 127.0.0.1:8787
+  key_env: TUNNEL_API_KEY
+  max_sats: 2000
+  price_fees: false

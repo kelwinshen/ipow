@@ -1,0 +1,10 @@
+{
+  "name": "tempo",
+  "private": true,
+  "type": "module",
+  "description": "Tempo's deployment scripts (scripts/), sent with viem's Tempo support; the contracts are the one source in ../../evm.",
+  "devDependencies": {
+    "ethers": "^6.14.0",
+    "viem": "^2.56.8"
+  }
+}

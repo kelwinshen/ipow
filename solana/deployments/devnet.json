@@ -1,0 +1,35 @@
+{
+  "about": "Each devnet program as deployed: its id, the commit whose program code it was built from (the last to change that code; later commits to b1d1739 changed comments only), and the length and sha256 of the deployed program (the account's data up to that length; the rest is zeros). A build embeds its source paths, so a build from another tree or path is other bytes: scripts/verify-devnet.sh compares devnet with this record, not with target/deploy. Recorded on 2026-10-09 from solana program dump, each equal to the pre-move build then in target/deploy.",
+  "programs": {
+    "ipow_light_client": {
+      "id": "Ctotq1SSaDJ2EUSe4sMdau92qBesyutH7GPaTRiYp4vJ",
+      "source": "9f5b691a1d7418161bed7d1aa8c6bf58c8588ef0",
+      "length": 378272,
+      "sha256": "117cb39f61f427e731de6e44227e9357a9389975149b89b5dcd0b68a1a5351a5"
+    },
+    "ipow_protocol": {
+      "id": "ChYhovM8vm2tuMRaRFn4m6etG979bjixVa71fXBDwjPL",
+      "source": "9f5b691a1d7418161bed7d1aa8c6bf58c8588ef0",
+      "length": 781344,
+      "sha256": "65ad34b2d92cd6e6b7ae3f7f2297db3dc0f37584bc3d2f1ce3c054a089f62dba"
+    },
+    "ipow_vault": {
+      "id": "3TZ1LJ4fVZVKbBUyzVMRjJ9FNPGaqVmGX56JuT5QdXEy",
+      "source": "f97885eb2169aefcd1665d7ce4f33f73c3abb686",
+      "length": 1331912,
+      "sha256": "ae42bfbd6184f659636ec4936fc84e1d83c4a19cb4acdb13522e4636d0d01548"
+    },
+    "conversion": {
+      "id": "9Argk3M83p8t5pWG92PhwEhYzysWt5n82siEWyb29w7D",
+      "source": "369e3587cfd62af585f500e20509c06e648175a7",
+      "length": 566960,
+      "sha256": "3c9324c04b17176e27f62aaaafd85b076d69a4e7b7e4974509b7367c2b92f2f7"
+    },
+    "beta_basket": {
+      "id": "3DuG4iNPptEyCAA7FM1YQja43G6HkTAwrswT3Ds2d94R",
+      "source": "63668a57667179fe8b0a6b7ba7b11dad3813eef5",
+      "length": 365912,
+      "sha256": "274a2f2c5a6534cbc33abd856c6ac3c63bc05a6c8c3827255122c056da883d54"
+    }
+  }
+}

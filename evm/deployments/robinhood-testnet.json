@@ -1,0 +1,89 @@
+{
+  "network": "robinhood",
+  "env": "testnet",
+  "chainId": 46630,
+  "lightClient": "0xc729b1a6d0325ae559614b6826127e11E51703c1",
+  "dataFee": "0x6AA1F2dd1a0A28F5FC3a88ec8A219e89987A57aB",
+  "protocol": "0xd6b425c7908E171a33dF2a4e6C5687eDF0D2d6c3",
+  "conversion": "0xf35A1C4A9dE7B7FffF62c7cEfda2ac91a71cB6cc",
+  "betaBaskets": "0x529bbD58E239C515465137B1e23cc1Fd1360Fb4b",
+  "homeFactory": "0x1611E0170471D75E7A3e979B0884699b938B1b22",
+  "receiptsFactory": "0xc3C9129d441504fF719cf813366Dd58F5003d140",
+  "vaults": [
+    {
+      "peer": 2,
+      "peerVault": "0xe1e67621c1a1f5e3aeb32ccc458ba6b5568711b023157a622035131400d0d7a0",
+      "vault": "0xf8374e052e5b3A8518f1834C527A09A91023F58C",
+      "home": "0x3d6f11ab86c9b13a34b6a3F5B329760AF603A7B3",
+      "receipts": "0xA88B23932537Ca6bE3CfFF4A66Ec2dE6566bb41f",
+      "homeFactory": "0x1611E0170471D75E7A3e979B0884699b938B1b22",
+      "receiptsFactory": "0xc3C9129d441504fF719cf813366Dd58F5003d140",
+      "source": "f97885eb2169aefcd1665d7ce4f33f73c3abb686",
+      "genesisEnd": 1792601923,
+      "at": "2026-10-07T16:58:57.893Z"
+    },
+    {
+      "peer": 1,
+      "peerVault": "0x000000000000000000000000a555077e1497a870c3cefc0354d40c42d48ce451",
+      "vault": "0x576f2e4CdE5CfBe9b2035969B67Ec1C5967A4599",
+      "home": "0xB879ff813a1cb1162e9F43C886aBDaa2e8Dbe794",
+      "receipts": "0x41f07514258c2a3D2Dfa261d0ae0b040A3C4e383",
+      "homeFactory": "0x1C770b7fb68c28FfAAAE386646ff9c03334EE89c",
+      "receiptsFactory": "0xbdAFC86221d3f139c6EBD77ED023e5554C7E2297",
+      "source": "f97885eb2169aefcd1665d7ce4f33f73c3abb686",
+      "genesisEnd": 1792604185,
+      "at": "2026-10-07T17:38:59.805Z"
+    },
+    {
+      "peer": 3,
+      "peerVault": "0x0000000000000000000000009e5660845231aab5572d26788119825dea6ef102",
+      "vault": "0xbe0dCDFC20B7e19Ee893206448dDb865e0b51374",
+      "home": "0x6f0Ac3e0a0164690C5F3F4519b2390a286B281f1",
+      "receipts": "0x51f1B231Aee11503BD8B998C32C74aA593c931dE",
+      "homeFactory": "0xfD7b1bEFC0086809ea02542A30e85e5c439AF4c0",
+      "receiptsFactory": "0xEF9173ADcF393846873e05e9d58411b8BA823f4c",
+      "source": "f97885eb2169aefcd1665d7ce4f33f73c3abb686",
+      "genesisEnd": 1792604466,
+      "at": "2026-10-07T17:41:56.145Z"
+    },
+    {
+      "peer": 9,
+      "peerVault": "0x0000000000000000000000007063aa65e06d6d5759997c50c0134c1af20be59d",
+      "vault": "0x25A155e97EA6e44E9e872b7Aa6866BC10991732e",
+      "home": "0xD8e4E19B7F03F6dbB67483e4C0A04720d9082aAd",
+      "receipts": "0x352a5d01ff87D29995e3a0eDe348A7c8c77815AF",
+      "homeFactory": "0x5FF4ee23851eDF4445c01460A108187c501eEbFd",
+      "receiptsFactory": "0xc1C5dBFF7D71d254502a78276875144BcD513f58",
+      "source": "f97885eb2169aefcd1665d7ce4f33f73c3abb686",
+      "genesisEnd": 1792604567,
+      "at": "2026-10-07T17:43:32.539Z"
+    },
+    {
+      "peer": 7,
+      "peerVault": "0x00000000000000000000000075ab3b99752f0de0a2db8afa09f6503aacfb4576",
+      "vault": "0x63C581Be19c699e614D047d70A2db649469312eB",
+      "home": "0xD8b5675720255DA4DD989FdD114A7B82d2B639Ad",
+      "receipts": "0xAD3CcB6B808A8710C99Ad77c7f14d5209AFa8Ce4",
+      "homeFactory": "0xDe908E13Df6105C9c710B0875f81e1EBD57aBd51",
+      "receiptsFactory": "0x8D259bc04cC95d29e09A43941823089CFeb85D10",
+      "source": "f97885eb2169aefcd1665d7ce4f33f73c3abb686",
+      "genesisEnd": 1792605727,
+      "at": "2026-10-07T18:07:06.228Z"
+    }
+  ],
+  "deployer": "0x9784B80BC7b95753f2a2732649F3a1136b4c2BF1",
+  "minHeight": 965567,
+  "maxSats": "100000",
+  "solanaPairAccount": "GCpZ6DFQyeVLNBzKbeV4okqW745kioHvJmGGAjs1W1So",
+  "at": "2026-10-02T14:29:04.727Z",
+  "source": "a9493c7",
+  "vaultParts": "made by the vault",
+  "previousConversion": "0x6c5d75F830C002f4B73b4625F3E2bFaeC50b5D2E",
+  "sources": {
+    "Conversion": "b1d17397a31d91e96f9c4b29d152cacfb16ef160",
+    "BetaBaskets": "b1d17397a31d91e96f9c4b29d152cacfb16ef160",
+    "VaultHomeFactory": "f97885eb2169aefcd1665d7ce4f33f73c3abb686",
+    "VaultReceiptsFactory": "f97885eb2169aefcd1665d7ce4f33f73c3abb686"
+  },
+  "previousBetaBaskets": "0x7EbA21758f149b18FDc0438B492D6059E37031b2"
+}

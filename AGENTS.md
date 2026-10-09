@@ -11,16 +11,17 @@ the real thing changes. Link, don't copy.
 
 ## Design & spec discipline (read this first)
 
-- [`docs/design/ipow.md`](docs/design/ipow.md) and
-  [`docs/design/ipow-implementation.md`](docs/design/ipow-implementation.md)
-  are the **canonical design docs** (see [`.github/CODEOWNERS`](.github/CODEOWNERS)
-  — changes to them are reviewed the same as contract changes). Reason and
-  implement *from* them; treat them as the spec.
 - [`docs/design/ipow-protocol.md`](docs/design/ipow-protocol.md) is the
-  **canonical design of the new protocol**, approved and being built. It
-  is the spec for the new contracts. It does not describe what is live;
-  its "Build status" section says what exists.
-- **Before changing contract, program, or operator behavior, read the
+  **canonical design doc**, and the specs in [`docs/specs/`](docs/specs/)
+  are the canonical specs of the applications and features built on it
+  (see [`.github/CODEOWNERS`](.github/CODEOWNERS) — changes to them are
+  reviewed the same as contract changes). Reason and implement *from*
+  them; treat them as the spec. The design doc's "Build status" section
+  says what exists.
+- [`docs/archive/`](docs/archive/) holds the design docs of the retired
+  generation (git tag `legacy-v1`) and other history. **Not
+  authoritative** for anything in the repository today.
+- **Before changing contract, program, or node behavior, read the
   relevant section of those docs first** — don't rely on a summary of them
   found elsewhere in the repo or in a prior conversation.
 - **Validate code against the design. On any divergence — the code doesn't
@@ -35,30 +36,32 @@ the real thing changes. Link, don't copy.
   diff and relay its findings — fix the ones the user wants fixed. Design
   deviations it surfaces are flagged per the rule above, not silently
   fixed in either direction.
-- Real deployed addresses are **not** in the design docs — each network's
-  own README (`programmable-network/<chain>/README.md`) has its current
-  live addresses. Don't add an address table to a design doc; that's
-  deployment data, not design.
+- Real deployed addresses are **not** in the design docs or specs — each
+  network's own README has its current live addresses (see the map
+  below). Don't add an address table to a design doc; that's deployment
+  data, not design.
 - `docs/drafts/` (see [`docs/README.md`](docs/README.md)) is where an
   unratified, work-in-progress design proposal goes before it's promoted
   into a canonical doc, folded into an existing one, or dropped.
   [`docs/drafts/README.md`](docs/drafts/README.md) lists what is there.
   If you write a design doc for something that isn't built and verified
-  yet, it goes in `docs/drafts/`, not into a canonical doc as if it were
-  already true.
+  yet, it goes in `docs/drafts/`, not into `docs/design/` or
+  `docs/specs/` as if it were already true.
 
 ## Source-of-truth map
 
 | To know about… | Read… |
 |---|---|
-| What the system is, the problem, the two-layer architecture, trust model | root [`README.md`](README.md), then [`docs/design/ipow.md`](docs/design/ipow.md) |
-| Exact mechanisms: the header relay, both Conversion generations, Beta's statement-bus lifecycle, composition, per-network contract variants and why | [`docs/design/ipow-implementation.md`](docs/design/ipow-implementation.md) |
-| The new protocol being built (light client, operators, jobs, claims), its decisions, and what is built so far | [`docs/design/ipow-protocol.md`](docs/design/ipow-protocol.md); build order in [`docs/drafts/ipow-build-plan.md`](docs/drafts/ipow-build-plan.md) |
-| Superseded/removed designs, and a dated log of specific live runs/incidents | [`docs/drafts/`](docs/drafts/) — **not authoritative** for current behavior |
-| Real deployed addresses, per network | each network's own README, e.g. [`programmable-network/ethereum/README.md`](programmable-network/ethereum/README.md) — **not** the design docs |
-| Exact contract behavior (bond amounts, timeouts, auction mechanics) | the Solidity source itself — `programmable-network/<chain>/contracts/*.sol`; every EVM network runs the same source except Hyperliquid (router+facets split) and Tempo (PathUSD variants) — see each package's own README for why |
-| Solana program behavior | `programmable-network/solana/programs/{ipow,ipow-conversion,beta-factory}/src/`; see [`programmable-network/solana/README.md`](programmable-network/solana/README.md) |
-| The operator service's tick logic (approving, converting, streaming, tunneling, Beta claim/relay/exercise) | `core/operator/crates/operator/src/{chain_operator,beta_operator,beta_registry}.rs`; [`core/operator/README.md`](core/operator/README.md) for the CLI entry points |
+| What the system is, for a first-time reader | root [`README.md`](README.md) |
+| The protocol (light client, operators, jobs, fees, punishment, claims, vault), its numbered decisions, and what is built and deployed | [`docs/design/ipow-protocol.md`](docs/design/ipow-protocol.md) |
+| A built application or feature (Conversion, the tunnel, BETA, vault genesis, the other networks, the SDK) | its spec in [`docs/specs/`](docs/specs/); index in [`docs/README.md`](docs/README.md) |
+| Build order, dated live runs and incidents | [`docs/drafts/`](docs/drafts/) (build plan, live-run log) — **not authoritative** for current behavior |
+| The retired generation and superseded designs | [`docs/archive/`](docs/archive/) — **not authoritative** for current behavior |
+| Real deployed addresses, per network | Sepolia: [`evm/README.md`](evm/README.md); Solana devnet: [`solana/README.md`](solana/README.md); every other network: `networks/<chain>/README.md`. The machine-readable records they follow: `evm/deployments/<network>-testnet.json` (read back by `evm/scripts/verify-deployments.ts`) and `solana/deployments/devnet.json` (by `solana/scripts/verify-devnet.sh`) — **not** the design docs |
+| Exact contract behavior (bond amounts, timeouts, auction mechanics) | the Solidity source itself — `evm/contracts/protocol/` (light client, protocol, vault) and `evm/contracts/applications/` (Conversion, BETA); every EVM network runs this one source, its builds and settings chosen per network in `evm/deploy/networks.ts` |
+| Solana program behavior | `solana/programs/protocol/*/src/` and `solana/programs/applications/*/src/`; see [`solana/README.md`](solana/README.md) |
+| The node: the operator, guardian and attester roles, and the vault's roles | `node/crates/`; [`node/README.md`](node/README.md) for running it |
+| The SDK apps build on | `sdk/src/`; [`sdk/README.md`](sdk/README.md) |
 | Current trust model / what's centralized today | [`SECURITY.md`](SECURITY.md) — kept as a direct statement of present state, not an aspirational one |
 
 ## Agent rules
@@ -78,8 +81,8 @@ the real thing changes. Link, don't copy.
   it, not just by assuming the existing `.gitignore` covers a new file.
 - Before reporting deployment/config work as done, verify live state by
   reading it back on-chain — don't trust a transaction receipt alone (see
-  the Tempo CREATE-address bug documented in
-  `docs/design/ipow-implementation.md`'s Tempo section for why this
+  the Tempo CREATE-address bug in
+  [`networks/tempo/README.md`](networks/tempo/README.md) for why this
   matters concretely, not just as caution).
 
 ## Documentation

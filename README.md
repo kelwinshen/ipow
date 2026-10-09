@@ -1,116 +1,161 @@
-# iPoW — Interoperable Proof of Work
+# iPoW
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Security: unaudited](https://img.shields.io/badge/security-unaudited-red.svg)](SECURITY.md)
-[![Status: testnet/devnet only](https://img.shields.io/badge/status-testnet%2Fdevnet-yellow.svg)](SECURITY.md)
+[![Status: test networks only](https://img.shields.io/badge/status-test%20networks-yellow.svg)](SECURITY.md)
 
 > [!WARNING]
-> This is under active development, deployed to testnets and devnet only.
-> It has **not been audited** and is not production-ready. See
-> [SECURITY.md](SECURITY.md) for the current trust model.
+> Deployed on test networks only. Not audited. Not for real funds. See
+> [SECURITY.md](SECURITY.md) for what is trustless today and what the
+> deployer still controls.
 
-iPoW moves value between Bitcoin and any of its supported programmable
-networks (Ethereum, Hedera, Polkadot, Base, Robinhood Chain, Hyperliquid,
-Tempo, Solana) — and, just as importantly, between those networks
-themselves, using Bitcoin as the shared settlement layer rather than a
-separate bridge for every pair of chains. Move BTC onto Ethereum as a
-native asset, move it back off, or go straight from an asset on Ethereum
-to one on Solana: all three are the same underlying mechanism, just with
-the Bitcoin leg on one, both, or neither end being visible to the user.
+iPoW uses Bitcoin's chain as the shared source of truth between
+programmable networks (Ethereum, Solana, and other EVM networks). Instead
+of a bridge per pair of networks, each network verifies Bitcoin itself,
+and anything one network needs another to know is written to Bitcoin.
 
-Each destination chain runs a contract/program that verifies Bitcoin
-transactions itself via SPV (header chain + Merkle proof), rather than
-trusting a third-party oracle for "this Bitcoin payment happened." An
-off-chain operator service relays Bitcoin headers and coordinates the
-approve/settle steps, but never custodies user funds outside of a short,
-bounded window.
+- **Every network runs a Bitcoin light client.** A contract (on Solana, a
+  program) that stores Bitcoin block headers and checks their
+  proof-of-work, difficulty and Merkle proofs on chain. Anyone can add
+  blocks; there is no oracle and no owner.
+- **Operators bond stake and take jobs.** Anyone can lock a bond and
+  become an operator. An application opens a job, operators bid for it,
+  and the winner must publish a tagged Bitcoin transaction for it and
+  prove it to the light client before a deadline. A missed deadline, or a
+  proof on blocks that are not Bitcoin's real chain, gets its escrow
+  slashed. Guardians, anyone watching, challenge false proofs and are paid
+  from the slash.
+- **Vaults move assets between networks.** A user locks an asset in the
+  vault on one network and receives a receipt token for it on another
+  (lock ETH on Ethereum, receive vETH on Solana; burn the vETH, get the ETH
+  back). The operator carries the record of the lock as a claim, backed by
+  its vault bond and anchored by one hash on Bitcoin. Anyone can object to
+  a false claim during its 7-day window; a proven lie is slashed. A claim
+  is safe while at least one honest guardian watches.
 
-Two independent layers share that same Bitcoin-SPV foundation:
-**Conversion** (`iPoWConversion.sol` / `ipow-conversion`) is a
-permissionless, staked-auction native↔Bitcoin swap — the base primitive.
-**Beta** (`BetaHub.sol`/`BetaVault.sol` / `beta-factory`) mints a
-composed, multi-network token (BETA) backed by real locked value on each
-network in its composition, using the same Bitcoin-anchored-statement
-pattern, bonded parties, and permissionless judging Conversion
-established — but with no direct call/CPI relationship between the two;
-see [docs/design/ipow.md](docs/design/ipow.md) for the full design (an
-earlier attempt at wiring them together via CPI was tried and abandoned —
-see [docs/drafts/abandoned-cpi-funding-attempt.md](docs/drafts/abandoned-cpi-funding-attempt.md)
-for why).
+The full design, with every decision numbered (D1, D2, ...), is
+[`docs/design/ipow-protocol.md`](docs/design/ipow-protocol.md).
 
-See [docs/design/ipow-implementation.md](docs/design/ipow-implementation.md)
-for how a conversion actually flows end to end, and
-[SECURITY.md](SECURITY.md) for the current
-trust model — this is a testnet/devnet deployment under active development,
-and the docs are direct about what's centralized today versus what's planned.
+## Protocol and applications
 
-## Layout
+The protocol is the shared layer: light client, operators and jobs,
+claims, and the vault. Applications are contracts that register with the
+protocol (no approval needed) and open jobs on it; they hold no operator
+logic of their own.
 
-This is a monorepo — `core/operator` deploys independently of the
-on-chain contracts (its own CI job, its own release cadence) but is
-tracked in this same repository, not a separate one.
+```
+            ┌─────────────────────── applications ───────────────────────┐
+            │  Conversion: a network's coin or token  ⇄  real BTC        │
+            │              (and network ⇄ network, via one BTC payment)  │
+            │  BETA:       a token backed by a basket of vault receipts  │
+            └──────────────┬──────────────────────────────┬──────────────┘
+                     opens jobs                     holds receipts
+            ┌──────────────┴──────────── protocol ────────┴──────────────┐
+            │  light client   operators, bonds, jobs, claims    vault    │
+            └──────────────┬─────────────────────────────────────────────┘
+                 headers, proofs, tagged transactions, batch hashes
+            ┌──────────────┴─────────────────────────────────────────────┐
+            │                         Bitcoin                            │
+            └────────────────────────────────────────────────────────────┘
+```
+
+- **Conversion** ([spec](docs/specs/ipow-conversion-app.md)): a user sells
+  a network's coin or a token for real BTC, or buys it with BTC. The
+  operator that wins the job is the other side of the swap; its Bitcoin
+  payment is proven to the light client before it is paid. Two Conversion
+  legs linked by one Bitcoin payment convert between two programmable
+  networks ([tunnel spec](docs/specs/ipow-conversion-tunnel.md)).
+- **BETA baskets** ([spec](docs/specs/ipow-beta-app.md)): anyone creates a
+  token backed by a fixed basket of up to 8 parts, for example 1 SOL +
+  1 vETH. Minting deposits the parts; burning returns them.
+
+## Networks
+
+Deployed on test networks, all from the same source in this repository.
+Each network's README describes the deployment there and has its
+addresses: an EVM network's are those of its deployment record (below),
+with the vaults of the genesis redeploy of 2026-10-07.
+
+| Network | Number | Addresses |
+|---|---|---|
+| Ethereum Sepolia | 1 | [`evm/README.md`](evm/README.md) |
+| Solana devnet | 2 | [`solana/README.md`](solana/README.md) |
+| Base Sepolia | 3 | [`networks/base`](networks/base/README.md) |
+| Robinhood Chain testnet | 4 | [`networks/robinhood`](networks/robinhood/README.md) |
+| Polkadot Hub TestNet | 5 | [`networks/polkadot`](networks/polkadot/README.md) |
+| Hedera testnet | 6 | [`networks/hedera`](networks/hedera/README.md) |
+| HyperEVM testnet | 7 | [`networks/hyperliquid`](networks/hyperliquid/README.md) |
+| Tempo testnet (Moderato) | 8 | [`networks/tempo`](networks/tempo/README.md) |
+| Arbitrum Sepolia | 9 | [`networks/arbitrum`](networks/arbitrum/README.md) |
+
+The machine-readable records are `evm/deployments/<network>-testnet.json`,
+and `sdk/src/generated/` holds what the SDK reads. Every EVM deployment is
+read back from its network by `evm/scripts/verify-deployments.ts`. The
+light clients take Bitcoin mainnet blocks: there is no Bitcoin testnet
+mode, and operators spend real (small) amounts of BTC.
+
+## Repository layout
 
 | Path | What it is |
-| --- | --- |
-| `programmable-network/ethereum` | Solidity contracts, deployed to Sepolia |
-| `programmable-network/hedera` | Same contracts, deployed to Hedera Testnet (via the Hashio JSON-RPC relay) |
-| `programmable-network/polkadot` | Same contracts, deployed to Polkadot Hub TestNet (via pallet-revive's `eth-rpc`) |
-| `programmable-network/base` | Same contracts, deployed to Base Sepolia |
-| `programmable-network/robinhood` | Same contracts, deployed to Robinhood Chain testnet |
-| `programmable-network/hyperliquid` | Same contracts behind a router+facets split (HyperEVM's tighter block gas limit forced it), deployed to HyperEVM testnet |
-| `programmable-network/tempo` | Same contracts, plus PathUSD-denominated variants for the ones Tempo's chain-level native-value rejection breaks (`BetaVaultPathUSD`, `BetaHubPathUSD`, `iPoWConversionPathUSD`), deployed to Tempo (Moderato) testnet |
-| `programmable-network/solana` | Anchor programs (`ipow`, `ipow-conversion`, `beta-factory`), deployed to Solana devnet |
-| `core/operator` | Rust service that streams Bitcoin headers and drives Beta's claim→relay→exercise lifecycle across all 8 networks above (EVM via one adapter set, Solana via a separate one behind the same trait). Also drives the older, fixed-operator Conversion tunnel fused into `iPoW`/`ipow` itself, on every network except Tempo. The newer permissionless-auction Conversion (`iPoWConversion.sol`/`ipow-conversion`) needs no operator automation at all, by design — claimants act on their own |
-| `packages/shared-types` | TypeScript types shared across the EVM/Solana script tooling |
+|---|---|
+| [`evm/`](evm/README.md) | Hardhat project: the Solidity contracts for every EVM network. `contracts/protocol` (light client, protocol, vault), `contracts/applications/{conversion,beta}`, `contracts/testnet` (mock RWA tokens), `deploy/` (per-network settings), `scripts/`, `test/`, `deployments/` |
+| [`solana/`](solana/README.md) | Anchor workspace: `programs/protocol/{ipow-light-client,ipow-protocol,ipow-vault}` and `programs/applications/{conversion,beta-basket}` |
+| [`node/`](node/README.md) | The Rust service that runs the operator, guardian and attester roles, and the vault's roles, on any number of networks |
+| [`sdk/`](sdk/README.md) | TypeScript SDK (`@ipow/sdk`) for apps built on the protocol |
+| [`networks/`](networks/) | One folder per EVM network other than Ethereum: its README (addresses, what is particular to it) and `.env.example`; Tempo also has its own deploy scripts |
+| [`docs/`](docs/README.md) | `design/` (the canonical design), `specs/` (built applications and features), `drafts/` (build plan, live-run records), `archive/` (the retired generation) |
 
-Each package has its own README with setup, testing, and deployment
-instructions specific to that chain.
+## Quick start
 
-## Why one contract, seven EVM chains
+Requirements: Node 22.18 or later (it runs the TypeScript scripts with
+its type stripping) and pnpm 11; Rust; the Solana CLI (CI uses
+v3.1.10) to build the Solana programs and for the SDK's tests (a local
+validator). The node's tests need the built programs, not the CLI.
+None of the tests need RPC endpoints or keys: they run on local networks.
+These are the commands CI runs ([`.github/workflows/check.yml`](.github/workflows/check.yml)).
 
-Ethereum, Hedera, Polkadot Hub, Base, and Robinhood Chain all run the same
-Solidity source (`iPoW.sol`, `iPoWTypes.sol`, `BitcoinPrimitives.sol`,
-`BetaHub.sol`, `BetaVault.sol`) — each exposes a standard Ethereum
-JSON-RPC interface (Hedera via its Smart Contract Service, Polkadot Hub
-via pallet-revive's `eth-rpc`), so no chain-specific contract logic is
-needed. The operator and deploy scripts do account for real differences
-between them (e.g. Hedera's `msg.value` being tinybar-scaled rather than the
-usual 18-decimal weibar), and those are called out inline where they matter.
+```sh
+pnpm install --frozen-lockfile
 
-Two networks needed real, network-specific contract variants, not just
-config differences:
+# EVM contracts (Hardhat, local network)
+pnpm --dir evm test
 
-- **Hyperliquid (HyperEVM)** has a tight testnet block gas limit that
-  the plain contracts' deployed bytecode exceeds. Fixed with a
-  router+facets (Diamond-style) split — the router exposes the identical
-  ABI via `delegatecall` dispatch to its facets, so every off-chain
-  caller is unaffected.
-- **Tempo (Moderato)** rejects any transaction carrying native value
-  outright, at the chain level — a real, confirmed constraint, not a gas
-  issue. `BetaVaultPathUSD.sol`/`BetaHubPathUSD.sol`/
-  `iPoWConversionPathUSD.sol` convert every bond/fee/payout that would
-  otherwise use `msg.value` to move Tempo's real settlement ERC20
-  (PathUSD) instead — the judging/verification logic itself is
-  unchanged from the reference contracts.
+# Solana programs: build one at a time, plus the test-limits builds, then test
+cd solana
+for p in protocol/ipow-light-client protocol/ipow-protocol protocol/ipow-vault applications/conversion applications/beta-basket; do
+  cargo build-sbf --manifest-path programs/$p/Cargo.toml
+done
+cargo build-sbf --manifest-path programs/protocol/ipow-light-client/Cargo.toml --features test-limits --sbf-out-dir target/deploy-test
+cargo build-sbf --manifest-path programs/protocol/ipow-vault/Cargo.toml --features test-limits --sbf-out-dir target/deploy-test
+cargo test --workspace
+cd ..
 
-Solana runs separate Anchor programs (`programmable-network/solana`) since
-it's not EVM-compatible: `ipow` (header relay), `ipow-conversion`
-(Conversion), `beta-factory` (Beta's hub) each implement the same
-lifecycle and SPV verification logic natively for the SVM.
+# The node (needs the Solana programs built above; starts Hardhat itself)
+(cd node && cargo build --workspace && cargo test --workspace)
 
-## Documentation
+# The SDK (its Solana tests run a local validator with the built programs)
+pnpm --dir sdk build && pnpm --dir sdk test
+```
 
-See [docs/README.md](docs/README.md) for the full documentation index —
-the canonical design docs, the current trust model, and where a
-work-in-progress design proposal belongs versus something that's already
-built and verified.
+Each package's README covers running and deploying.
 
-## Contributing
+## Used by Greatwall
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, the PR process, and code
-style. [CLAUDE.md](CLAUDE.md) has the source-of-truth map for anyone
-(human or AI) reading this repo for the first time.
+[Greatwall.finance](https://github.com/Renrensan/greatwall), in its own
+repository, is the user-facing app built on the SDK: it converts between
+networks and BTC with Conversion, and creates and mints BETA baskets.
 
-## License
+## Security
 
-[MIT](LICENSE).
+Unaudited, test networks only. The EVM contracts have no owner and no
+key, with one exception: the vaults' genesis key, until genesis ends. The
+deployer holds that key and the Solana programs' upgrade authority, and
+runs the only operator today.
+[SECURITY.md](SECURITY.md) states each of these with where to check it,
+and how to report a vulnerability.
+
+## Contributing and license
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). [CLAUDE.md](CLAUDE.md) has the
+rules and the source-of-truth map for anyone, human or AI, working in this
+repository. Licensed under the [MIT License](LICENSE).

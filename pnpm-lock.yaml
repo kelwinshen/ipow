@@ -207,22 +207,7 @@ importers:
 
   .: {}
 
-  packages/sdk:
-    dependencies:
-      '@coral-xyz/anchor':
-        specifier: 0.31.1
-        version: 0.31.1(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)
-      '@solana/web3.js':
-        specifier: ^1.98.4
-        version: 1.98.4(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)
-      buffer:
-        specifier: ^6.0.3
-        version: 6.0.3
-      ethers:
-        specifier: ^6.14.0
-        version: 6.17.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
-
-  programmable-network/ethereum:
+  evm:
     devDependencies:
       '@nomicfoundation/hardhat-ignition':
         specifier: ^3.0.0
@@ -267,7 +252,35 @@ importers:
         specifier: ^5.7.3
         version: 5.9.3
 
-  programmable-network/solana:
+  networks/tempo:
+    devDependencies:
+      ethers:
+        specifier: ^6.14.0
+        version: 6.17.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
+      viem:
+        specifier: ^2.56.8
+        version: 2.56.8(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76)
+
+  sdk:
+    dependencies:
+      '@coral-xyz/anchor':
+        specifier: 0.31.1
+        version: 0.31.1(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)
+      '@solana/web3.js':
+        specifier: ^1.98.4
+        version: 1.98.4(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)
+      buffer:
+        specifier: ^6.0.3
+        version: 6.0.3
+      ethers:
+        specifier: ^6.14.0
+        version: 6.17.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
+    devDependencies:
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+
+  solana:
     dependencies:
       '@anchor-lang/core':
         specifier: ^1.0.0
@@ -306,15 +319,6 @@ importers:
       typescript:
         specifier: ^5.7.3
         version: 5.9.3
-
-  programmable-network/tempo:
-    devDependencies:
-      ethers:
-        specifier: ^6.14.0
-        version: 6.17.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
-      viem:
-        specifier: ^2.56.8
-        version: 2.56.8(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76)
 
 packages:
 

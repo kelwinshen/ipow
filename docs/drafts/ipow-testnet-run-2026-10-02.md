@@ -11,8 +11,8 @@ Every figure below was read back from the chains.
 - **The deployment:** the new protocol, deployed the same day on seven EVM
   test networks and Solana devnet (spec, Build status row 8). This run used
   Sepolia only.
-- **The node** (`core/node`, settings `core/node/node.testnet.yml`, started
-  with `core/node/run-testnet.sh`), running as operator and guardian. On
+- **The node** (`node`, settings `node/node.testnet.yml`, started
+  with `node/run-testnet.sh`), running as operator and guardian. On
   Solana it had no bond, so its operator only waited.
 - **One key, both sides:** the same key, `0x9784…2BF1`, opened the job and
   took it as operator. A self-test: the protocol allows it, and a second

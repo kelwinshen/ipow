@@ -3,9 +3,13 @@
 **Status: historical record, not spec.** A dated account of specific
 deploys, live transactions, incidents, and bugs found while building and
 running this system for real. Not authoritative for current behavior —
-see [`../design/ipow.md`](../design/ipow.md) and
-[`../design/ipow-implementation.md`](../design/ipow-implementation.md)
-for that. Kept because the *lessons* here (a caught bug, a chain-level
+see [`../design/ipow-protocol.md`](../design/ipow-protocol.md) for that.
+The entries of 2026-09-21 to 2026-09-23, and the housekeeping note of
+2026-09-24, are about the old contract
+generation, retired at the tag `legacy-v1` and described in
+[`../archive/ipow.md`](../archive/ipow.md) and
+[`../archive/ipow-implementation.md`](../archive/ipow-implementation.md).
+Kept because the *lessons* here (a caught bug, a chain-level
 quirk, a timing constant raised after a near-miss) explain why the
 current design has specific numbers and rules, even after the narrative
 detail itself stops mattering day to day.
@@ -49,7 +53,7 @@ slash wouldn't fully back the units the lie created.
 
 Solana `beta-factory` upgraded in place (slot 502011808); Ethereum fresh
 `BetaVault` v3 deployed (Sepolia can't upgrade in place). This is the
-design documented as current in `ipow.md`/`ipow-implementation.md`.
+design documented as current in `ipow.md`/`ipow-implementation.md` (now in `docs/archive/`).
 
 **First live v3 mint (block 968030)**: operator anchored MINT and, right
 behind it on its own chain, self-ATTEST (both fee-bumped after ~2 hours
@@ -118,7 +122,7 @@ drifted apart).
 **Tempo and Hyperliquid deploy blockers, found and resolved the same
 day**: Tempo's contract-creation addresses turned out to ignore the
 sender's nonce lane (a confirmed chain bug — see
-`ipow-implementation.md`'s Tempo section for the rule this produced:
+`docs/archive/ipow-implementation.md`'s Tempo section for the rule this produced:
 never trust a Tempo deploy receipt). Hyperliquid's HyperEVM testnet block
 gas limit turned out to be too small for the plain contracts to even
 deploy — resolved with the router+facets split, applied in turn to
@@ -159,7 +163,7 @@ state.
 undocumented fact that Tempo rejects any transaction carrying native
 value outright — not fixable by changing how a script calls the existing
 contract; required the PathUSD-denominated `BetaVaultPathUSD.sol`
-variant documented in `ipow-implementation.md`. Because the MINT anchor's
+variant documented in `docs/archive/ipow-implementation.md`. Because the MINT anchor's
 operator had already self-attested, the mint exercised immediately rather
 than waiting for the full challenge window.
 
@@ -168,12 +172,12 @@ The scripts that drove these two runs were one-off and hard-coded to them
 BetaVault), and were removed on 2026-10-09:
 `programmable-network/ethereum/scripts/live_multi_network_{evm,commit_and_process,fix_party}.mjs`
 and `programmable-network/solana/scripts/live_multi_network_{mint,solana_process}.ts`.
-They remain in git history at commit `9f5b691`.
+They remain in git history at those paths at commit `9f5b691`.
 
 ## 2026-10-03: Conversion redeployed for the tunnel (T1, T2)
 
 Conversion with `sellInWindow` and `buyFor`
-([`ipow-conversion-tunnel.md`](ipow-conversion-tunnel.md)), deployed by
+([`ipow-conversion-tunnel.md`](../specs/ipow-conversion-tunnel.md)), deployed by
 the owner. None of the contracts replaced held a swap.
 
 | Network | New Conversion | Replaced | Unused |
@@ -207,7 +211,7 @@ Friction, for the SDK and Greatwall:
 ## 2026-10-04: the first tunnel, SOL on devnet into AAPL on Sepolia
 
 The first conversion between two programmable networks on the new protocol
-([`ipow-conversion-tunnel.md`](ipow-conversion-tunnel.md)), run from
+([`ipow-conversion-tunnel.md`](../specs/ipow-conversion-tunnel.md)), run from
 Greatwall's Convert by the owner, with one operator node on both legs.
 
 | UTC | Step | Where |
@@ -354,7 +358,7 @@ package's own `scripts/deploy-mock-rwa.ts`, since ethers cannot send
 Tempo's transactions: three, named "<asset> (Tempo Testnet Greatwall)" —
 EURC, USDY, syrupUSDC, faucet 100 each — vault assets 1–3, fees in
 PathUSD, each sent in the ordinary nonce lane with the address worked out
-from the nonce and the code read there (implementation doc, Tempo
+from the nonce and the code read there (docs/archive/ipow-implementation.md, Tempo
 section); every receipt named the same address. Nine transactions, no
 failures; read back by the script. Greatwall's Tempo wallet now reads
 these tokens' balances and claims the faucet with an ordinary MetaMask
@@ -368,7 +372,7 @@ hold there yet; see the memory note of the day.
 
 Greatwall lists all five EVM sets and the Solana one, with logos. The
 node's testnet settings now name Base Sepolia, HyperEVM testnet and
-Robinhood testnet too (`core/node/node.testnet.yml`: their light client,
+Robinhood testnet too (`node/node.testnet.yml`: their light client,
 protocol and Conversion, a bid of at most 0.01 of the coin, and every RWA
 token priced at ten sats per dollar of the real asset, dollar-like tokens
 at 10 sats), with `run-testnet.sh` loading each package's `.env`; the
@@ -380,7 +384,7 @@ tokens: the node's token buys are not built there.
 ## 2026-10-05: BetaBaskets redeployed, and the basket program upgraded (E4)
 
 By the owner, once per network, for the creator's naming of a basket's
-token and its metadata URI (E4, docs/drafts/ipow-beta-app.md). The
+token and its metadata URI (E4, docs/specs/ipow-beta-app.md). The
 baskets' record changed, so on Ethereum it is a new contract: the old one
 keeps its baskets under its own rules (`scripts/redeploy-beta.ts`). On
 Solana the program was upgraded in place, after extending its account by
@@ -409,7 +413,7 @@ first real call is the first basket made from Greatwall.
 ## 2026-10-05: BetaBaskets redeployed again, and the program upgraded (E5)
 
 By the owner, once per network, the same evening, for parts named before
-their receipt exists (E5, docs/drafts/ipow-beta-app.md): the parts'
+their receipt exists (E5, docs/specs/ipow-beta-app.md): the parts'
 record changed again, so a new contract on each EVM network (the E4
 contracts of the morning keep their baskets); Solana's program upgraded
 in place, the build of 365,912 bytes within the account extended that

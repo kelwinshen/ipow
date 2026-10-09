@@ -4,16 +4,18 @@
 # A required-review rule is satisfied by any ONE of the owners listed for the
 # matched pattern. Owners must have write access to the repo for their
 # review to count. GitHub reads this file from the repository's default
-# branch (`dev`).
+# branch (`master`).
 #
 # See: https://docs.github.com/articles/about-code-owners
 
-# Canonical design docs — the source of truth for the protocol's design.
-# Changes here require @kelwinshen's review, same as changes to the
-# contracts/programs they describe.
+# Canonical design doc (docs/design/ipow-protocol.md) and the specs of the
+# built applications and features (docs/specs/) — the source of truth for
+# the protocol's design. Changes here require @kelwinshen's review, same as
+# changes to the contracts/programs they describe.
 /docs/design/**  @kelwinshen
+/docs/specs/**   @kelwinshen
 
 # Everything else defaults to requiring @kelwinshen's review too, while this
 # is a single-maintainer project — narrow this once other maintainers own
-# specific areas (e.g. a given programmable-network/<chain> package).
+# specific areas (e.g. evm/, solana/ or a given networks/<network>).
 *                       @kelwinshen

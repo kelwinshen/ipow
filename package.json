@@ -5,8 +5,8 @@
   "main": "index.js",
   "scripts": {
     "test": "pnpm run test:ethereum && pnpm run test:sdk",
-    "test:ethereum": "pnpm --dir programmable-network/ethereum test",
-    "test:sdk": "pnpm --dir packages/sdk build && pnpm --dir packages/sdk test"
+    "test:ethereum": "pnpm --dir evm test",
+    "test:sdk": "pnpm --dir sdk build && pnpm --dir sdk test"
   },
   "keywords": [],
   "author": "",

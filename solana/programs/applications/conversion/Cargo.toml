@@ -1,0 +1,39 @@
+[package]
+name = "conversion"
+version = "0.1.0"
+description = "Conversion: an application on the iPoW protocol that swaps SOL or a token for real BTC and back. Design: docs/specs/ipow-conversion-app.md."
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "conversion"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build", "ipow-protocol/idl-build", "ipow-light-client/idl-build"]
+anchor-debug = []
+custom-heap = []
+custom-panic = []
+
+[dependencies]
+anchor-lang = { version = "1.0.0", features = ["init-if-needed"] }
+anchor-spl = { version = "1.0.0", default-features = false, features = ["token", "token_2022", "associated_token"] }
+ipow-protocol = { path = "../../protocol/ipow-protocol", features = ["cpi"] }
+ipow-light-client = { path = "../../protocol/ipow-light-client", features = ["no-entrypoint"] }
+sha2 = "0.11.0"
+
+[dev-dependencies]
+solana-clock = "3.0"
+litesvm = "0.11.0"
+anchor-litesvm = "0.4.0"
+solana-program = "3.0.0"
+solana-signer = "3.0.0"
+solana-keypair = "3.0.1"
+litesvm-token = "0.11.0"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }
