@@ -17,7 +17,7 @@ deployed on Sepolia (chain 11155111) on 2026-10-02 from the one source in
 code compared with the build and each setting read (`node
 scripts/verify-deployments.ts` in `evm`). Lowest Bitcoin height 965,567;
 Conversion's largest swap 100,000 sats. The vaults were redeployed in
-genesis on 2026-10-07 from commit `f97885e`
+genesis on 2026-10-07 from commit `6b8617d`
 ([`docs/specs/ipow-vault-genesis.md`](../docs/specs/ipow-vault-genesis.md));
 the vault paired with Solana names the pair account
 `Cztcuoj5XAhZ35ky6Ud3WMq9R7ijcvPTnnvSjGQ88sEg`, `["config", 1]` of the vault
@@ -46,7 +46,7 @@ replaced are in [`deployments/replaced/`](deployments/replaced/).
 **Genesis.** These vaults' receipts started in genesis for the deployer,
 ending between 2026-10-21 16:56 and 2026-10-21 17:50 UTC at the latest
 (`genesisEnd` in the record). `sdk/scripts/genesis-check.ts`, run at commit
-`2897c06` (then `packages/sdk/scripts/genesis-check.ts`) with the genesis
+`479d93e` (then `packages/sdk/scripts/genesis-check.ts`) with the genesis
 run's ledger
 ([`deployments/genesis-testnet.json`](deployments/genesis-testnet.json)),
 read every genesis receipt and issue back from the chains: 409 receipts and

@@ -172,7 +172,7 @@ The scripts that drove these two runs were one-off and hard-coded to them
 BetaVault), and were removed on 2026-10-09:
 `programmable-network/ethereum/scripts/live_multi_network_{evm,commit_and_process,fix_party}.mjs`
 and `programmable-network/solana/scripts/live_multi_network_{mint,solana_process}.ts`.
-They remain in git history at those paths at commit `9f5b691`.
+They remain in git history at those paths at commit `3249607`.
 
 ## 2026-10-03: Conversion redeployed for the tunnel (T1, T2)
 
@@ -206,7 +206,7 @@ Friction, for the SDK and Greatwall:
   Robinhood and Tempo (each checked by its chain id first), and Robinhood
   was redeployed through it, once.
 - Hedera, Polkadot and Tempo kept the old Conversion: its code was added
-  to `deployments/source-a9493c7/` so the check compares them with it.
+  to `deployments/source-2aa97ca/` so the check compares them with it.
 
 ## 2026-10-04: the first tunnel, SOL on devnet into AAPL on Sepolia
 
@@ -444,12 +444,12 @@ address predicted from the deployer's settled nonce (spec Build status,
 row 7) and read back where predicted.
 
 Each side got factories of today's build first: the live factories are
-the a9493c7 build, which made the parts from within the vault and keeps
+the 2aa97ca build, which made the parts from within the vault and keeps
 no record of them, while today's vault asks its factories whether they
 made its parts. The pair's vaults record their own factories;
 `verify-deployments.ts` checks them against today's build
 (`source: "current"` on the vault's entry) and the first pairs against
-a9493c7 as before.
+2aa97ca as before.
 
 | Network | Vault paired with | Vault | Home | Receipts | Factories (home, receipts) |
 |---|---|---|---|---|---|
@@ -458,7 +458,7 @@ a9493c7 as before.
 
 Read back by the script (networks, peer vault, protocol, amounts,
 factories, parts, each contract's code) and by `verify-deployments.ts`.
-The reviewer's dry read of the live factories found the a9493c7 build
+The reviewer's dry read of the live factories found the 2aa97ca build
 before the first attempt was run; that attempt would have failed on its
 first simulation, spending nothing. Greatwall's Create pickers list the
 pair's assets on both sides. Not yet: the pair in the node's settings is
@@ -489,7 +489,7 @@ pair chains on Bitcoin (one real transaction per pair) and bonds.
 
 ## 2026-10-06: Arbitrum Sepolia as network 9, and every token in every vault
 
-`scripts/deploy-arbitrum.sh`, from commit `c9a2a60` (D141). In order:
+`scripts/deploy-arbitrum.sh`, from commit `71f80a0` (D141). In order:
 Solana devnet's vault upgraded to the build that takes 9; the protocol on
 Arbitrum Sepolia, its vault paired with Solana; Solana's pair account
 `["config", 9]` set up; Arbitrum paired with Sepolia, Base Sepolia,

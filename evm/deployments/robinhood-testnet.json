@@ -18,7 +18,7 @@
       "receipts": "0xA88B23932537Ca6bE3CfFF4A66Ec2dE6566bb41f",
       "homeFactory": "0x1611E0170471D75E7A3e979B0884699b938B1b22",
       "receiptsFactory": "0xc3C9129d441504fF719cf813366Dd58F5003d140",
-      "source": "f97885eb2169aefcd1665d7ce4f33f73c3abb686",
+      "source": "6b8617daa1e218c4964073d804ff60bb51a6395e",
       "genesisEnd": 1792601923,
       "at": "2026-10-07T16:58:57.893Z"
     },
@@ -30,7 +30,7 @@
       "receipts": "0x41f07514258c2a3D2Dfa261d0ae0b040A3C4e383",
       "homeFactory": "0x1C770b7fb68c28FfAAAE386646ff9c03334EE89c",
       "receiptsFactory": "0xbdAFC86221d3f139c6EBD77ED023e5554C7E2297",
-      "source": "f97885eb2169aefcd1665d7ce4f33f73c3abb686",
+      "source": "6b8617daa1e218c4964073d804ff60bb51a6395e",
       "genesisEnd": 1792604185,
       "at": "2026-10-07T17:38:59.805Z"
     },
@@ -42,7 +42,7 @@
       "receipts": "0x51f1B231Aee11503BD8B998C32C74aA593c931dE",
       "homeFactory": "0xfD7b1bEFC0086809ea02542A30e85e5c439AF4c0",
       "receiptsFactory": "0xEF9173ADcF393846873e05e9d58411b8BA823f4c",
-      "source": "f97885eb2169aefcd1665d7ce4f33f73c3abb686",
+      "source": "6b8617daa1e218c4964073d804ff60bb51a6395e",
       "genesisEnd": 1792604466,
       "at": "2026-10-07T17:41:56.145Z"
     },
@@ -54,7 +54,7 @@
       "receipts": "0x352a5d01ff87D29995e3a0eDe348A7c8c77815AF",
       "homeFactory": "0x5FF4ee23851eDF4445c01460A108187c501eEbFd",
       "receiptsFactory": "0xc1C5dBFF7D71d254502a78276875144BcD513f58",
-      "source": "f97885eb2169aefcd1665d7ce4f33f73c3abb686",
+      "source": "6b8617daa1e218c4964073d804ff60bb51a6395e",
       "genesisEnd": 1792604567,
       "at": "2026-10-07T17:43:32.539Z"
     },
@@ -66,7 +66,7 @@
       "receipts": "0xAD3CcB6B808A8710C99Ad77c7f14d5209AFa8Ce4",
       "homeFactory": "0xDe908E13Df6105C9c710B0875f81e1EBD57aBd51",
       "receiptsFactory": "0x8D259bc04cC95d29e09A43941823089CFeb85D10",
-      "source": "f97885eb2169aefcd1665d7ce4f33f73c3abb686",
+      "source": "6b8617daa1e218c4964073d804ff60bb51a6395e",
       "genesisEnd": 1792605727,
       "at": "2026-10-07T18:07:06.228Z"
     }
@@ -76,14 +76,14 @@
   "maxSats": "100000",
   "solanaPairAccount": "GCpZ6DFQyeVLNBzKbeV4okqW745kioHvJmGGAjs1W1So",
   "at": "2026-10-02T14:29:04.727Z",
-  "source": "a9493c7",
+  "source": "2aa97ca",
   "vaultParts": "made by the vault",
   "previousConversion": "0x6c5d75F830C002f4B73b4625F3E2bFaeC50b5D2E",
   "sources": {
-    "Conversion": "b1d17397a31d91e96f9c4b29d152cacfb16ef160",
-    "BetaBaskets": "b1d17397a31d91e96f9c4b29d152cacfb16ef160",
-    "VaultHomeFactory": "f97885eb2169aefcd1665d7ce4f33f73c3abb686",
-    "VaultReceiptsFactory": "f97885eb2169aefcd1665d7ce4f33f73c3abb686"
+    "Conversion": "b279a0672afb4b0ed2d732e17298fbae6d2214d2",
+    "BetaBaskets": "b279a0672afb4b0ed2d732e17298fbae6d2214d2",
+    "VaultHomeFactory": "6b8617daa1e218c4964073d804ff60bb51a6395e",
+    "VaultReceiptsFactory": "6b8617daa1e218c4964073d804ff60bb51a6395e"
   },
   "previousBetaBaskets": "0x7EbA21758f149b18FDc0438B492D6059E37031b2"
 }

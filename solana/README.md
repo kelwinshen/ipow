@@ -47,7 +47,7 @@ pair account `7Wwn5bjARBmdCjNT7KUBwB7LR3JYSLFAWSSm98pxvE2S`. That program
 is still deployed, with its earlier pairs with the other networks, which the
 genesis vaults replaced.
 
-**Genesis.** `sdk/scripts/genesis-check.ts`, run at commit `2897c06` (then
+**Genesis.** `sdk/scripts/genesis-check.ts`, run at commit `479d93e` (then
 `packages/sdk/scripts/genesis-check.ts`) with the genesis run's ledger
 ([`evm/deployments/genesis-testnet.json`](../evm/deployments/genesis-testnet.json)),
 read every genesis receipt and issue back from the chains: 409 receipts and

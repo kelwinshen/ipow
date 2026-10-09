@@ -1,7 +1,7 @@
 # Vault genesis: a one-time foundational step
 
 Status: **approved by the owner on 2026-10-08, built, and run on the test
-networks** (commit `2897c06`): the vaults were redeployed in genesis and the
+networks** (commit `479d93e`): the vaults were redeployed in genesis and the
 run's ledger is [`evm/deployments/genesis-testnet.json`](../../evm/deployments/genesis-testnet.json)
 (at that commit `programmable-network/ethereum/deployments/genesis-testnet.json`).
 Hedera was left out and keeps its earlier vault. It amends
@@ -165,8 +165,8 @@ VTIon) stay on today's vaults; they are not carried over.
 | EVM receipts part | `VaultReceipts.sol`: `genesisKey`, `genesisEnd`, `genesisOpen()`, `genesisMakeReceipt`, `genesisIssue`, `finalizeGenesis`; `VaultReceiptsFactory.makeGenesis` (a part made by `make` has no genesis) | Hardhat: 3 genesis tests, 489 passing in all |
 | Solana program | A new program, `3TZ1LJ4fVZVKbBUyzVMRjJ9FNPGaqVmGX56JuT5QdXEy` (its keypair in the git-ignored `solana/.keys/ipow_vault_genesis-keypair.json`): `genesis_make_receipt`, `genesis_issue`, `finalize_genesis`; the pair's config gains `genesis_key`, `genesis_end`, `genesis_done`, set by `initialize` | `cargo test -p ipow-vault`: 4 genesis tests, 36 passing in all |
 | Node | The new program's IDL; its tests set up pairs with no genesis | `cargo test` in `node`: passing |
-| Deploy tooling | `deploy/deploy.ts` (`existing`, `genesis`); `scripts/redeploy-solana-vault.ts`; `scripts/deploy-pair.ts --genesis-days`; Tempo's `deploy-new-protocol.ts --vaults-only`; Solana's `init-testnet.ts --genesis-days`, `--print-pairs` | Typechecked; run for the genesis redeploys of 2026-10-07 (commit `6345222`) |
-| Genesis run and check | `sdk/scripts/genesis.ts` (resumable: it reads the chain before locking or issuing again; `--dry` sends nothing), `genesis-check.ts` (reads every `GenesisReceipt` and `GenesisIssued` from the chain, EVM logs and Solana's Anchor events, and checks each against its home asset or lock, each genesis receipt's supply, and the run's ledger both ways); the SDK's `genesisOf`, `genesisMakeReceipt`, `genesisIssue`, `finalizeGenesis`, and `SolanaVault.genesis*` | Typechecked; run on the test networks, ledger in `evm/deployments/genesis-testnet.json` (commit `2897c06`, where the scripts were in `packages/sdk/scripts/` and the ledger in `programmable-network/ethereum/deployments/`) |
+| Deploy tooling | `deploy/deploy.ts` (`existing`, `genesis`); `scripts/redeploy-solana-vault.ts`; `scripts/deploy-pair.ts --genesis-days`; Tempo's `deploy-new-protocol.ts --vaults-only`; Solana's `init-testnet.ts --genesis-days`, `--print-pairs` | Typechecked; run for the genesis redeploys of 2026-10-07 (commit `5bb07e9`) |
+| Genesis run and check | `sdk/scripts/genesis.ts` (resumable: it reads the chain before locking or issuing again; `--dry` sends nothing), `genesis-check.ts` (reads every `GenesisReceipt` and `GenesisIssued` from the chain, EVM logs and Solana's Anchor events, and checks each against its home asset or lock, each genesis receipt's supply, and the run's ledger both ways); the SDK's `genesisOf`, `genesisMakeReceipt`, `genesisIssue`, `finalizeGenesis`, and `SolanaVault.genesis*` | Typechecked; run on the test networks, ledger in `evm/deployments/genesis-testnet.json` (commit `479d93e`, where the scripts were in `packages/sdk/scripts/` and the ledger in `programmable-network/ethereum/deployments/`) |
 
 Known gaps: the genesis run sends ethers transactions, so Tempo's pair
 (its own transaction type) is skipped and reported; Tempo's part is sent by

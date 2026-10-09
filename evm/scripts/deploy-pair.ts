@@ -5,7 +5,7 @@
 // Build status, row 7), and read back once it is.
 //
 // Each side gets factories of today's build first: the live factories were
-// deployed from a9493c7, before the parts were made ahead of their vault,
+// deployed from 2aa97ca, before the parts were made ahead of their vault,
 // and today's vault asks its factories whether they `made` its parts, which
 // those cannot answer. The pair's vault records its own factories, and
 // verify-deployments.ts checks it against them and against the build of

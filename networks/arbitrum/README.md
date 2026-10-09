@@ -30,8 +30,8 @@ the node's settings. Each step skips what exists, so it can be run again.
 
 ## Addresses (Arbitrum Sepolia, chain 421614)
 
-Deployed on 2026-10-06 from commit `c9a2a60`; its vaults were redeployed in
-genesis on 2026-10-07 from commit `f97885e`
+Deployed on 2026-10-06 from commit `71f80a0`; its vaults were redeployed in
+genesis on 2026-10-07 from commit `6b8617d`
 ([`docs/specs/ipow-vault-genesis.md`](../../docs/specs/ipow-vault-genesis.md)),
 replacing those of 2026-10-06 (kept in
 [`evm/deployments/replaced/`](../../evm/deployments/replaced/)). Read back
@@ -56,7 +56,7 @@ the mock RWA tokens are in `deployments/arbitrum-testnet-rwa.json`.
 **Genesis.** These vaults' receipts started in genesis for the deployer,
 ending between 2026-10-21 16:59 and 2026-10-21 18:07 UTC at the latest
 (`genesisEnd` in the record). `sdk/scripts/genesis-check.ts`, run at commit
-`2897c06` (then `packages/sdk/scripts/genesis-check.ts`) with the genesis
+`479d93e` (then `packages/sdk/scripts/genesis-check.ts`) with the genesis
 run's ledger
 ([`evm/deployments/genesis-testnet.json`](../../evm/deployments/genesis-testnet.json)),
 read every genesis receipt and issue back from the chains: 409 receipts and

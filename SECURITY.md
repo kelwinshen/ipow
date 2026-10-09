@@ -89,7 +89,7 @@ The deployer is one person (the project owner) holding the EVM key
     409 receipts made and 470 locks issued, each with the lock that backs
     it. Anyone can check every genesis receipt against its lock from the
     chains with `sdk/scripts/genesis-check.ts`; at the run (commit
-    `2897c06`, where it was `packages/sdk/scripts/genesis-check.ts` and the
+    `479d93e`, where it was `packages/sdk/scripts/genesis-check.ts` and the
     ledger `programmable-network/ethereum/deployments/genesis-testnet.json`)
     it found every one backed. Each paired network's README
     states the same result with that network's share of it.

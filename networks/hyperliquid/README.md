@@ -18,7 +18,7 @@ in [`../../evm`](../../evm) with this network's settings
 back: each contract's code compared with the build and each setting read
 (`node scripts/verify-deployments.ts` in `../../evm`). Lowest Bitcoin height
 965,567; Conversion's largest swap 100,000 sats. The vaults were redeployed
-in genesis on 2026-10-07 from commit `f97885e`
+in genesis on 2026-10-07 from commit `6b8617d`
 ([`docs/specs/ipow-vault-genesis.md`](../../docs/specs/ipow-vault-genesis.md));
 the vault paired with Solana names the pair account
 `8nJB7bCtN6DpeZGHNtLxaE11rdKnRkFhGR4LJUTsCffo`, `["config", 7]` of the vault
@@ -48,7 +48,7 @@ replaced are in
 **Genesis.** These vaults' receipts started in genesis for the deployer,
 ending between 2026-10-21 17:22 and 2026-10-21 18:07 UTC at the latest
 (`genesisEnd` in the record). `sdk/scripts/genesis-check.ts`, run at commit
-`2897c06` (then `packages/sdk/scripts/genesis-check.ts`) with the genesis
+`479d93e` (then `packages/sdk/scripts/genesis-check.ts`) with the genesis
 run's ledger
 ([`evm/deployments/genesis-testnet.json`](../../evm/deployments/genesis-testnet.json)),
 read every genesis receipt and issue back from the chains: 409 receipts and

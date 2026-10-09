@@ -25,7 +25,7 @@ export const DEPLOYMENTS = {
         "receipts": "0x4994B8161A265CF219385Bd02Af23C033CC000F2",
         "homeFactory": "0x592659De4a7D5F31cfE95C1c6c2A0456343b82E0",
         "receiptsFactory": "0xC0fE6c22b0034E559CeBB4c064098aB887818E32",
-        "source": "f97885eb2169aefcd1665d7ce4f33f73c3abb686",
+        "source": "6b8617daa1e218c4964073d804ff60bb51a6395e",
         "genesisEnd": 1792601940,
         "at": "2026-10-07T16:59:18.637Z"
       },
@@ -78,7 +78,7 @@ export const DEPLOYMENTS = {
         "at": "2026-10-07T18:12:21.277Z"
       }
     ],
-    "source": "c9a2a605f05f20a916a549e2095e768ce71b5eb4"
+    "source": "71f80a047bd4f988dfcb11a48e48a20f7a44438a"
   },
   "base-testnet": {
     "name": "base-testnet",
@@ -105,7 +105,7 @@ export const DEPLOYMENTS = {
         "receipts": "0x380c431675886c883692370b4d1B39f0E3e3f571",
         "homeFactory": "0x556d1CA6460714bC4D4d23Fe9230Ca77780EE22F",
         "receiptsFactory": "0x7966F9ba8966718d40516f4C4758e4f19e6Db292",
-        "source": "f97885eb2169aefcd1665d7ce4f33f73c3abb686",
+        "source": "6b8617daa1e218c4964073d804ff60bb51a6395e",
         "genesisEnd": 1792601899,
         "at": "2026-10-07T16:58:41.803Z"
       },
@@ -158,7 +158,7 @@ export const DEPLOYMENTS = {
         "at": "2026-10-07T18:02:06.706Z"
       }
     ],
-    "source": "a9493c7"
+    "source": "2aa97ca"
   },
   "ethereum-testnet": {
     "name": "ethereum-testnet",
@@ -185,7 +185,7 @@ export const DEPLOYMENTS = {
         "receipts": "0xb73a2D0a046fF29CaC0eBdcD00BfF6Fd800a7979",
         "homeFactory": "0xB98d11e0a2a28882aB8375438bdF6Ea8D1b3D5b8",
         "receiptsFactory": "0x1568FA92Cd8fB05c93d6890432e19e6911347079",
-        "source": "f97885eb2169aefcd1665d7ce4f33f73c3abb686",
+        "source": "6b8617daa1e218c4964073d804ff60bb51a6395e",
         "genesisEnd": 1792601770,
         "at": "2026-10-07T16:58:18.073Z"
       },
@@ -238,7 +238,7 @@ export const DEPLOYMENTS = {
         "at": "2026-10-07T17:57:07.313Z"
       }
     ],
-    "source": "a9493c7"
+    "source": "2aa97ca"
   },
   "hedera-testnet": {
     "name": "hedera-testnet",
@@ -265,7 +265,7 @@ export const DEPLOYMENTS = {
         "receipts": "0xC0BF165BCbfF23A83f824C84c818994Ea57078fd"
       }
     ],
-    "source": "a9493c7"
+    "source": "2aa97ca"
   },
   "hyperliquid-testnet": {
     "name": "hyperliquid-testnet",
@@ -292,7 +292,7 @@ export const DEPLOYMENTS = {
         "receipts": "0xD20E666A0e88BBAD5C5250Cbb36C56054F3D0B8F",
         "homeFactory": "0xFBa6A7d933E6f98B51f7c5e03A177E261e966Db1",
         "receiptsFactory": "0x556d1CA6460714bC4D4d23Fe9230Ca77780EE22F",
-        "source": "f97885eb2169aefcd1665d7ce4f33f73c3abb686",
+        "source": "6b8617daa1e218c4964073d804ff60bb51a6395e",
         "genesisEnd": 1792603365,
         "at": "2026-10-07T17:27:08.735Z"
       },
@@ -345,7 +345,7 @@ export const DEPLOYMENTS = {
         "at": "2026-10-07T18:12:21.267Z"
       }
     ],
-    "source": "a9493c7"
+    "source": "2aa97ca"
   },
   "polkadot-testnet": {
     "name": "polkadot-testnet",
@@ -372,12 +372,12 @@ export const DEPLOYMENTS = {
         "receipts": "0xD7881C39F422d01d4989930C3645f4983bCa9D4b",
         "homeFactory": "0x51cD31AC42a838d225f3B42F830Af72d99Eb003a",
         "receiptsFactory": "0x48aA89dcB9355016c2010426f99d4c44D65281e9",
-        "source": "f97885eb2169aefcd1665d7ce4f33f73c3abb686",
+        "source": "6b8617daa1e218c4964073d804ff60bb51a6395e",
         "genesisEnd": 1792602003,
         "at": "2026-10-07T17:01:07.792Z"
       }
     ],
-    "source": "a9493c7"
+    "source": "2aa97ca"
   },
   "robinhood-testnet": {
     "name": "robinhood-testnet",
@@ -404,7 +404,7 @@ export const DEPLOYMENTS = {
         "receipts": "0xA88B23932537Ca6bE3CfFF4A66Ec2dE6566bb41f",
         "homeFactory": "0x1611E0170471D75E7A3e979B0884699b938B1b22",
         "receiptsFactory": "0xc3C9129d441504fF719cf813366Dd58F5003d140",
-        "source": "f97885eb2169aefcd1665d7ce4f33f73c3abb686",
+        "source": "6b8617daa1e218c4964073d804ff60bb51a6395e",
         "genesisEnd": 1792601923,
         "at": "2026-10-07T16:58:57.893Z"
       },
@@ -457,7 +457,7 @@ export const DEPLOYMENTS = {
         "at": "2026-10-07T18:07:06.228Z"
       }
     ],
-    "source": "a9493c7"
+    "source": "2aa97ca"
   },
   "tempo-testnet": {
     "name": "tempo-testnet",
@@ -484,11 +484,11 @@ export const DEPLOYMENTS = {
         "receipts": "0x713D05559eD598a077D42818aABfB1a7873f579F",
         "homeFactory": "0x8A5EB387b8b1CBd5cBAFBE2088aCE6d589eb4F59",
         "receiptsFactory": "0x07eFF65A853f36cBA8FEFbC495eb6A0D98d26a75",
-        "source": "f97885eb2169aefcd1665d7ce4f33f73c3abb686",
+        "source": "6b8617daa1e218c4964073d804ff60bb51a6395e",
         "genesisEnd": 1792603075,
         "at": "2026-10-07T17:18:23.507Z"
       }
     ],
-    "source": "10e5cf51c7291018f3e5f47251a555bb8320980f"
+    "source": "bc09e2896c1db1566a76381f94d893dbf7b915e7"
   }
 } as const;

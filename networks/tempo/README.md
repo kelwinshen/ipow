@@ -27,7 +27,7 @@ Two things particular to Tempo:
 The new protocol
 ([`docs/design/ipow-protocol.md`](../../docs/design/ipow-protocol.md)),
 deployed on Tempo's Moderato testnet (chain 42431) on 2026-10-03 from the
-one source in [`../../evm`](../../evm), commit `10e5cf5`, with Tempo's
+one source in [`../../evm`](../../evm), commit `bc09e28`, with Tempo's
 settings ([`../../evm/deploy/networks.ts`](../../evm/deploy/networks.ts)):
 the token builds, with PathUSD
 (`0x20C0000000000000000000000000000000000000`) as the coin. Sent with viem's
@@ -37,7 +37,7 @@ deployer's ordinary nonce lane, each address worked out from the nonce, and
 read back: each contract's code compared with the build and each setting
 read (`node scripts/verify-deployments.ts` in `../../evm`). Lowest Bitcoin
 height 965,567; Conversion's largest swap 100,000 sats. The vault was
-redeployed in genesis on 2026-10-07 from commit `f97885e`
+redeployed in genesis on 2026-10-07 from commit `6b8617d`
 ([`docs/specs/ipow-vault-genesis.md`](../../docs/specs/ipow-vault-genesis.md));
 it names the pair account `8USDsC8MpsnKZmt8KAkVDr18R6s5g71Fro8Jr2JMJmmr`,
 `["config", 8]` of the vault program
@@ -58,7 +58,7 @@ it names the pair account `8USDsC8MpsnKZmt8KAkVDr18R6s5g71Fro8Jr2JMJmmr`,
 
 **Genesis.** This vault's receipts started in genesis for the deployer,
 ending at 2026-10-21 17:17 UTC at the latest (`genesisEnd` in the record).
-`sdk/scripts/genesis-check.ts`, run at commit `2897c06` (then
+`sdk/scripts/genesis-check.ts`, run at commit `479d93e` (then
 `packages/sdk/scripts/genesis-check.ts`) with the genesis run's ledger
 ([`evm/deployments/genesis-testnet.json`](../../evm/deployments/genesis-testnet.json)),
 read every genesis receipt and issue back from the chains: 409 receipts and
