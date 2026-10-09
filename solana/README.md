@@ -22,7 +22,7 @@ while testing; on mainnet it is removed (D59).
 | Protocol (`ipow-protocol`) | `ChYhovM8vm2tuMRaRFn4m6etG979bjixVa71fXBDwjPL` |
 | Vault (`ipow-vault`), the genesis build | `3TZ1LJ4fVZVKbBUyzVMRjJ9FNPGaqVmGX56JuT5QdXEy` |
 | Conversion (`conversion`) | `9Argk3M83p8t5pWG92PhwEhYzysWt5n82siEWyb29w7D` |
-| BETA (`beta-basket`) | `3DuG4iNPptEyCAA7FM1YQja43G6HkTAwrswT3Ds2d94R` |
+| BETA (`beta-basket`) | `CDaso21vQBdsrWYRB1a7LTunJjNrfJ6sweUGPQzSkdV2` (since 2026-10-09; the earlier program, `3DuG4iNP…`, was closed) |
 
 The vault is the program deployed for the vaults' genesis
 ([`docs/specs/ipow-vault-genesis.md`](../docs/specs/ipow-vault-genesis.md)),

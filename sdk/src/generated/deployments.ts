@@ -37,7 +37,7 @@ export const DEPLOYMENTS = {
         "receipts": "0x00c360219F11Cc6f4D0472353d411dd0D7891CB8",
         "homeFactory": "0x85A86D77357898D79b49c464ccaB03411109e722",
         "receiptsFactory": "0x96AC11A1Cf37C5c9704ecc080b539Eb7F81d9b81",
-        "source": "current",
+        "source": "6b8617daa1e218c4964073d804ff60bb51a6395e",
         "genesisEnd": 1792604340,
         "at": "2026-10-07T17:41:05.965Z"
       },
@@ -49,7 +49,7 @@ export const DEPLOYMENTS = {
         "receipts": "0xC69EBc691174a55E240552674896bBE651ebBad2",
         "homeFactory": "0xB001c1Eb3B2D6dF4380682E119dDF1e3a9F18D89",
         "receiptsFactory": "0x2ab2c9487cC8f83816d556Da149132c705B82e48",
-        "source": "current",
+        "source": "6b8617daa1e218c4964073d804ff60bb51a6395e",
         "genesisEnd": 1792604516,
         "at": "2026-10-07T17:42:47.259Z"
       },
@@ -61,7 +61,7 @@ export const DEPLOYMENTS = {
         "receipts": "0x3c59098f3a9cA06D367Ff5BfDb62428B175081d9",
         "homeFactory": "0x48aA89dcB9355016c2010426f99d4c44D65281e9",
         "receiptsFactory": "0x122194ce9A93Fb0E38A4Ee61369E43e25E01a10d",
-        "source": "current",
+        "source": "6b8617daa1e218c4964073d804ff60bb51a6395e",
         "genesisEnd": 1792604567,
         "at": "2026-10-07T17:43:32.542Z"
       },
@@ -73,7 +73,7 @@ export const DEPLOYMENTS = {
         "receipts": "0x0Ed6b4bA69670D2F8Acb7c95D65d997a25492538",
         "homeFactory": "0x16B11C3b6F3481A419F403DceE574F3654392C87",
         "receiptsFactory": "0x3eaEf792082D4c02a413D4829Ebe80000a80f8f0",
-        "source": "current",
+        "source": "6b8617daa1e218c4964073d804ff60bb51a6395e",
         "genesisEnd": 1792606026,
         "at": "2026-10-07T18:12:21.277Z"
       }
@@ -117,7 +117,7 @@ export const DEPLOYMENTS = {
         "receipts": "0x387aE4Ed0E077058a1C3635C7a3054b43ffE6E5e",
         "homeFactory": "0xee504a7Ff86B9B2e2DCB87953B443c7244d6cE45",
         "receiptsFactory": "0x17B38C9eE9BE2210C3ec8D0fB3Fe4D9785cBB51c",
-        "source": "current",
+        "source": "6b8617daa1e218c4964073d804ff60bb51a6395e",
         "genesisEnd": 1792604019,
         "at": "2026-10-07T17:36:24.709Z"
       },
@@ -129,7 +129,7 @@ export const DEPLOYMENTS = {
         "receipts": "0x3243bf2CD3170e56d966af891a7b158d706DFCa4",
         "homeFactory": "0x806782a1A113f8fb242F543c275DBC939A1956b9",
         "receiptsFactory": "0xBbaaFB3b1A2362309f6A82478C1ddc6ec1d68d5F",
-        "source": "current",
+        "source": "6b8617daa1e218c4964073d804ff60bb51a6395e",
         "genesisEnd": 1792604466,
         "at": "2026-10-07T17:41:56.144Z"
       },
@@ -141,7 +141,7 @@ export const DEPLOYMENTS = {
         "receipts": "0x7F399C9989988f9F5DC7BFE05fF28670930E6515",
         "homeFactory": "0x2110dEb3A2a01834A2d356470c4451Db9A5ba809",
         "receiptsFactory": "0x865C6C7EC2C28C0096ef932Bff277B781bFF793C",
-        "source": "current",
+        "source": "6b8617daa1e218c4964073d804ff60bb51a6395e",
         "genesisEnd": 1792604516,
         "at": "2026-10-07T17:42:47.257Z"
       },
@@ -153,7 +153,7 @@ export const DEPLOYMENTS = {
         "receipts": "0xC852658A4D3470595b7Bbe3d8f0FdD86FDE02F6d",
         "homeFactory": "0x75Ab3B99752f0DE0a2dB8AFa09f6503aACFb4576",
         "receiptsFactory": "0x5F0696a1c3ef6821F143FB78a4CEb939D85bA0c4",
-        "source": "current",
+        "source": "6b8617daa1e218c4964073d804ff60bb51a6395e",
         "genesisEnd": 1792605427,
         "at": "2026-10-07T18:02:06.706Z"
       }
@@ -197,7 +197,7 @@ export const DEPLOYMENTS = {
         "receipts": "0xc29926Fe5280809174813Dfec09Cf486E86115E8",
         "homeFactory": "0xA9ad6673BD7fB506b46B04Bf32632C63252bf3a6",
         "receiptsFactory": "0xcC291d2b4db35A3f292954d4Dbe0c7b3d79CAC05",
-        "source": "current",
+        "source": "6b8617daa1e218c4964073d804ff60bb51a6395e",
         "genesisEnd": 1792604019,
         "at": "2026-10-07T17:36:24.706Z"
       },
@@ -209,7 +209,7 @@ export const DEPLOYMENTS = {
         "receipts": "0x5aA93CA6C612b0CDcE79d8919Bcd618818ee381E",
         "homeFactory": "0x932FCF9FB82D5CcCAb27577501744520F7eE24E2",
         "receiptsFactory": "0x769c19fAc515590C2781f123A999b6049F99072e",
-        "source": "current",
+        "source": "6b8617daa1e218c4964073d804ff60bb51a6395e",
         "genesisEnd": 1792604185,
         "at": "2026-10-07T17:38:59.804Z"
       },
@@ -221,7 +221,7 @@ export const DEPLOYMENTS = {
         "receipts": "0xC6a5FE86e56D0Faa1b8305a03532cED023c2Ad43",
         "homeFactory": "0x5Ae336613Dbb482b35Ef01FBC946089204050093",
         "receiptsFactory": "0x8281608897bEBB650E80883df58739523E57cE93",
-        "source": "current",
+        "source": "6b8617daa1e218c4964073d804ff60bb51a6395e",
         "genesisEnd": 1792604340,
         "at": "2026-10-07T17:41:05.963Z"
       },
@@ -233,7 +233,7 @@ export const DEPLOYMENTS = {
         "receipts": "0xf2f071144fb9AE3c95FEFeF3408b1764B90c68d0",
         "homeFactory": "0x5Cfae63e2107D11Ae5c2b888f53c0e9e253E044D",
         "receiptsFactory": "0x79C5F86f92DA4FfDE8426a502b204d16F15E675F",
-        "source": "current",
+        "source": "6b8617daa1e218c4964073d804ff60bb51a6395e",
         "genesisEnd": 1792605008,
         "at": "2026-10-07T17:57:07.313Z"
       }
@@ -304,7 +304,7 @@ export const DEPLOYMENTS = {
         "receipts": "0x7eB196425f6c906904DC9BF93C1c10357A674382",
         "homeFactory": "0x17B38C9eE9BE2210C3ec8D0fB3Fe4D9785cBB51c",
         "receiptsFactory": "0xebae6b411D3C360aD9bB74DDCd036ab2A7D6cBde",
-        "source": "current",
+        "source": "6b8617daa1e218c4964073d804ff60bb51a6395e",
         "genesisEnd": 1792605008,
         "at": "2026-10-07T17:57:07.337Z"
       },
@@ -316,7 +316,7 @@ export const DEPLOYMENTS = {
         "receipts": "0x709fF26b32A714e15815533b04F85fa8c2D85A8f",
         "homeFactory": "0xBbaaFB3b1A2362309f6A82478C1ddc6ec1d68d5F",
         "receiptsFactory": "0x12E1016D8Ca5702E67AC47D95a3490B00F9d9408",
-        "source": "current",
+        "source": "6b8617daa1e218c4964073d804ff60bb51a6395e",
         "genesisEnd": 1792605427,
         "at": "2026-10-07T18:02:06.714Z"
       },
@@ -328,7 +328,7 @@ export const DEPLOYMENTS = {
         "receipts": "0xcA73F9cc6F0dF820A9d325ed1D57FCC121b1e591",
         "homeFactory": "0x865C6C7EC2C28C0096ef932Bff277B781bFF793C",
         "receiptsFactory": "0x8a691DCf09fAD46383cED06C27B0424e790728B1",
-        "source": "current",
+        "source": "6b8617daa1e218c4964073d804ff60bb51a6395e",
         "genesisEnd": 1792605727,
         "at": "2026-10-07T18:07:06.242Z"
       },
@@ -340,7 +340,7 @@ export const DEPLOYMENTS = {
         "receipts": "0xA6FD8dC895cd8Af71A5f3B4149884D262637Ee95",
         "homeFactory": "0x5F0696a1c3ef6821F143FB78a4CEb939D85bA0c4",
         "receiptsFactory": "0xa6419d52845D8FD27aA60493076470eA4A9d33a0",
-        "source": "current",
+        "source": "6b8617daa1e218c4964073d804ff60bb51a6395e",
         "genesisEnd": 1792606026,
         "at": "2026-10-07T18:12:21.267Z"
       }
@@ -416,7 +416,7 @@ export const DEPLOYMENTS = {
         "receipts": "0x41f07514258c2a3D2Dfa261d0ae0b040A3C4e383",
         "homeFactory": "0x1C770b7fb68c28FfAAAE386646ff9c03334EE89c",
         "receiptsFactory": "0xbdAFC86221d3f139c6EBD77ED023e5554C7E2297",
-        "source": "current",
+        "source": "6b8617daa1e218c4964073d804ff60bb51a6395e",
         "genesisEnd": 1792604185,
         "at": "2026-10-07T17:38:59.805Z"
       },
@@ -428,7 +428,7 @@ export const DEPLOYMENTS = {
         "receipts": "0x51f1B231Aee11503BD8B998C32C74aA593c931dE",
         "homeFactory": "0xfD7b1bEFC0086809ea02542A30e85e5c439AF4c0",
         "receiptsFactory": "0xEF9173ADcF393846873e05e9d58411b8BA823f4c",
-        "source": "current",
+        "source": "6b8617daa1e218c4964073d804ff60bb51a6395e",
         "genesisEnd": 1792604466,
         "at": "2026-10-07T17:41:56.145Z"
       },
@@ -440,7 +440,7 @@ export const DEPLOYMENTS = {
         "receipts": "0x352a5d01ff87D29995e3a0eDe348A7c8c77815AF",
         "homeFactory": "0x5FF4ee23851eDF4445c01460A108187c501eEbFd",
         "receiptsFactory": "0xc1C5dBFF7D71d254502a78276875144BcD513f58",
-        "source": "current",
+        "source": "6b8617daa1e218c4964073d804ff60bb51a6395e",
         "genesisEnd": 1792604567,
         "at": "2026-10-07T17:43:32.539Z"
       },
@@ -452,7 +452,7 @@ export const DEPLOYMENTS = {
         "receipts": "0xAD3CcB6B808A8710C99Ad77c7f14d5209AFa8Ce4",
         "homeFactory": "0xDe908E13Df6105C9c710B0875f81e1EBD57aBd51",
         "receiptsFactory": "0x8D259bc04cC95d29e09A43941823089CFeb85D10",
-        "source": "current",
+        "source": "6b8617daa1e218c4964073d804ff60bb51a6395e",
         "genesisEnd": 1792605727,
         "at": "2026-10-07T18:07:06.228Z"
       }

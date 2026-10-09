@@ -26,10 +26,15 @@
       "sha256": "3c9324c04b17176e27f62aaaafd85b076d69a4e7b7e4974509b7367c2b92f2f7"
     },
     "beta_basket": {
-      "id": "3DuG4iNPptEyCAA7FM1YQja43G6HkTAwrswT3Ds2d94R",
-      "source": "eafa7acb1b6b40e20601142f586c09c61c6c0e97",
-      "length": 365912,
-      "sha256": "274a2f2c5a6534cbc33abd856c6ac3c63bc05a6c8c3827255122c056da883d54"
+      "id": "CDaso21vQBdsrWYRB1a7LTunJjNrfJ6sweUGPQzSkdV2",
+      "source": "c39970dd67100b530413029e32d4dd261d277f2c",
+      "length": 365944,
+      "sha256": "fc64f3613cf6947d998fae4caddb4b3c902f65212659d6d691c3f77a0a187eab",
+      "replaces": {
+        "id": "3DuG4iNPptEyCAA7FM1YQja43G6HkTAwrswT3Ds2d94R",
+        "closed": "2026-10-09",
+        "why": "held one basket made before the vaults' genesis (supply 0, parts no one can mint); closed, its rent reclaimed"
+      }
     }
   }
 }
