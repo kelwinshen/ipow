@@ -1,7 +1,7 @@
 {
   "network": "solana-devnet",
   "operator": "G8vkKtPzQfm8dTVnFcgFis5LgRHqwCk2bT29731sXU6D",
-  "mintAuthority": "D1rbiCRB3pQqcTAu6DEpsteMTiE5cVC9VoRpnQP2ekSy",
+  "mintAuthority": "FfXw32AXJMwK72MPM3ZLftBxvSiBGtPa8yHtKMp9gkNt",
   "vaultPeer": 1,
   "tokens": {
     "AAPL": {
