@@ -11,7 +11,8 @@ client has read Bitcoin mainnet. It has run on the test networks as
 operator and guardian, first on 2026-10-02, with `node.testnet.yml`
 ([`docs/drafts/ipow-testnet-run-2026-10-02.md`](../docs/drafts/ipow-testnet-run-2026-10-02.md),
 [`docs/drafts/live-run-log.md`](../docs/drafts/live-run-log.md)); its vault
-roles have not run against a live network. The service for the old
+roles run on the test networks since 2026-10-10, on the 15 pairs of
+`node.testnet.yml`. The service for the old
 contracts, `core/operator`, was removed; it stays in git at the tag
 `legacy-v1`.
 
