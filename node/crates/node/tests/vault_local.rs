@@ -143,6 +143,8 @@ impl Setup {
                 deposits: 5,
                 checkpoint_paid: [Some(ETH / 10), Some(SOL / 10)],
                 journal: journal.path().join("vault.journal"),
+                fast_only: vec![],
+                fast_at_own_cost: false,
             },
         )
         .unwrap();
@@ -160,6 +162,8 @@ impl Setup {
                 deposits: 5,
                 checkpoint_paid: [None, None],
                 journal: journal.path().join("mallory.journal"),
+                fast_only: vec![],
+                fast_at_own_cost: false,
             },
         )
         .unwrap();
@@ -185,6 +189,8 @@ impl Setup {
                         deposits: 5,
                         checkpoint_paid: [Some(ETH / 10), Some(ETH / 10)],
                         journal: journal.path().join("evm.journal"),
+                        fast_only: vec![],
+                        fast_at_own_cost: false,
                     },
                 )
                 .unwrap();

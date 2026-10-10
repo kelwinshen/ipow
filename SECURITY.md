@@ -97,9 +97,15 @@ The deployer is one person (the project owner) holding the EVM key
   only operator is the deployer's own node, with the deployer's keys
   (`node/run-testnet.sh`, `node/node.testnet.yml`; the first live job,
   [`docs/drafts/ipow-testnet-run-2026-10-02.md`](docs/drafts/ipow-testnet-run-2026-10-02.md),
-  "One key, both sides"). The same node is the only known guardian. Its
-  vault roles are not switched on (`vault` is commented out in
-  `node/node.testnet.yml`), so no one is known to watch vault claims.
+  "One key, both sides"). The same node is the only known guardian. Since
+  2026-10-10 its vault roles are on for the 15 pairs it can serve (all but
+  Tempo–Solana, `vault` in `node/node.testnet.yml`): it is the only
+  operator carrying vault claims and the only known guardian watching
+  them, so a lie of its own would be caught only by someone else running a
+  guardian. On these test networks it also pays locks and burns at once of
+  assets it does not carry, from its own stock, never repaid (design
+  section 11.7, the owner's deviation): each receipt it issues stays backed
+  by the asset locked, so this costs it, not the holders.
 - **The operator's Bitcoin side is one key.** The node signs every
   Bitcoin transaction (chain heads, tagged transactions, Conversion
   payments) with one mainnet WIF key, loaded from the git-ignored

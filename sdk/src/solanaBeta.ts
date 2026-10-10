@@ -487,7 +487,7 @@ export class SolanaBeta {
     const part = b.parts[index];
     if (!part) throw new Error(`no part ${index}`);
     const basket = new PublicKey(address);
-    const signature = await this.program.methods
+    const ix = await this.program.methods
       .collectOwed(index)
       .accountsStrict({
         basket,
@@ -495,27 +495,80 @@ export class SolanaBeta {
         fees: this.feesFor(b),
         user,
       } as any)
-      .preInstructions([createAccountIdempotent(user, user, new PublicKey(part.mint), new PublicKey(part.tokenProgram))])
       .remainingAccounts(await this.partAccountsOf(b, index, user))
-      .rpc();
-    return { signature };
+      .instruction();
+    return { signature: await this.sendInstructions([createAccountIdempotent(user, user, new PublicKey(part.mint), new PublicKey(part.tokenProgram)), ix]) };
   }
 
   /** Collects the wallet's fees of part `index`, as a receiver of the
    *  basket's fees, to its own account for the part. */
   async collectFees(address: string, index: number): Promise<{ signature: string }> {
     const b = await this.getBasket(address);
+    return { signature: await this.sendInstructions(await this.collectFeesInstructions(b, address, index)) };
+  }
+
+  /** What collecting the wallet's fees of part `index` takes: its account
+   *  for the part (made if missing), then the collect. */
+  private async collectFeesInstructions(b: SolanaBasket, address: string, index: number): Promise<TransactionInstruction[]> {
     const user = this.wallet.publicKey;
     const part = b.parts[index];
     if (!part) throw new Error(`no part ${index}`);
     const basket = new PublicKey(address);
-    const signature = await this.program.methods
+    const ix = await this.program.methods
       .collectFees(index)
       .accountsStrict({ basket, fees: this.feesRecord(basket, user), receiver: user })
-      .preInstructions([createAccountIdempotent(user, user, new PublicKey(part.mint), new PublicKey(part.tokenProgram))])
       .remainingAccounts(await this.partAccountsOf(b, index, user))
-      .rpc();
-    return { signature };
+      .instruction();
+    return [createAccountIdempotent(user, user, new PublicKey(part.mint), new PublicKey(part.tokenProgram)), ix];
+  }
+
+  /**
+   * Collects the wallet's fees of every part in `indexes` at once: packed
+   * into as few transactions as Solana's size allows, all signed in one
+   * approval (the wallet's signAllTransactions), then sent in turn.
+   * `onConfirmed` hears each one as it is confirmed (done, of how many).
+   */
+  async collectAllFees(address: string, indexes: number[], onConfirmed?: (done: number, of: number) => void): Promise<{ signatures: string[] }> {
+    if (!indexes.length) return { signatures: [] };
+    const b = await this.getBasket(address);
+    const groups: TransactionInstruction[][] = [];
+    let current: TransactionInstruction[] = [];
+    for (const i of indexes) {
+      const ixs = await this.collectFeesInstructions(b, address, i);
+      if (current.length && !(await this.compile([...current, ...ixs], []))) {
+        groups.push(current);
+        current = [];
+      }
+      current.push(...ixs);
+    }
+    if (current.length) groups.push(current);
+    const built = await Promise.all(groups.map(async (g) => (await this.compile(g, []))!));
+    if (built.some((t) => !t)) throw new Error("one part's collect does not fit a transaction");
+    const signed = await this.wallet.signAllTransactions(built.map((t) => t.tx));
+    const signatures: string[] = [];
+    try {
+      for (const tx of signed) {
+        signatures.push(await this.sendAndWait(tx));
+        onConfirmed?.(signatures.length, signed.length);
+      }
+    } catch (e) {
+      // Named as the program names it; those already confirmed are kept on the error.
+      const err = translateError(e, parseIdlErrors(this.program.idl as any)) as Error & { confirmed?: string[] };
+      err.confirmed = signatures;
+      throw err;
+    }
+    return { signatures };
+  }
+
+  /** Builds, signs and sends `ixs` as one transaction; confirmed by polling. */
+  private async sendInstructions(ixs: TransactionInstruction[]): Promise<string> {
+    const t = await this.compile(ixs, []);
+    if (!t) throw new Error("the transaction is too large");
+    try {
+      return await this.sendSigned(t);
+    } catch (e) {
+      throw translateError(e, parseIdlErrors(this.program.idl as any));
+    }
   }
 
   /** What `owner` holds of a token, 0 without an account for it. */

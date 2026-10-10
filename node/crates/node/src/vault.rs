@@ -22,7 +22,7 @@ use async_trait::async_trait;
 use ipow_bitcoin::view::{BitcoinView, TxStatus};
 use ipow_protocol_core::network::ProtocolNetwork;
 use ipow_protocol_core::settings::{FastSettings, Role};
-use ipow_protocol_core::types::{Amount, BlockRef, JobStatus};
+use ipow_protocol_core::types::{Amount, BlockRef, Job, JobStatus};
 use ipow_protocol_core::vault::{
     decode, encode, message_payload, record_hash, AssetInfo, Chain, Position, Record, TxProof, VaultApp, MAX_ASSETS, MAX_BATCH,
     MAX_LOCKS_ON_SOLANA, MAX_RAW_TX, MAX_RECORDS, SOLANA,
@@ -66,31 +66,45 @@ async fn block_ref(btc: &dyn BitcoinView, hash: [u8; 32], height: u32) -> anyhow
     Ok(BlockRef { hash, height, epoch_time: epoch_time_at(btc, height).await? })
 }
 
+/// Whether job `j` can still finish: its auction, its duty before the
+/// deadline, or its lock. A job past its deadline, or whose lock ended under
+/// a challenge, may never finish.
+fn waiting(j: &Job, now: i64) -> bool {
+    j.status == JobStatus::Auction || (j.status == JobStatus::Assigned && now <= j.deadline) || (j.status == JobStatus::Proven && now < j.lock_end)
+}
+
+/// Whether job `j`, still under way, could certify a block at or above
+/// `wanted`: one in its auction or its duty may yet prove a block that high;
+/// a proven one waiting out its lock only if its proof block is that high.
+fn holds_up(j: &Job, now: i64, wanted: u32) -> bool {
+    waiting(j, now) && (j.status != JobStatus::Proven || j.proof_block.is_some_and(|pb| pb.height >= wanted))
+}
+
+/// The most pages of jobs read past the cursor for one that holds up a new
+/// checkpoint: 2,000 jobs.
+const HOLD_PAGES: usize = 40;
+
 /// Records the real blocks of newly finished jobs. Returns whether a job
-/// that could certify is still under way: one that may yet finish.
-async fn scan_reals(side: &Side, btc: &dyn BitcoinView, reals: &mut Reals) -> anyhow::Result<bool> {
+/// that could certify a block at or above `wanted` is still under way
+/// (`holds_up`). A job proven below it and waiting out its lock cannot, so
+/// it does not hold up a new checkpoint.
+async fn scan_reals(side: &Side, btc: &dyn BitcoinView, reals: &mut Reals, wanted: u32) -> anyhow::Result<bool> {
     let min = side.vault.min_certifying_escrow().await?;
     let now = side.net.now().await?;
+    let mut helps = false;
     loop {
         let jobs = side.net.jobs_after(reals.job_cursor, 50).await?;
-        let Some(last) = jobs.last() else { return Ok(false) };
+        let Some(last) = jobs.last() else { return Ok(helps) };
         let last = last.id;
         let mut stop_at = None;
         for j in jobs {
             if j.escrow < min {
                 continue;
             }
-            let lock_over = now >= j.lock_end;
-            let done = j.status == JobStatus::Settled || (j.status == JobStatus::Proven && lock_over && j.open_challenges == 0);
-            // Still able to finish: its auction, its duty before the
-            // deadline, or its lock. A job past its deadline, or whose lock
-            // ended under a challenge, may never finish: it does not hold
-            // the scan up.
-            let waiting = j.status == JobStatus::Auction
-                || (j.status == JobStatus::Assigned && now <= j.deadline)
-                || (j.status == JobStatus::Proven && !lock_over);
-            if waiting {
+            let done = j.status == JobStatus::Settled || (j.status == JobStatus::Proven && now >= j.lock_end && j.open_challenges == 0);
+            if waiting(&j, now) {
                 stop_at.get_or_insert(j.id - 1);
+                helps |= holds_up(&j, now, wanted);
                 continue;
             }
             if !done || stop_at.is_some() {
@@ -113,7 +127,20 @@ async fn scan_reals(side: &Side, btc: &dyn BitcoinView, reals: &mut Reals) -> an
         }
         reals.job_cursor = stop_at.unwrap_or(last).max(reals.job_cursor);
         if stop_at.is_some() {
-            return Ok(true);
+            // The cursor stays at the first waiting job; the jobs past this
+            // page are read too (not moving it), so a checkpoint opened
+            // further on still counts as under way.
+            let mut after = last;
+            for _ in 0..HOLD_PAGES {
+                if helps {
+                    break;
+                }
+                let more = side.net.jobs_after(after, 50).await?;
+                let Some(l) = more.last() else { break };
+                after = l.id;
+                helps = more.iter().any(|j| j.escrow >= min && holds_up(j, now, wanted));
+            }
+            return Ok(helps);
         }
     }
 }
@@ -129,7 +156,7 @@ async fn reach(side: &Side, btc: &dyn BitcoinView, reals: &mut Reals, block: &Bl
     if side.vault.is_real(block).await? {
         return Ok(Some(*block));
     }
-    let under_way = scan_reals(side, btc, reals).await?;
+    let under_way = scan_reals(side, btc, reals, block.height).await?;
     // Blocks Bitcoin has since dropped are forgotten.
     let mut kept = vec![];
     for r in reals.blocks.drain(..) {
@@ -281,12 +308,29 @@ pub struct VaultOperatorSettings {
     /// message, on each network of the pair; `None` never opens one.
     pub checkpoint_paid: [Option<Amount>; 2],
     pub journal: PathBuf,
+    /// Assets paid at once from its own stock and never carried (settings
+    /// `fast_only`): by home network number, asset, and fast settings.
+    pub fast_only: Vec<(u8, u32, FastSettings)>,
+    /// Attests before its bond is counted, limited by the receipts it holds
+    /// (settings `fast_at_own_cost`).
+    pub fast_at_own_cost: bool,
 }
 
 impl VaultOperatorSettings {
     /// The settings of asset (`home`, `asset`), if it is carried.
     fn asset(&self, home: u8, asset: u32) -> Option<&CarriedAsset> {
         self.assets.iter().find(|a| a.home == home && a.asset == asset)
+    }
+
+    /// Whether (`home`, `asset`) is paid from stock and never carried.
+    fn stock_only(&self, home: u8, asset: u32) -> bool {
+        self.fast_only.iter().any(|(h, a, _)| *h == home && *a == asset)
+    }
+
+    /// The fast paths of (`home`, `asset`): a carried asset's, or one paid
+    /// from stock.
+    fn fast_of(&self, home: u8, asset: u32) -> Option<&FastSettings> {
+        self.asset(home, asset).and_then(|s| s.fast.as_ref()).or_else(|| self.fast_only.iter().find(|(h, a, _)| *h == home && *a == asset).map(|(_, _, f)| f))
     }
 }
 
@@ -415,6 +459,20 @@ fn next_turn(set: &BTreeSet<u64>, seen: &[u64]) -> u64 {
     }
 }
 
+/// Whether a lock or burn is worth paying at once under `fast`: its fast
+/// fee at least the least asked, its amount at most the most.
+fn fast_qualifies(fast_fee: u64, amount: u64, fast: &FastSettings) -> bool {
+    fast_fee >= fast.min_fee && amount <= fast.max
+}
+
+/// Whether a lock or burn of an asset paid from stock is let go: one that
+/// does not qualify never will (a record never changes, and nobody carries
+/// it), and one finished needs nothing more. Kept, it would be read every
+/// round.
+fn stock_done(qualifies: bool, finished: bool) -> bool {
+    !qualifies || finished
+}
+
 /// What batches on their way to network `at`, from its message `messages`
 /// on, will move there in each asset of network `home`: cover the vault
 /// does not count yet.
@@ -528,9 +586,16 @@ struct OpState {
     /// Where the next look at each open set starts (`window`).
     lock_turn: [u64; 2],
     request_turn: [u64; 2],
+    /// The same turns over the stock sets.
+    stock_lock_turn: [u64; 2],
+    stock_request_turn: [u64; 2],
     /// By network of the burn: the same for burns.
     request_cursor: [u64; 2],
     open_requests: [BTreeSet<u64>; 2],
+    /// The same, for assets paid from stock and never carried: only the fast
+    /// paths look at these.
+    stock_locks: [BTreeSet<u64>; 2],
+    stock_requests: [BTreeSet<u64>; 2],
     /// By acting network.
     claims: [ClaimIndex; 2],
     reals: [Reals; 2],
@@ -855,6 +920,8 @@ impl VaultOperator {
                 st.lock_cursor[i] = l.id;
                 if self.settings.asset(net, l.asset).is_some() {
                     st.open_locks[i].insert(l.id);
+                } else if self.settings.stock_only(net, l.asset) {
+                    st.stock_locks[i].insert(l.id);
                 }
             }
             // A burn here is of a receipt of the other network's asset.
@@ -862,6 +929,8 @@ impl VaultOperator {
                 st.request_cursor[i] = q.id;
                 if self.settings.asset(self.other(net), q.asset).is_some() {
                     st.open_requests[i].insert(q.id);
+                } else if self.settings.stock_only(self.other(net), q.asset) {
+                    st.stock_requests[i].insert(q.id);
                 }
             }
         }
@@ -1110,7 +1179,10 @@ impl VaultOperator {
                 *waiting.entry(asset).or_default() += value;
             }
             let mut locks = vec![];
-            for id in window(&st.open_locks[h], st.lock_turn[h]) {
+            // Paid from stock: in turns, as the open set is.
+            let stock = window(&st.stock_locks[h], st.stock_lock_turn[h]);
+            st.stock_lock_turn[h] = next_turn(&st.stock_locks[h], &stock);
+            for id in window(&st.open_locks[h], st.lock_turn[h]).into_iter().chain(stock) {
                 let l = match there.vault.lock(id).await {
                     Ok(Some(l)) => l,
                     Ok(None) => continue,
@@ -1119,13 +1191,20 @@ impl VaultOperator {
                         continue;
                     }
                 };
-                let Some(fast) = self.settings.asset(home, l.asset).and_then(|s| s.fast.as_ref()) else { continue };
+                let Some(fast) = self.settings.fast_of(home, l.asset) else { continue };
+                // From stock: let go once it can never qualify, or is
+                // returned or attested by this node (issued, given up and a
+                // closed window are let go below).
+                let qualifies = fast_qualifies(l.fast_fee, l.amount, fast);
+                if st.stock_locks[h].contains(&id) && stock_done(qualifies, l.returned || st.attests[i].values().any(|lock| *lock == id)) {
+                    st.stock_locks[h].remove(&id);
+                    continue;
+                }
                 // Speed is what the fast fee pays for: none once a claim
                 // carrying the lock was accepted. Once only: another attest
                 // of its own would count as extra and lose its receipts
                 // (D126).
-                if l.fast_fee >= fast.min_fee
-                    && l.amount <= fast.max
+                if qualifies
                     && !l.returned
                     && st.claims[i].accepted(&l.record(home)).is_none()
                     && !st.attests[i].values().any(|lock| *lock == id)
@@ -1138,7 +1217,11 @@ impl VaultOperator {
             for l in locks {
                 let r = l.record(home);
                 let outcome: anyhow::Result<()> = async {
+                    let stock = self.settings.stock_only(home, l.asset);
                     if here.vault.receipt_issued(l.id).await? || here.vault.given_up(l.id).await? {
+                        if stock {
+                            st.stock_locks[h].remove(&l.id);
+                        }
                         return Ok(());
                     }
                     if let Some((first_at, open)) = here.vault.lock_attests(l.id).await? {
@@ -1146,11 +1229,24 @@ impl VaultOperator {
                         // states the true record: this one would count as
                         // extra (D126).
                         if now >= first_at + FAST_OPEN_WINDOW || open.iter().any(|f| f.stated == record_hash(&r)) {
+                            if stock {
+                                st.stock_locks[h].remove(&l.id);
+                            }
                             return Ok(());
                         }
                     }
-                    let p = here.vault.position(&me, home, l.asset).await?;
-                    if !fits_cover(&p, waiting.get(&l.asset).copied().unwrap_or(0), value_of(&r)) {
+                    let collateral = (l.amount as u128 * FAST_COLLATERAL_BPS).div_ceil(10_000) as u64;
+                    // At its own cost, limited by the receipts it holds: an
+                    // asset from stock always, a carried one only until its
+                    // bond is counted here (settings `fast_only`,
+                    // `fast_at_own_cost`); after that, 80% of the bond.
+                    let p = if stock { None } else { Some(here.vault.position(&me, home, l.asset).await?) };
+                    let own_cost = stock || (self.settings.fast_at_own_cost && p.as_ref().is_some_and(|p| p.peer_bond == 0));
+                    if own_cost {
+                        if here.vault.receipt_balance(l.asset).await? < collateral {
+                            return Ok(());
+                        }
+                    } else if !fits_cover(p.as_ref().expect("read for a carried asset"), waiting.get(&l.asset).copied().unwrap_or(0), value_of(&r)) {
                         return Ok(());
                     }
                     // Its receipt credit first: the collateral of settled
@@ -1161,7 +1257,6 @@ impl VaultOperator {
                     let n = here.vault.attest_lock(&r).await?;
                     st.attests[i].insert(n, l.id);
                     *waiting.entry(l.asset).or_default() += value_of(&r);
-                    let collateral = (l.amount as u128 * FAST_COLLATERAL_BPS).div_ceil(10_000) as u64;
                     info!(network = here.net.name(), lock = l.id, attest = n, collateral, "issued a receipt at once");
                     Ok(())
                 }
@@ -1178,11 +1273,14 @@ impl VaultOperator {
         // Burns paid at once, the best-paid first. Anyone may: it risks only
         // its own money. Its own from before a restart are found first.
         let mut burns = vec![];
-        for id in window(&st.open_requests[h], st.request_turn[h]) {
+        let stock = window(&st.stock_requests[h], st.stock_request_turn[h]);
+        st.stock_request_turn[h] = next_turn(&st.stock_requests[h], &stock);
+        for id in window(&st.open_requests[h], st.request_turn[h]).into_iter().chain(stock) {
             let outcome: anyhow::Result<()> = async {
                 let Some(q) = there.vault.request(id).await? else { return Ok(()) };
                 let r = q.record(home);
                 if st.fast_paid[i].contains(&r) {
+                    st.stock_requests[h].remove(&id);
                     return Ok(());
                 }
                 // Its own first, also once accepted: repaid by the claim.
@@ -1190,11 +1288,22 @@ impl VaultOperator {
                     st.fast_paid[i].insert(r);
                     return Ok(());
                 }
+                let in_stock = st.stock_requests[h].contains(&id);
                 if st.claims[i].accepted(&r).is_some() {
+                    if in_stock {
+                        st.stock_requests[h].remove(&id);
+                    }
                     return Ok(());
                 }
-                let Some(fast) = self.settings.asset(at, q.asset).and_then(|s| s.fast.as_ref()) else { return Ok(()) };
-                if q.fast_fee >= fast.min_fee && q.amount <= fast.max {
+                let Some(fast) = self.settings.fast_of(at, q.asset) else { return Ok(()) };
+                let qualifies = fast_qualifies(q.fast_fee, q.amount, fast);
+                // From stock: let go once it can never qualify, or is paid
+                // already (by anyone) or carried home.
+                if in_stock && stock_done(qualifies, here.vault.request_paid(id).await? || here.vault.fast_paid_by(&r).await?.is_some()) {
+                    st.stock_requests[h].remove(&id);
+                    return Ok(());
+                }
+                if qualifies {
                     burns.push((q.fast_fee, r));
                 }
                 Ok(())
@@ -1213,7 +1322,13 @@ impl VaultOperator {
                 }
                 here.vault.fast_pay(&r).await?;
                 info!(network = here.net.name(), request = id, amount, "paid a burn at once");
-                st.fast_paid[i].insert(r);
+                // From stock it is never repaid, so nothing is left to watch.
+                let Record::Request { asset, .. } = r else { unreachable!() };
+                if self.settings.stock_only(at, asset) {
+                    st.stock_requests[h].remove(&id);
+                } else {
+                    st.fast_paid[i].insert(r);
+                }
                 Ok(())
             }
             .await;
@@ -1270,6 +1385,12 @@ impl VaultOperator {
         };
         // It attests only a lock it read: the record is the lock's own.
         let Some(l) = there.vault.lock(f.lock_id).await? else { return Ok(()) };
+        // An attest from stock is never carried, so never settled: forgotten
+        // once burned (its 7 days over), so it is not read every round.
+        if f.burned && self.settings.stock_only(self.other(at), l.asset) {
+            st.attests[i].remove(&n);
+            return Ok(());
+        }
         let r = l.record(self.other(at));
         let idx = &st.claims[i];
         if let Some(claim) = idx.accepted(&r) {
@@ -1932,6 +2053,82 @@ mod tests {
 
     fn bonds(entries: &[((u8, u32), u64)]) -> Bonds {
         entries.iter().copied().collect()
+    }
+
+    fn job(status: JobStatus, proof_height: Option<u32>, deadline: i64, lock_end: i64) -> Job {
+        Job {
+            id: 1,
+            application: String::new(),
+            tag: [0; 32],
+            escrow: 0,
+            commitment_fee: 0,
+            escrow_fee: 0,
+            bid: 0,
+            operator: None,
+            confirmations: 6,
+            claim_kind: 0,
+            status,
+            auction_end: 0,
+            deadline,
+            anchor: None,
+            proof_block: proof_height.map(|height| BlockRef { hash: [0; 32], height, epoch_time: 0 }),
+            tip: None,
+            txid: None,
+            deepest: None,
+            parents_shown: 0,
+            lock_end,
+            attester: None,
+            open_challenges: 0,
+        }
+    }
+
+    #[test]
+    fn a_stock_lock_or_burn_that_cannot_qualify_is_let_go() {
+        let fast = FastSettings { min_fee: 1, max: 100 };
+        assert!(fast_qualifies(1, 100, &fast));
+        // No fast fee, or too large: it never will, so it is let go at once
+        // and cannot hide newer ones.
+        assert!(!fast_qualifies(0, 10, &fast) && stock_done(fast_qualifies(0, 10, &fast), false));
+        assert!(!fast_qualifies(5, 101, &fast) && stock_done(fast_qualifies(5, 101, &fast), false));
+        // One that qualifies stays until finished.
+        assert!(!stock_done(true, false));
+        assert!(stock_done(true, true));
+    }
+
+    #[test]
+    fn an_asset_is_carried_or_paid_from_stock_and_each_has_its_fast_path() {
+        let fast = |max| FastSettings { min_fee: 1, max };
+        let s = VaultOperatorSettings {
+            assets: vec![CarriedAsset { home: ETHEREUM, asset: 0, bond_home: 5, bond_receipt: 5, min_fee: 0, fast: Some(fast(10)) }],
+            deposits: 1,
+            checkpoint_paid: [None, None],
+            journal: PathBuf::from("x.journal"),
+            fast_only: vec![(ETHEREUM, 7, fast(20))],
+            fast_at_own_cost: false,
+        };
+        assert!(s.asset(ETHEREUM, 0).is_some() && !s.stock_only(ETHEREUM, 0));
+        assert!(s.asset(ETHEREUM, 7).is_none() && s.stock_only(ETHEREUM, 7));
+        assert_eq!(s.fast_of(ETHEREUM, 0).map(|f| f.max), Some(10));
+        assert_eq!(s.fast_of(ETHEREUM, 7).map(|f| f.max), Some(20));
+        assert!(s.fast_of(SOLANA, 7).is_none() && s.fast_of(ETHEREUM, 8).is_none());
+    }
+
+    #[test]
+    fn only_a_job_that_could_certify_the_wanted_block_holds_up_a_checkpoint() {
+        let now = 1_000;
+        // Proven below the wanted block, in its lock: it cannot certify it.
+        assert!(!holds_up(&job(JobStatus::Proven, Some(970_651), 0, now + 100), now, 970_672));
+        // Proven at or above it, in its lock: it will.
+        assert!(holds_up(&job(JobStatus::Proven, Some(970_672), 0, now + 100), now, 970_672));
+        assert!(holds_up(&job(JobStatus::Proven, Some(970_680), 0, now + 100), now, 970_672));
+        // Proven, its lock over: not under way at all.
+        assert!(!holds_up(&job(JobStatus::Proven, Some(970_680), 0, now), now, 970_672));
+        // In its auction, or its duty before the deadline: it may yet prove a block that high.
+        assert!(holds_up(&job(JobStatus::Auction, None, 0, 0), now, 970_672));
+        assert!(holds_up(&job(JobStatus::Assigned, None, now, 0), now, 970_672));
+        // Past its deadline, or expired: it may never finish.
+        assert!(!holds_up(&job(JobStatus::Assigned, None, now - 1, 0), now, 970_672));
+        assert!(!holds_up(&job(JobStatus::Expired, None, 0, 0), now, 970_672));
     }
 
     #[test]

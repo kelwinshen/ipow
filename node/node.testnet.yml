@@ -1,17 +1,18 @@
 # The node on the test networks deployed on 2026-10-02/03 (spec Build
 # status, row 8), on Sepolia and Solana devnet: as a guardian, and as an
 # operator taking jobs on Sepolia, Base Sepolia, HyperEVM testnet and
-# Robinhood testnet, where its bond is locked (on Solana it waits for a
-# bond, spending nothing). Addresses from evm/
+# Robinhood testnet, where its bond is locked, and on Solana, where it
+# holds a bond of 1 SOL (read on 2026-10-09). Addresses from evm/
 # deployments/ethereum-testnet.json and solana/README.md.
 # No secrets: run-testnet.sh loads the keys and endpoints this names.
 
 roles: [operator, guardian]
 
 bitcoin:
-  explorer: https://mempool.space/api
-  # mempool.space times out often from this machine; blockstream.info answers.
-  fallback_explorers: [https://blockstream.info/api]
+  # Several explorers: when one is unreachable from the node's network, the
+  # next is asked.
+  explorer: https://blockstream.info/api
+  fallback_explorers: [https://mempool.emzy.de/api, https://mempool.space/api]
   # The operator wallet's mainnet WIF key, loaded by run-testnet.sh.
   wallet_key_env: BTC_WALLET_KEY
   # At most 5 sat/vB (Bitcoin asks about 1 on 2026-10-04): the wallet holds
@@ -179,7 +180,7 @@ networks:
     protocol: "ChYhovM8vm2tuMRaRFn4m6etG979bjixVa71fXBDwjPL"
     # At most 0.01 SOL.
     guardian: { max_deposit: "10000000" }
-    # At most 0.02 SOL; no bond is locked on Solana yet.
+    # At most 0.02 SOL of the bond of 1 SOL locked for one job.
     operator: { max_bid: "20000000" }
     conversion:
       address: "9Argk3M83p8t5pWG92PhwEhYzysWt5n82siEWyb29w7D"
@@ -188,86 +189,1127 @@ networks:
         # built on Solana yet (the mock tokens are in testnet-rwa.json).
         - { token: native, symbol: SOL, decimals: 9, pay_sats: 15000, ask_sats: 15000 }
 
-# The vault pairs, left out while the operator first takes jobs: switched
-# on, the operator registers a pair chain on Bitcoin for each at once (a
-# real transaction from its wallet) and keeps bonds in both vaults. The
-# addresses are the genesis vaults of 2026-10-07 (evm/deployments/
-# <network>-testnet.json; Solana's is the vault program 3TZ1LJ4f…, whose
-# ["config", <network>] account is each EVM vault's pair): each EVM
-# network's pair with Solana, and the 10 EVM pairs. `assets` lists what it
-# carries.
-# vault:
-#   deposits: 1
-#   pairs:
-#     - networks: [ethereum-sepolia, solana-devnet]
-#       vaults: ["0x26187A8aC987c7d6d7610c64a497595698C9A77F", "3TZ1LJ4fVZVKbBUyzVMRjJ9FNPGaqVmGX56JuT5QdXEy"]
-#       journal: testnet-eth-sol.journal
-#       assets: []
-#     - networks: [base-sepolia, solana-devnet]
-#       vaults: ["0x82Fd247e3dBA26E5De0023043b262C5B1DBEe03c", "3TZ1LJ4fVZVKbBUyzVMRjJ9FNPGaqVmGX56JuT5QdXEy"]
-#       journal: testnet-base-sol.journal
-#       assets: []
-#     - networks: [robinhood-testnet, solana-devnet]
-#       vaults: ["0xf8374e052e5b3A8518f1834C527A09A91023F58C", "3TZ1LJ4fVZVKbBUyzVMRjJ9FNPGaqVmGX56JuT5QdXEy"]
-#       journal: testnet-hood-sol.journal
-#       assets: []
-#     - networks: [hyperliquid-testnet, solana-devnet]
-#       vaults: ["0x05EAD8b6dac6f78781cF4c582fF4311358F38118", "3TZ1LJ4fVZVKbBUyzVMRjJ9FNPGaqVmGX56JuT5QdXEy"]
-#       journal: testnet-hyper-sol.journal
-#       assets: []
-#     - networks: [arbitrum-sepolia, solana-devnet]
-#       vaults: ["0x170685feEe5ac2bCddAE20DAe66747658E6fA7c0", "3TZ1LJ4fVZVKbBUyzVMRjJ9FNPGaqVmGX56JuT5QdXEy"]
-#       journal: testnet-arb-sol.journal
-#       assets: []
-#     - networks: [ethereum-sepolia, base-sepolia]
-#       vaults: ["0x907b399028627110F42fa21aF1C9911BA41B7a66", "0x3CC9b0836d26d15153ee82b217bC77dA4738c8d5"]
-#       journal: testnet-eth-base.journal
-#       assets: []
-#     - networks: [ethereum-sepolia, robinhood-testnet]
-#       vaults: ["0xA555077E1497a870C3CefC0354D40c42D48Ce451", "0x576f2e4CdE5CfBe9b2035969B67Ec1C5967A4599"]
-#       journal: testnet-eth-hood.journal
-#       assets: []
-#     - networks: [ethereum-sepolia, hyperliquid-testnet]
-#       vaults: ["0x7170F74b56d7888FA6E2CE6C0542816Dff509b3A", "0x806782a1A113f8fb242F543c275DBC939A1956b9"]
-#       journal: testnet-eth-hyper.journal
-#       assets: []
-#     - networks: [ethereum-sepolia, arbitrum-sepolia]
-#       vaults: ["0x8aF9Fa14907cc385640971a1bA7B941EA7c4D99A", "0x3221102aC4159048960e061FC0ADb81De3133496"]
-#       journal: testnet-eth-arb.journal
-#       assets: []
-#     - networks: [base-sepolia, robinhood-testnet]
-#       vaults: ["0x9e5660845231AAb5572D26788119825DEa6eF102", "0xbe0dCDFC20B7e19Ee893206448dDb865e0b51374"]
-#       journal: testnet-base-hood.journal
-#       assets: []
-#     - networks: [base-sepolia, hyperliquid-testnet]
-#       vaults: ["0xf591f519fe87C851A7686cD4eD9b5DC5B62ce22e", "0x2110dEb3A2a01834A2d356470c4451Db9A5ba809"]
-#       journal: testnet-base-hyper.journal
-#       assets: []
-#     - networks: [base-sepolia, arbitrum-sepolia]
-#       vaults: ["0x6D206Eb0F742cF6ADbbF42Ae2724F3e0417a0d91", "0x51cD31AC42a838d225f3B42F830Af72d99Eb003a"]
-#       journal: testnet-base-arb.journal
-#       assets: []
-#     - networks: [robinhood-testnet, hyperliquid-testnet]
-#       vaults: ["0x63C581Be19c699e614D047d70A2db649469312eB", "0x75Ab3B99752f0DE0a2dB8AFa09f6503aACFb4576"]
-#       journal: testnet-hood-hyper.journal
-#       assets: []
-#     - networks: [robinhood-testnet, arbitrum-sepolia]
-#       vaults: ["0x25A155e97EA6e44E9e872b7Aa6866BC10991732e", "0x7063AA65e06d6d5759997c50c0134c1aF20be59D"]
-#       journal: testnet-hood-arb.journal
-#       assets: []
-#     - networks: [hyperliquid-testnet, arbitrum-sepolia]
-#       vaults: ["0x1d63844887FDd4C8a4fB21E50Ed75493ef817ef9", "0xDa8964472dd82C3a2d222aC352BF377ed364d33D"]
-#       journal: testnet-hyper-arb.journal
-#       assets: []
+# Switched on 2026-10-09: Ethereum-Solana first (lock 20 of STRCx), then
+# on 2026-10-10 every pair this node can serve, 15 of the 16: each EVM
+# network with Solana, and the 10 EVM pairs (Tempo-Solana needs Tempo's own
+# transaction type). Each pair needs a Bitcoin registration of its own, and
+# carries 8 assets at most (D119, MAX_ASSETS): with Solana, the network's
+# coin and 5 of its tokens, SOL and QQQx; between two EVM networks, each
+# one's coin and first 3 tokens. Asset numbers, vaults and the least
+# certifying escrows (D118: 0.01 of the coin everywhere, so a checkpoint
+# pays 0.002) were read from the chain on 2026-10-10. Bonds, in record units
+# (9 decimals): 20 of each token on each side (the operator holds 100 of
+# each, minted by the deployer, and genesis's receipts); small coin bonds,
+# within each network's gas. The fast path takes Greatwall's 0.1% fee, up to
+# 80% of the bond.
+#
+# Every other asset of a pair is in its `fast_only` list (2026-10-10): paid at
+# once from the operator's own stock (genesis's receipts, and test tokens the
+# deployer minted it), never carried, so never repaid. With
+# `fast_at_own_cost` the carried 8 are attested too before their bonds are
+# counted (7 days after a BOND claim, section 11.4), limited by the receipts
+# held. Users are never at risk: each receipt is backed by the asset locked.
+# For the hackathon's test networks only; a deviation from D123's intent
+# that the attester always brings the claim, decided by the owner.
+vault:
+  deposits: 1
+  pairs:
+    - networks: [ethereum-sepolia, solana-devnet]
+      vaults: ["0x26187A8aC987c7d6d7610c64a497595698C9A77F", "3TZ1LJ4fVZVKbBUyzVMRjJ9FNPGaqVmGX56JuT5QdXEy"]
+      journal: testnet-eth-sol.journal
+      checkpoint_paid: ["2000000000000000", "2000000"]
+      fast_at_own_cost: true
+      fast_only:
+        - { home: ethereum-sepolia, asset: 3, fast: { min_fee: 1, max: 100000000000 } }   # AAPL
+        - { home: ethereum-sepolia, asset: 4, fast: { min_fee: 1, max: 100000000000 } }   # TSLA
+        - { home: ethereum-sepolia, asset: 5, fast: { min_fee: 1, max: 100000000000 } }   # NVDA
+        - { home: ethereum-sepolia, asset: 6, fast: { min_fee: 1, max: 100000000000 } }   # GOLD
+        - { home: ethereum-sepolia, asset: 9, fast: { min_fee: 1, max: 100000000000 } }   # IVVon
+        - { home: ethereum-sepolia, asset: 10, fast: { min_fee: 1, max: 100000000000 } }   # QQQon
+        - { home: ethereum-sepolia, asset: 12, fast: { min_fee: 1, max: 100000000000 } }   # SLVon
+        - { home: ethereum-sepolia, asset: 13, fast: { min_fee: 1, max: 100000000000 } }   # IEFAon
+        - { home: ethereum-sepolia, asset: 14, fast: { min_fee: 1, max: 100000000000 } }   # AMDon
+        - { home: ethereum-sepolia, asset: 15, fast: { min_fee: 1, max: 100000000000 } }   # SOFIon
+        - { home: ethereum-sepolia, asset: 16, fast: { min_fee: 1, max: 100000000000 } }   # HIMSon
+        - { home: solana-devnet, asset: 1, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 2, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 3, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 4, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 5, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 6, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 7, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 8, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 9, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 10, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 11, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 12, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 14, fast: { min_fee: 1, max: 100000000000 } }
+      assets:
+        - home: ethereum-sepolia   # ETH, ethereum's coin
+          asset: 0
+          bond_home: 4000000
+          bond_receipt: 2000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 1600000 }
+        - home: ethereum-sepolia   # STRCx
+          asset: 8
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: ethereum-sepolia   # VTIon
+          asset: 1
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: ethereum-sepolia   # XAUT
+          asset: 7
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: ethereum-sepolia   # IEMGon
+          asset: 2
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: ethereum-sepolia   # NVDAon
+          asset: 11
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: solana-devnet   # SOL
+          asset: 0
+          bond_home: 200000000
+          bond_receipt: 1000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 160000000 }
+        - home: solana-devnet   # QQQx
+          asset: 13
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+    - networks: [base-sepolia, solana-devnet]
+      vaults: ["0x82Fd247e3dBA26E5De0023043b262C5B1DBEe03c", "3TZ1LJ4fVZVKbBUyzVMRjJ9FNPGaqVmGX56JuT5QdXEy"]
+      journal: testnet-base-sol.journal
+      checkpoint_paid: ["2000000000000000", "2000000"]
+      fast_at_own_cost: true
+      fast_only:
+        - { home: base-sepolia, asset: 3, fast: { min_fee: 1, max: 100000000000 } }   # JTRSY
+        - { home: base-sepolia, asset: 4, fast: { min_fee: 1, max: 100000000000 } }   # AUDD
+        - { home: base-sepolia, asset: 5, fast: { min_fee: 1, max: 100000000000 } }   # JSPXA
+        - { home: base-sepolia, asset: 6, fast: { min_fee: 1, max: 100000000000 } }   # JSPX
+        - { home: base-sepolia, asset: 8, fast: { min_fee: 1, max: 100000000000 } }   # USTBL
+        - { home: base-sepolia, asset: 11, fast: { min_fee: 1, max: 100000000000 } }   # wtMCD
+        - { home: solana-devnet, asset: 1, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 2, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 3, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 4, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 5, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 6, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 7, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 8, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 9, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 10, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 11, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 12, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 14, fast: { min_fee: 1, max: 100000000000 } }
+      assets:
+        - home: base-sepolia   # ETH, base's coin
+          asset: 0
+          bond_home: 4000000
+          bond_receipt: 2000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 1600000 }
+        - home: base-sepolia   # GLDx
+          asset: 1
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: base-sepolia   # bTSLA
+          asset: 7
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: base-sepolia   # AMZN.d
+          asset: 10
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: base-sepolia   # GLDY
+          asset: 2
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: base-sepolia   # wtNKE
+          asset: 9
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: solana-devnet   # SOL
+          asset: 0
+          bond_home: 200000000
+          bond_receipt: 1000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 160000000 }
+        - home: solana-devnet   # QQQx
+          asset: 13
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+    - networks: [robinhood-testnet, solana-devnet]
+      vaults: ["0xf8374e052e5b3A8518f1834C527A09A91023F58C", "3TZ1LJ4fVZVKbBUyzVMRjJ9FNPGaqVmGX56JuT5QdXEy"]
+      journal: testnet-hood-sol.journal
+      checkpoint_paid: ["2000000000000000", "2000000"]
+      fast_at_own_cost: true
+      fast_only:
+        - { home: robinhood-testnet, asset: 4, fast: { min_fee: 1, max: 100000000000 } }   # SPCXr
+        - { home: robinhood-testnet, asset: 6, fast: { min_fee: 1, max: 100000000000 } }   # COINr
+        - { home: robinhood-testnet, asset: 7, fast: { min_fee: 1, max: 100000000000 } }   # USOr
+        - { home: robinhood-testnet, asset: 8, fast: { min_fee: 1, max: 100000000000 } }   # GMEr
+        - { home: robinhood-testnet, asset: 10, fast: { min_fee: 1, max: 100000000000 } }   # SGOVr
+        - { home: solana-devnet, asset: 1, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 2, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 3, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 4, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 5, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 6, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 7, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 8, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 9, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 10, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 11, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 12, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 14, fast: { min_fee: 1, max: 100000000000 } }
+      assets:
+        - home: robinhood-testnet   # ETH, robinhood's coin
+          asset: 0
+          bond_home: 4000000
+          bond_receipt: 2000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 1600000 }
+        - home: robinhood-testnet   # USDG
+          asset: 1
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: robinhood-testnet   # NVDAr
+          asset: 3
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: robinhood-testnet   # SPYr
+          asset: 2
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: robinhood-testnet   # METAr
+          asset: 5
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: robinhood-testnet   # PLTRr
+          asset: 9
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: solana-devnet   # SOL
+          asset: 0
+          bond_home: 200000000
+          bond_receipt: 1000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 160000000 }
+        - home: solana-devnet   # QQQx
+          asset: 13
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+    - networks: [hyperliquid-testnet, solana-devnet]
+      vaults: ["0x05EAD8b6dac6f78781cF4c582fF4311358F38118", "3TZ1LJ4fVZVKbBUyzVMRjJ9FNPGaqVmGX56JuT5QdXEy"]
+      journal: testnet-hyper-sol.journal
+      checkpoint_paid: ["2000000000000000", "2000000"]
+      fast_at_own_cost: true
+      fast_only:
+        - { home: hyperliquid-testnet, asset: 2, fast: { min_fee: 1, max: 100000000000 } }   # thBILL
+        - { home: hyperliquid-testnet, asset: 6, fast: { min_fee: 1, max: 100000000000 } }   # USDHL
+        - { home: hyperliquid-testnet, asset: 7, fast: { min_fee: 1, max: 100000000000 } }   # SKHYx
+        - { home: hyperliquid-testnet, asset: 8, fast: { min_fee: 1, max: 100000000000 } }   # NBISx
+        - { home: hyperliquid-testnet, asset: 10, fast: { min_fee: 1, max: 100000000000 } }   # CRWVx
+        - { home: solana-devnet, asset: 1, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 2, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 3, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 4, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 5, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 6, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 7, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 8, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 9, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 10, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 11, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 12, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 14, fast: { min_fee: 1, max: 100000000000 } }
+      assets:
+        - home: hyperliquid-testnet   # HYPE, hyperliquid's coin
+          asset: 0
+          bond_home: 20000000
+          bond_receipt: 5000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 4000000 }
+        - home: hyperliquid-testnet   # SPYx
+          asset: 1
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: hyperliquid-testnet   # USDH
+          asset: 3
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: hyperliquid-testnet   # MUx
+          asset: 5
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: hyperliquid-testnet   # IWMx
+          asset: 9
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: hyperliquid-testnet   # GMEx
+          asset: 4
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: solana-devnet   # SOL
+          asset: 0
+          bond_home: 200000000
+          bond_receipt: 1000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 160000000 }
+        - home: solana-devnet   # QQQx
+          asset: 13
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+    - networks: [arbitrum-sepolia, solana-devnet]
+      vaults: ["0x170685feEe5ac2bCddAE20DAe66747658E6fA7c0", "3TZ1LJ4fVZVKbBUyzVMRjJ9FNPGaqVmGX56JuT5QdXEy"]
+      journal: testnet-arb-sol.journal
+      checkpoint_paid: ["2000000000000000", "2000000"]
+      fast_at_own_cost: true
+      fast_only:
+        - { home: arbitrum-sepolia, asset: 2, fast: { min_fee: 1, max: 100000000000 } }   # rINTC
+        - { home: arbitrum-sepolia, asset: 4, fast: { min_fee: 1, max: 100000000000 } }   # rMU
+        - { home: arbitrum-sepolia, asset: 5, fast: { min_fee: 1, max: 100000000000 } }   # rMRNA
+        - { home: arbitrum-sepolia, asset: 6, fast: { min_fee: 1, max: 100000000000 } }   # rOKLO
+        - { home: arbitrum-sepolia, asset: 8, fast: { min_fee: 1, max: 100000000000 } }   # rDRAM
+        - { home: arbitrum-sepolia, asset: 10, fast: { min_fee: 1, max: 100000000000 } }   # rSNDK
+        - { home: solana-devnet, asset: 1, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 2, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 3, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 4, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 5, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 6, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 7, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 8, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 9, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 10, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 11, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 12, fast: { min_fee: 1, max: 100000000000 } }
+        - { home: solana-devnet, asset: 14, fast: { min_fee: 1, max: 100000000000 } }
+      assets:
+        - home: arbitrum-sepolia   # ETH, arbitrum's coin
+          asset: 0
+          bond_home: 4000000
+          bond_receipt: 2000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 1600000 }
+        - home: arbitrum-sepolia   # cbBTC
+          asset: 1
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: arbitrum-sepolia   # rTSM
+          asset: 11
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: arbitrum-sepolia   # PGOLD
+          asset: 7
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: arbitrum-sepolia   # rSPY
+          asset: 9
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: arbitrum-sepolia   # rMSTR
+          asset: 3
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: solana-devnet   # SOL
+          asset: 0
+          bond_home: 200000000
+          bond_receipt: 1000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 160000000 }
+        - home: solana-devnet   # QQQx
+          asset: 13
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+    - networks: [ethereum-sepolia, base-sepolia]
+      vaults: ["0x907b399028627110F42fa21aF1C9911BA41B7a66", "0x3CC9b0836d26d15153ee82b217bC77dA4738c8d5"]
+      journal: testnet-eth-base.journal
+      checkpoint_paid: ["2000000000000000", "2000000000000000"]
+      fast_at_own_cost: true
+      fast_only:
+        - { home: ethereum-sepolia, asset: 2, fast: { min_fee: 1, max: 100000000000 } }   # IEMGon
+        - { home: ethereum-sepolia, asset: 3, fast: { min_fee: 1, max: 100000000000 } }   # AAPL
+        - { home: ethereum-sepolia, asset: 4, fast: { min_fee: 1, max: 100000000000 } }   # TSLA
+        - { home: ethereum-sepolia, asset: 5, fast: { min_fee: 1, max: 100000000000 } }   # NVDA
+        - { home: ethereum-sepolia, asset: 6, fast: { min_fee: 1, max: 100000000000 } }   # GOLD
+        - { home: ethereum-sepolia, asset: 9, fast: { min_fee: 1, max: 100000000000 } }   # IVVon
+        - { home: ethereum-sepolia, asset: 10, fast: { min_fee: 1, max: 100000000000 } }   # QQQon
+        - { home: ethereum-sepolia, asset: 11, fast: { min_fee: 1, max: 100000000000 } }   # NVDAon
+        - { home: ethereum-sepolia, asset: 12, fast: { min_fee: 1, max: 100000000000 } }   # SLVon
+        - { home: ethereum-sepolia, asset: 13, fast: { min_fee: 1, max: 100000000000 } }   # IEFAon
+        - { home: ethereum-sepolia, asset: 14, fast: { min_fee: 1, max: 100000000000 } }   # AMDon
+        - { home: ethereum-sepolia, asset: 15, fast: { min_fee: 1, max: 100000000000 } }   # SOFIon
+        - { home: ethereum-sepolia, asset: 16, fast: { min_fee: 1, max: 100000000000 } }   # HIMSon
+        - { home: base-sepolia, asset: 2, fast: { min_fee: 1, max: 100000000000 } }   # GLDY
+        - { home: base-sepolia, asset: 3, fast: { min_fee: 1, max: 100000000000 } }   # JTRSY
+        - { home: base-sepolia, asset: 4, fast: { min_fee: 1, max: 100000000000 } }   # AUDD
+        - { home: base-sepolia, asset: 5, fast: { min_fee: 1, max: 100000000000 } }   # JSPXA
+        - { home: base-sepolia, asset: 6, fast: { min_fee: 1, max: 100000000000 } }   # JSPX
+        - { home: base-sepolia, asset: 8, fast: { min_fee: 1, max: 100000000000 } }   # USTBL
+        - { home: base-sepolia, asset: 9, fast: { min_fee: 1, max: 100000000000 } }   # wtNKE
+        - { home: base-sepolia, asset: 11, fast: { min_fee: 1, max: 100000000000 } }   # wtMCD
+      assets:
+        - home: ethereum-sepolia   # ETH, ethereum's coin
+          asset: 0
+          bond_home: 4000000
+          bond_receipt: 2000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 1600000 }
+        - home: ethereum-sepolia   # STRCx
+          asset: 8
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: ethereum-sepolia   # VTIon
+          asset: 1
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: ethereum-sepolia   # XAUT
+          asset: 7
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: base-sepolia   # ETH, base's coin
+          asset: 0
+          bond_home: 4000000
+          bond_receipt: 2000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 1600000 }
+        - home: base-sepolia   # GLDx
+          asset: 1
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: base-sepolia   # bTSLA
+          asset: 7
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: base-sepolia   # AMZN.d
+          asset: 10
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+    - networks: [ethereum-sepolia, robinhood-testnet]
+      vaults: ["0xA555077E1497a870C3CefC0354D40c42D48Ce451", "0x576f2e4CdE5CfBe9b2035969B67Ec1C5967A4599"]
+      journal: testnet-eth-hood.journal
+      checkpoint_paid: ["2000000000000000", "2000000000000000"]
+      fast_at_own_cost: true
+      fast_only:
+        - { home: ethereum-sepolia, asset: 2, fast: { min_fee: 1, max: 100000000000 } }   # IEMGon
+        - { home: ethereum-sepolia, asset: 3, fast: { min_fee: 1, max: 100000000000 } }   # AAPL
+        - { home: ethereum-sepolia, asset: 4, fast: { min_fee: 1, max: 100000000000 } }   # TSLA
+        - { home: ethereum-sepolia, asset: 5, fast: { min_fee: 1, max: 100000000000 } }   # NVDA
+        - { home: ethereum-sepolia, asset: 6, fast: { min_fee: 1, max: 100000000000 } }   # GOLD
+        - { home: ethereum-sepolia, asset: 9, fast: { min_fee: 1, max: 100000000000 } }   # IVVon
+        - { home: ethereum-sepolia, asset: 10, fast: { min_fee: 1, max: 100000000000 } }   # QQQon
+        - { home: ethereum-sepolia, asset: 11, fast: { min_fee: 1, max: 100000000000 } }   # NVDAon
+        - { home: ethereum-sepolia, asset: 12, fast: { min_fee: 1, max: 100000000000 } }   # SLVon
+        - { home: ethereum-sepolia, asset: 13, fast: { min_fee: 1, max: 100000000000 } }   # IEFAon
+        - { home: ethereum-sepolia, asset: 14, fast: { min_fee: 1, max: 100000000000 } }   # AMDon
+        - { home: ethereum-sepolia, asset: 15, fast: { min_fee: 1, max: 100000000000 } }   # SOFIon
+        - { home: ethereum-sepolia, asset: 16, fast: { min_fee: 1, max: 100000000000 } }   # HIMSon
+        - { home: robinhood-testnet, asset: 4, fast: { min_fee: 1, max: 100000000000 } }   # SPCXr
+        - { home: robinhood-testnet, asset: 5, fast: { min_fee: 1, max: 100000000000 } }   # METAr
+        - { home: robinhood-testnet, asset: 6, fast: { min_fee: 1, max: 100000000000 } }   # COINr
+        - { home: robinhood-testnet, asset: 7, fast: { min_fee: 1, max: 100000000000 } }   # USOr
+        - { home: robinhood-testnet, asset: 8, fast: { min_fee: 1, max: 100000000000 } }   # GMEr
+        - { home: robinhood-testnet, asset: 9, fast: { min_fee: 1, max: 100000000000 } }   # PLTRr
+        - { home: robinhood-testnet, asset: 10, fast: { min_fee: 1, max: 100000000000 } }   # SGOVr
+      assets:
+        - home: ethereum-sepolia   # ETH, ethereum's coin
+          asset: 0
+          bond_home: 4000000
+          bond_receipt: 2000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 1600000 }
+        - home: ethereum-sepolia   # STRCx
+          asset: 8
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: ethereum-sepolia   # VTIon
+          asset: 1
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: ethereum-sepolia   # XAUT
+          asset: 7
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: robinhood-testnet   # ETH, robinhood's coin
+          asset: 0
+          bond_home: 4000000
+          bond_receipt: 2000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 1600000 }
+        - home: robinhood-testnet   # USDG
+          asset: 1
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: robinhood-testnet   # NVDAr
+          asset: 3
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: robinhood-testnet   # SPYr
+          asset: 2
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+    - networks: [ethereum-sepolia, hyperliquid-testnet]
+      vaults: ["0x7170F74b56d7888FA6E2CE6C0542816Dff509b3A", "0x806782a1A113f8fb242F543c275DBC939A1956b9"]
+      journal: testnet-eth-hyper.journal
+      checkpoint_paid: ["2000000000000000", "2000000000000000"]
+      fast_at_own_cost: true
+      fast_only:
+        - { home: ethereum-sepolia, asset: 2, fast: { min_fee: 1, max: 100000000000 } }   # IEMGon
+        - { home: ethereum-sepolia, asset: 3, fast: { min_fee: 1, max: 100000000000 } }   # AAPL
+        - { home: ethereum-sepolia, asset: 4, fast: { min_fee: 1, max: 100000000000 } }   # TSLA
+        - { home: ethereum-sepolia, asset: 5, fast: { min_fee: 1, max: 100000000000 } }   # NVDA
+        - { home: ethereum-sepolia, asset: 6, fast: { min_fee: 1, max: 100000000000 } }   # GOLD
+        - { home: ethereum-sepolia, asset: 9, fast: { min_fee: 1, max: 100000000000 } }   # IVVon
+        - { home: ethereum-sepolia, asset: 10, fast: { min_fee: 1, max: 100000000000 } }   # QQQon
+        - { home: ethereum-sepolia, asset: 11, fast: { min_fee: 1, max: 100000000000 } }   # NVDAon
+        - { home: ethereum-sepolia, asset: 12, fast: { min_fee: 1, max: 100000000000 } }   # SLVon
+        - { home: ethereum-sepolia, asset: 13, fast: { min_fee: 1, max: 100000000000 } }   # IEFAon
+        - { home: ethereum-sepolia, asset: 14, fast: { min_fee: 1, max: 100000000000 } }   # AMDon
+        - { home: ethereum-sepolia, asset: 15, fast: { min_fee: 1, max: 100000000000 } }   # SOFIon
+        - { home: ethereum-sepolia, asset: 16, fast: { min_fee: 1, max: 100000000000 } }   # HIMSon
+        - { home: hyperliquid-testnet, asset: 2, fast: { min_fee: 1, max: 100000000000 } }   # thBILL
+        - { home: hyperliquid-testnet, asset: 4, fast: { min_fee: 1, max: 100000000000 } }   # GMEx
+        - { home: hyperliquid-testnet, asset: 6, fast: { min_fee: 1, max: 100000000000 } }   # USDHL
+        - { home: hyperliquid-testnet, asset: 7, fast: { min_fee: 1, max: 100000000000 } }   # SKHYx
+        - { home: hyperliquid-testnet, asset: 8, fast: { min_fee: 1, max: 100000000000 } }   # NBISx
+        - { home: hyperliquid-testnet, asset: 9, fast: { min_fee: 1, max: 100000000000 } }   # IWMx
+        - { home: hyperliquid-testnet, asset: 10, fast: { min_fee: 1, max: 100000000000 } }   # CRWVx
+      assets:
+        - home: ethereum-sepolia   # ETH, ethereum's coin
+          asset: 0
+          bond_home: 4000000
+          bond_receipt: 2000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 1600000 }
+        - home: ethereum-sepolia   # STRCx
+          asset: 8
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: ethereum-sepolia   # VTIon
+          asset: 1
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: ethereum-sepolia   # XAUT
+          asset: 7
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: hyperliquid-testnet   # HYPE, hyperliquid's coin
+          asset: 0
+          bond_home: 20000000
+          bond_receipt: 5000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 4000000 }
+        - home: hyperliquid-testnet   # SPYx
+          asset: 1
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: hyperliquid-testnet   # USDH
+          asset: 3
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: hyperliquid-testnet   # MUx
+          asset: 5
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+    - networks: [ethereum-sepolia, arbitrum-sepolia]
+      vaults: ["0x8aF9Fa14907cc385640971a1bA7B941EA7c4D99A", "0x3221102aC4159048960e061FC0ADb81De3133496"]
+      journal: testnet-eth-arb.journal
+      checkpoint_paid: ["2000000000000000", "2000000000000000"]
+      fast_at_own_cost: true
+      fast_only:
+        - { home: ethereum-sepolia, asset: 2, fast: { min_fee: 1, max: 100000000000 } }   # IEMGon
+        - { home: ethereum-sepolia, asset: 3, fast: { min_fee: 1, max: 100000000000 } }   # AAPL
+        - { home: ethereum-sepolia, asset: 4, fast: { min_fee: 1, max: 100000000000 } }   # TSLA
+        - { home: ethereum-sepolia, asset: 5, fast: { min_fee: 1, max: 100000000000 } }   # NVDA
+        - { home: ethereum-sepolia, asset: 6, fast: { min_fee: 1, max: 100000000000 } }   # GOLD
+        - { home: ethereum-sepolia, asset: 9, fast: { min_fee: 1, max: 100000000000 } }   # IVVon
+        - { home: ethereum-sepolia, asset: 10, fast: { min_fee: 1, max: 100000000000 } }   # QQQon
+        - { home: ethereum-sepolia, asset: 11, fast: { min_fee: 1, max: 100000000000 } }   # NVDAon
+        - { home: ethereum-sepolia, asset: 12, fast: { min_fee: 1, max: 100000000000 } }   # SLVon
+        - { home: ethereum-sepolia, asset: 13, fast: { min_fee: 1, max: 100000000000 } }   # IEFAon
+        - { home: ethereum-sepolia, asset: 14, fast: { min_fee: 1, max: 100000000000 } }   # AMDon
+        - { home: ethereum-sepolia, asset: 15, fast: { min_fee: 1, max: 100000000000 } }   # SOFIon
+        - { home: ethereum-sepolia, asset: 16, fast: { min_fee: 1, max: 100000000000 } }   # HIMSon
+        - { home: arbitrum-sepolia, asset: 2, fast: { min_fee: 1, max: 100000000000 } }   # rINTC
+        - { home: arbitrum-sepolia, asset: 3, fast: { min_fee: 1, max: 100000000000 } }   # rMSTR
+        - { home: arbitrum-sepolia, asset: 4, fast: { min_fee: 1, max: 100000000000 } }   # rMU
+        - { home: arbitrum-sepolia, asset: 5, fast: { min_fee: 1, max: 100000000000 } }   # rMRNA
+        - { home: arbitrum-sepolia, asset: 6, fast: { min_fee: 1, max: 100000000000 } }   # rOKLO
+        - { home: arbitrum-sepolia, asset: 8, fast: { min_fee: 1, max: 100000000000 } }   # rDRAM
+        - { home: arbitrum-sepolia, asset: 9, fast: { min_fee: 1, max: 100000000000 } }   # rSPY
+        - { home: arbitrum-sepolia, asset: 10, fast: { min_fee: 1, max: 100000000000 } }   # rSNDK
+      assets:
+        - home: ethereum-sepolia   # ETH, ethereum's coin
+          asset: 0
+          bond_home: 4000000
+          bond_receipt: 2000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 1600000 }
+        - home: ethereum-sepolia   # STRCx
+          asset: 8
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: ethereum-sepolia   # VTIon
+          asset: 1
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: ethereum-sepolia   # XAUT
+          asset: 7
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: arbitrum-sepolia   # ETH, arbitrum's coin
+          asset: 0
+          bond_home: 4000000
+          bond_receipt: 2000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 1600000 }
+        - home: arbitrum-sepolia   # cbBTC
+          asset: 1
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: arbitrum-sepolia   # rTSM
+          asset: 11
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: arbitrum-sepolia   # PGOLD
+          asset: 7
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+    - networks: [base-sepolia, robinhood-testnet]
+      vaults: ["0x9e5660845231AAb5572D26788119825DEa6eF102", "0xbe0dCDFC20B7e19Ee893206448dDb865e0b51374"]
+      journal: testnet-base-hood.journal
+      checkpoint_paid: ["2000000000000000", "2000000000000000"]
+      fast_at_own_cost: true
+      fast_only:
+        - { home: base-sepolia, asset: 2, fast: { min_fee: 1, max: 100000000000 } }   # GLDY
+        - { home: base-sepolia, asset: 3, fast: { min_fee: 1, max: 100000000000 } }   # JTRSY
+        - { home: base-sepolia, asset: 4, fast: { min_fee: 1, max: 100000000000 } }   # AUDD
+        - { home: base-sepolia, asset: 5, fast: { min_fee: 1, max: 100000000000 } }   # JSPXA
+        - { home: base-sepolia, asset: 6, fast: { min_fee: 1, max: 100000000000 } }   # JSPX
+        - { home: base-sepolia, asset: 8, fast: { min_fee: 1, max: 100000000000 } }   # USTBL
+        - { home: base-sepolia, asset: 9, fast: { min_fee: 1, max: 100000000000 } }   # wtNKE
+        - { home: base-sepolia, asset: 11, fast: { min_fee: 1, max: 100000000000 } }   # wtMCD
+        - { home: robinhood-testnet, asset: 4, fast: { min_fee: 1, max: 100000000000 } }   # SPCXr
+        - { home: robinhood-testnet, asset: 5, fast: { min_fee: 1, max: 100000000000 } }   # METAr
+        - { home: robinhood-testnet, asset: 6, fast: { min_fee: 1, max: 100000000000 } }   # COINr
+        - { home: robinhood-testnet, asset: 7, fast: { min_fee: 1, max: 100000000000 } }   # USOr
+        - { home: robinhood-testnet, asset: 8, fast: { min_fee: 1, max: 100000000000 } }   # GMEr
+        - { home: robinhood-testnet, asset: 9, fast: { min_fee: 1, max: 100000000000 } }   # PLTRr
+        - { home: robinhood-testnet, asset: 10, fast: { min_fee: 1, max: 100000000000 } }   # SGOVr
+      assets:
+        - home: base-sepolia   # ETH, base's coin
+          asset: 0
+          bond_home: 4000000
+          bond_receipt: 2000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 1600000 }
+        - home: base-sepolia   # GLDx
+          asset: 1
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: base-sepolia   # bTSLA
+          asset: 7
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: base-sepolia   # AMZN.d
+          asset: 10
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: robinhood-testnet   # ETH, robinhood's coin
+          asset: 0
+          bond_home: 4000000
+          bond_receipt: 2000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 1600000 }
+        - home: robinhood-testnet   # USDG
+          asset: 1
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: robinhood-testnet   # NVDAr
+          asset: 3
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: robinhood-testnet   # SPYr
+          asset: 2
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+    - networks: [base-sepolia, hyperliquid-testnet]
+      vaults: ["0xf591f519fe87C851A7686cD4eD9b5DC5B62ce22e", "0x2110dEb3A2a01834A2d356470c4451Db9A5ba809"]
+      journal: testnet-base-hyper.journal
+      checkpoint_paid: ["2000000000000000", "2000000000000000"]
+      fast_at_own_cost: true
+      fast_only:
+        - { home: base-sepolia, asset: 2, fast: { min_fee: 1, max: 100000000000 } }   # GLDY
+        - { home: base-sepolia, asset: 3, fast: { min_fee: 1, max: 100000000000 } }   # JTRSY
+        - { home: base-sepolia, asset: 4, fast: { min_fee: 1, max: 100000000000 } }   # AUDD
+        - { home: base-sepolia, asset: 5, fast: { min_fee: 1, max: 100000000000 } }   # JSPXA
+        - { home: base-sepolia, asset: 6, fast: { min_fee: 1, max: 100000000000 } }   # JSPX
+        - { home: base-sepolia, asset: 8, fast: { min_fee: 1, max: 100000000000 } }   # USTBL
+        - { home: base-sepolia, asset: 9, fast: { min_fee: 1, max: 100000000000 } }   # wtNKE
+        - { home: base-sepolia, asset: 11, fast: { min_fee: 1, max: 100000000000 } }   # wtMCD
+        - { home: hyperliquid-testnet, asset: 2, fast: { min_fee: 1, max: 100000000000 } }   # thBILL
+        - { home: hyperliquid-testnet, asset: 4, fast: { min_fee: 1, max: 100000000000 } }   # GMEx
+        - { home: hyperliquid-testnet, asset: 6, fast: { min_fee: 1, max: 100000000000 } }   # USDHL
+        - { home: hyperliquid-testnet, asset: 7, fast: { min_fee: 1, max: 100000000000 } }   # SKHYx
+        - { home: hyperliquid-testnet, asset: 8, fast: { min_fee: 1, max: 100000000000 } }   # NBISx
+        - { home: hyperliquid-testnet, asset: 9, fast: { min_fee: 1, max: 100000000000 } }   # IWMx
+        - { home: hyperliquid-testnet, asset: 10, fast: { min_fee: 1, max: 100000000000 } }   # CRWVx
+      assets:
+        - home: base-sepolia   # ETH, base's coin
+          asset: 0
+          bond_home: 4000000
+          bond_receipt: 2000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 1600000 }
+        - home: base-sepolia   # GLDx
+          asset: 1
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: base-sepolia   # bTSLA
+          asset: 7
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: base-sepolia   # AMZN.d
+          asset: 10
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: hyperliquid-testnet   # HYPE, hyperliquid's coin
+          asset: 0
+          bond_home: 20000000
+          bond_receipt: 5000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 4000000 }
+        - home: hyperliquid-testnet   # SPYx
+          asset: 1
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: hyperliquid-testnet   # USDH
+          asset: 3
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: hyperliquid-testnet   # MUx
+          asset: 5
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+    - networks: [base-sepolia, arbitrum-sepolia]
+      vaults: ["0x6D206Eb0F742cF6ADbbF42Ae2724F3e0417a0d91", "0x51cD31AC42a838d225f3B42F830Af72d99Eb003a"]
+      journal: testnet-base-arb.journal
+      checkpoint_paid: ["2000000000000000", "2000000000000000"]
+      fast_at_own_cost: true
+      fast_only:
+        - { home: base-sepolia, asset: 2, fast: { min_fee: 1, max: 100000000000 } }   # GLDY
+        - { home: base-sepolia, asset: 3, fast: { min_fee: 1, max: 100000000000 } }   # JTRSY
+        - { home: base-sepolia, asset: 4, fast: { min_fee: 1, max: 100000000000 } }   # AUDD
+        - { home: base-sepolia, asset: 5, fast: { min_fee: 1, max: 100000000000 } }   # JSPXA
+        - { home: base-sepolia, asset: 6, fast: { min_fee: 1, max: 100000000000 } }   # JSPX
+        - { home: base-sepolia, asset: 8, fast: { min_fee: 1, max: 100000000000 } }   # USTBL
+        - { home: base-sepolia, asset: 9, fast: { min_fee: 1, max: 100000000000 } }   # wtNKE
+        - { home: base-sepolia, asset: 11, fast: { min_fee: 1, max: 100000000000 } }   # wtMCD
+        - { home: arbitrum-sepolia, asset: 2, fast: { min_fee: 1, max: 100000000000 } }   # rINTC
+        - { home: arbitrum-sepolia, asset: 3, fast: { min_fee: 1, max: 100000000000 } }   # rMSTR
+        - { home: arbitrum-sepolia, asset: 4, fast: { min_fee: 1, max: 100000000000 } }   # rMU
+        - { home: arbitrum-sepolia, asset: 5, fast: { min_fee: 1, max: 100000000000 } }   # rMRNA
+        - { home: arbitrum-sepolia, asset: 6, fast: { min_fee: 1, max: 100000000000 } }   # rOKLO
+        - { home: arbitrum-sepolia, asset: 8, fast: { min_fee: 1, max: 100000000000 } }   # rDRAM
+        - { home: arbitrum-sepolia, asset: 9, fast: { min_fee: 1, max: 100000000000 } }   # rSPY
+        - { home: arbitrum-sepolia, asset: 10, fast: { min_fee: 1, max: 100000000000 } }   # rSNDK
+      assets:
+        - home: base-sepolia   # ETH, base's coin
+          asset: 0
+          bond_home: 4000000
+          bond_receipt: 2000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 1600000 }
+        - home: base-sepolia   # GLDx
+          asset: 1
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: base-sepolia   # bTSLA
+          asset: 7
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: base-sepolia   # AMZN.d
+          asset: 10
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: arbitrum-sepolia   # ETH, arbitrum's coin
+          asset: 0
+          bond_home: 4000000
+          bond_receipt: 2000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 1600000 }
+        - home: arbitrum-sepolia   # cbBTC
+          asset: 1
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: arbitrum-sepolia   # rTSM
+          asset: 11
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: arbitrum-sepolia   # PGOLD
+          asset: 7
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+    - networks: [robinhood-testnet, hyperliquid-testnet]
+      vaults: ["0x63C581Be19c699e614D047d70A2db649469312eB", "0x75Ab3B99752f0DE0a2dB8AFa09f6503aACFb4576"]
+      journal: testnet-hood-hyper.journal
+      checkpoint_paid: ["2000000000000000", "2000000000000000"]
+      fast_at_own_cost: true
+      fast_only:
+        - { home: robinhood-testnet, asset: 4, fast: { min_fee: 1, max: 100000000000 } }   # SPCXr
+        - { home: robinhood-testnet, asset: 5, fast: { min_fee: 1, max: 100000000000 } }   # METAr
+        - { home: robinhood-testnet, asset: 6, fast: { min_fee: 1, max: 100000000000 } }   # COINr
+        - { home: robinhood-testnet, asset: 7, fast: { min_fee: 1, max: 100000000000 } }   # USOr
+        - { home: robinhood-testnet, asset: 8, fast: { min_fee: 1, max: 100000000000 } }   # GMEr
+        - { home: robinhood-testnet, asset: 9, fast: { min_fee: 1, max: 100000000000 } }   # PLTRr
+        - { home: robinhood-testnet, asset: 10, fast: { min_fee: 1, max: 100000000000 } }   # SGOVr
+        - { home: hyperliquid-testnet, asset: 2, fast: { min_fee: 1, max: 100000000000 } }   # thBILL
+        - { home: hyperliquid-testnet, asset: 4, fast: { min_fee: 1, max: 100000000000 } }   # GMEx
+        - { home: hyperliquid-testnet, asset: 6, fast: { min_fee: 1, max: 100000000000 } }   # USDHL
+        - { home: hyperliquid-testnet, asset: 7, fast: { min_fee: 1, max: 100000000000 } }   # SKHYx
+        - { home: hyperliquid-testnet, asset: 8, fast: { min_fee: 1, max: 100000000000 } }   # NBISx
+        - { home: hyperliquid-testnet, asset: 9, fast: { min_fee: 1, max: 100000000000 } }   # IWMx
+        - { home: hyperliquid-testnet, asset: 10, fast: { min_fee: 1, max: 100000000000 } }   # CRWVx
+      assets:
+        - home: robinhood-testnet   # ETH, robinhood's coin
+          asset: 0
+          bond_home: 4000000
+          bond_receipt: 2000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 1600000 }
+        - home: robinhood-testnet   # USDG
+          asset: 1
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: robinhood-testnet   # NVDAr
+          asset: 3
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: robinhood-testnet   # SPYr
+          asset: 2
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: hyperliquid-testnet   # HYPE, hyperliquid's coin
+          asset: 0
+          bond_home: 20000000
+          bond_receipt: 5000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 4000000 }
+        - home: hyperliquid-testnet   # SPYx
+          asset: 1
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: hyperliquid-testnet   # USDH
+          asset: 3
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: hyperliquid-testnet   # MUx
+          asset: 5
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+    - networks: [robinhood-testnet, arbitrum-sepolia]
+      vaults: ["0x25A155e97EA6e44E9e872b7Aa6866BC10991732e", "0x7063AA65e06d6d5759997c50c0134c1aF20be59D"]
+      journal: testnet-hood-arb.journal
+      checkpoint_paid: ["2000000000000000", "2000000000000000"]
+      fast_at_own_cost: true
+      fast_only:
+        - { home: robinhood-testnet, asset: 4, fast: { min_fee: 1, max: 100000000000 } }   # SPCXr
+        - { home: robinhood-testnet, asset: 5, fast: { min_fee: 1, max: 100000000000 } }   # METAr
+        - { home: robinhood-testnet, asset: 6, fast: { min_fee: 1, max: 100000000000 } }   # COINr
+        - { home: robinhood-testnet, asset: 7, fast: { min_fee: 1, max: 100000000000 } }   # USOr
+        - { home: robinhood-testnet, asset: 8, fast: { min_fee: 1, max: 100000000000 } }   # GMEr
+        - { home: robinhood-testnet, asset: 9, fast: { min_fee: 1, max: 100000000000 } }   # PLTRr
+        - { home: robinhood-testnet, asset: 10, fast: { min_fee: 1, max: 100000000000 } }   # SGOVr
+        - { home: arbitrum-sepolia, asset: 2, fast: { min_fee: 1, max: 100000000000 } }   # rINTC
+        - { home: arbitrum-sepolia, asset: 3, fast: { min_fee: 1, max: 100000000000 } }   # rMSTR
+        - { home: arbitrum-sepolia, asset: 4, fast: { min_fee: 1, max: 100000000000 } }   # rMU
+        - { home: arbitrum-sepolia, asset: 5, fast: { min_fee: 1, max: 100000000000 } }   # rMRNA
+        - { home: arbitrum-sepolia, asset: 6, fast: { min_fee: 1, max: 100000000000 } }   # rOKLO
+        - { home: arbitrum-sepolia, asset: 8, fast: { min_fee: 1, max: 100000000000 } }   # rDRAM
+        - { home: arbitrum-sepolia, asset: 9, fast: { min_fee: 1, max: 100000000000 } }   # rSPY
+        - { home: arbitrum-sepolia, asset: 10, fast: { min_fee: 1, max: 100000000000 } }   # rSNDK
+      assets:
+        - home: robinhood-testnet   # ETH, robinhood's coin
+          asset: 0
+          bond_home: 4000000
+          bond_receipt: 2000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 1600000 }
+        - home: robinhood-testnet   # USDG
+          asset: 1
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: robinhood-testnet   # NVDAr
+          asset: 3
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: robinhood-testnet   # SPYr
+          asset: 2
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: arbitrum-sepolia   # ETH, arbitrum's coin
+          asset: 0
+          bond_home: 4000000
+          bond_receipt: 2000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 1600000 }
+        - home: arbitrum-sepolia   # cbBTC
+          asset: 1
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: arbitrum-sepolia   # rTSM
+          asset: 11
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: arbitrum-sepolia   # PGOLD
+          asset: 7
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+    - networks: [hyperliquid-testnet, arbitrum-sepolia]
+      vaults: ["0x1d63844887FDd4C8a4fB21E50Ed75493ef817ef9", "0xDa8964472dd82C3a2d222aC352BF377ed364d33D"]
+      journal: testnet-hyper-arb.journal
+      checkpoint_paid: ["2000000000000000", "2000000000000000"]
+      fast_at_own_cost: true
+      fast_only:
+        - { home: hyperliquid-testnet, asset: 2, fast: { min_fee: 1, max: 100000000000 } }   # thBILL
+        - { home: hyperliquid-testnet, asset: 4, fast: { min_fee: 1, max: 100000000000 } }   # GMEx
+        - { home: hyperliquid-testnet, asset: 6, fast: { min_fee: 1, max: 100000000000 } }   # USDHL
+        - { home: hyperliquid-testnet, asset: 7, fast: { min_fee: 1, max: 100000000000 } }   # SKHYx
+        - { home: hyperliquid-testnet, asset: 8, fast: { min_fee: 1, max: 100000000000 } }   # NBISx
+        - { home: hyperliquid-testnet, asset: 9, fast: { min_fee: 1, max: 100000000000 } }   # IWMx
+        - { home: hyperliquid-testnet, asset: 10, fast: { min_fee: 1, max: 100000000000 } }   # CRWVx
+        - { home: arbitrum-sepolia, asset: 2, fast: { min_fee: 1, max: 100000000000 } }   # rINTC
+        - { home: arbitrum-sepolia, asset: 3, fast: { min_fee: 1, max: 100000000000 } }   # rMSTR
+        - { home: arbitrum-sepolia, asset: 4, fast: { min_fee: 1, max: 100000000000 } }   # rMU
+        - { home: arbitrum-sepolia, asset: 5, fast: { min_fee: 1, max: 100000000000 } }   # rMRNA
+        - { home: arbitrum-sepolia, asset: 6, fast: { min_fee: 1, max: 100000000000 } }   # rOKLO
+        - { home: arbitrum-sepolia, asset: 8, fast: { min_fee: 1, max: 100000000000 } }   # rDRAM
+        - { home: arbitrum-sepolia, asset: 9, fast: { min_fee: 1, max: 100000000000 } }   # rSPY
+        - { home: arbitrum-sepolia, asset: 10, fast: { min_fee: 1, max: 100000000000 } }   # rSNDK
+      assets:
+        - home: hyperliquid-testnet   # HYPE, hyperliquid's coin
+          asset: 0
+          bond_home: 20000000
+          bond_receipt: 5000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 4000000 }
+        - home: hyperliquid-testnet   # SPYx
+          asset: 1
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: hyperliquid-testnet   # USDH
+          asset: 3
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: hyperliquid-testnet   # MUx
+          asset: 5
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: arbitrum-sepolia   # ETH, arbitrum's coin
+          asset: 0
+          bond_home: 4000000
+          bond_receipt: 2000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 1600000 }
+        - home: arbitrum-sepolia   # cbBTC
+          asset: 1
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: arbitrum-sepolia   # rTSM
+          asset: 11
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
+        - home: arbitrum-sepolia   # PGOLD
+          asset: 7
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 16000000000 }
 
-# The tunnel API (docs/specs/ipow-conversion-tunnel.md): only Greatwall's
-# server calls it, with the key (its TUNNEL_API_URL and TUNNEL_API_KEY).
-# At most 2,000 sats a tunnel: the operator pays the BTC first, from a
-# wallet of a few thousand sats, keeping enough for the fee cap above.
-# It opens a tunnel only when the wallet can pay it on top of those open.
-# The user opens each tunnel's buy and pays its job fees; those fees are not
-# priced into the quote: in test ETH they are worth nothing, and at the test
-# rates they would exceed the few hundred sats of a swap.
 tunnel_api:
   listen: 127.0.0.1:8787
   key_env: TUNNEL_API_KEY

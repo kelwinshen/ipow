@@ -208,7 +208,14 @@ async fn main() -> anyhow::Result<()> {
                     b.clone(),
                     btc.clone(),
                     wallet,
-                    VaultOperatorSettings { assets, deposits: v.deposits, checkpoint_paid: checkpoint_paid(pair), journal: PathBuf::from(&pair.journal) },
+                    VaultOperatorSettings {
+                        assets,
+                        deposits: v.deposits,
+                        checkpoint_paid: checkpoint_paid(pair),
+                        journal: PathBuf::from(&pair.journal),
+                        fast_only: pair.fast_only.iter().map(|x| (number(&x.home), x.asset, x.fast.clone())).collect(),
+                        fast_at_own_cost: pair.fast_at_own_cost,
+                    },
                 )?;
                 info!(pair = %pair.networks.join(" and "), journal = %pair.journal, "vault operator");
                 pairs.push((Arc::new(op), a.net.clone()));

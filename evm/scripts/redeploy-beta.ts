@@ -16,7 +16,7 @@
 // verify-deployments.ts checks it against that commit's build. Then run
 // verify-deployments.ts and sdk's scripts/sync.ts. Not Tempo: its
 // transactions are its own type (deploy/networks.ts `sender`), so its
-// BetaBaskets is redeployed by a script of the Tempo package, not written yet.
+// BetaBaskets is redeployed by ../../networks/tempo/scripts/redeploy-beta.ts.
 
 import { Contract, ContractFactory, FetchRequest, JsonRpcProvider, Wallet, getAddress } from "ethers";
 import { readFileSync, writeFileSync } from "node:fs";

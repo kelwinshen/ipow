@@ -474,7 +474,7 @@ export const DEPLOYMENTS = {
     "lightClient": "0x2dD223DcD7F69539Ea895A29095c69c16b088aDb",
     "protocol": "0x0496e48C51E3783F5a059AC82B70F5D398448D3A",
     "conversion": "0xc729b1a6d0325ae559614b6826127e11E51703c1",
-    "betaBaskets": "0x6AA1F2dd1a0A28F5FC3a88ec8A219e89987A57aB",
+    "betaBaskets": "0xE101001bD62451c6f3337f44EF2cC4F166dd891D",
     "vaults": [
       {
         "peer": 2,

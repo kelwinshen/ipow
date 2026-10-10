@@ -145,15 +145,15 @@ timers of section 11.7 are unchanged.
 
 ## What it would change
 
-| Part | Change | Who runs it |
+| Part | Change | Done by |
 |---|---|---|
-| `VaultReceipts.sol` (EVM) | `genesisMakeReceipt`, `genesisIssue`, `finalizeGenesis`, `genesisOpen()`; the genesis key and `genesisEnd` immutable, set by its constructor, which refuses an end not in the future or more than 30 days ahead | code: Claude |
-| `VaultReceiptsFactory` (EVM) | `makeGenesis` makes a receipts part in genesis; `make` one with none. The core is unchanged: it accepts either part from its factory, so whoever checks a vault also reads its receipts part's `genesisKey()` and `genesisEnd()` (decided 2026-10-08, in place of the core taking them) | code: Claude |
-| `ipow-vault` program (Solana) | `genesis_make_receipt`, `genesis_issue`, `finalize_genesis`; `genesis_key`, `genesis_end`, `genesis_done` in the pair's config, set at `initialize` | code: Claude |
-| Tests | Hardhat and Anchor: G1 and G2 under genesis; refused after finalize and after the deadline; a later claim of a genesis lock refused with `AlreadyDone`; an attest of one refused; the check script against a local run | Claude |
-| Deployments | New vault pairs on every EVM network (the core is new, so its receipts and home parts are new); a new Solana config layout, so either a new program or new configs (open question 3) | the owner |
-| Genesis itself | The locks on each home vault, then G1 and G2 on each receipt side, then the check, then finalize | the owner, with a script |
-| SDK, Greatwall, node | New addresses (generated deployments), the node's `vault` section switched on with the new pairs and the assets it carries | Claude, the node's run by the owner |
+| `VaultReceipts.sol` (EVM) | `genesisMakeReceipt`, `genesisIssue`, `finalizeGenesis`, `genesisOpen()`; the genesis key and `genesisEnd` immutable, set by its constructor, which refuses an end not in the future or more than 30 days ahead | code |
+| `VaultReceiptsFactory` (EVM) | `makeGenesis` makes a receipts part in genesis; `make` one with none. The core is unchanged: it accepts either part from its factory, so whoever checks a vault also reads its receipts part's `genesisKey()` and `genesisEnd()` (decided 2026-10-08, in place of the core taking them) | code |
+| `ipow-vault` program (Solana) | `genesis_make_receipt`, `genesis_issue`, `finalize_genesis`; `genesis_key`, `genesis_end`, `genesis_done` in the pair's config, set at `initialize` | code |
+| Tests | Hardhat and Anchor: G1 and G2 under genesis; refused after finalize and after the deadline; a later claim of a genesis lock refused with `AlreadyDone`; an attest of one refused; the check script against a local run | code (tests) |
+| Deployments | New vault pairs on every EVM network (the core is new, so its receipts and home parts are new); a new Solana config layout, so either a new program or new configs (open question 3) | the deployer |
+| Genesis itself | The locks on each home vault, then G1 and G2 on each receipt side, then the check, then finalize | the deployer, with a script |
+| SDK, Greatwall, node | New addresses (generated deployments), the node's `vault` section switched on with the new pairs and the assets it carries | code; the node run by its operator |
 
 The locks already made on today's vaults (lock 1 of Ethereum–Solana, 2
 VTIon) stay on today's vaults; they are not carried over.

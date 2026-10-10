@@ -120,6 +120,29 @@ pub struct VaultPair {
     /// The operator: the file that keeps every batch it wrote on this
     /// pair's chain. One per pair.
     pub journal: String,
+    /// The operator: assets it pays at once from its own stock without
+    /// carrying them, so with no bond and no place among its 8 (D129): a lock
+    /// attested or a burn paid in one is never repaid. For a test network,
+    /// where its stock is genesis's receipts and mintable test tokens.
+    #[serde(default)]
+    pub fast_only: Vec<FastOnlyAsset>,
+    /// The operator: attests a lock of a carried asset even before its bond
+    /// there is counted (section 11.4), limited by the receipts it holds
+    /// rather than by 80% of the bond; such an attest is repaid only once a
+    /// claim carrying it is accepted, late or never. For a test network.
+    #[serde(default)]
+    pub fast_at_own_cost: bool,
+}
+
+/// An asset paid at once from the operator's own stock and never carried.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FastOnlyAsset {
+    /// Its home: the name of one of the pair's networks.
+    pub home: String,
+    /// Its number in its home vault.
+    pub asset: u32,
+    pub fast: FastSettings,
 }
 
 /// One asset the operator carries. Amounts in record units: the receipt's
@@ -369,6 +392,15 @@ impl Settings {
                         return Err(SettingsError::RepeatedVaultAsset(a.asset));
                     }
                 }
+                // An asset is carried or paid from stock, not both.
+                for a in &pair.fast_only {
+                    if !pair.networks.contains(&a.home) {
+                        return Err(SettingsError::VaultNetwork(a.home.clone()));
+                    }
+                    if !seen.insert((a.home.clone(), a.asset)) {
+                        return Err(SettingsError::RepeatedVaultAsset(a.asset));
+                    }
+                }
                 // D129: a chain keeps bonds in at most 8 assets on a network:
                 // its home bonds there and its receipt bonds of the other's.
                 for net in &pair.networks {
@@ -499,6 +531,19 @@ vault:
         assert!(pair.assets[1].fast.is_none());
         assert_eq!(pair.assets[0].fast.as_ref().unwrap().max, 100_000_000);
         assert!(pair.checkpoint_paid[1].is_none());
+        assert!(pair.fast_only.is_empty() && !pair.fast_at_own_cost);
+        // Assets paid from stock: read, and never also carried.
+        let stock = text.replace(
+            "      assets:",
+            "      fast_at_own_cost: true\n      fast_only:\n        - { home: ethereum-sepolia, asset: 7, fast: { min_fee: 1, max: 900 } }\n      assets:",
+        );
+        let p = Settings::parse(&stock).unwrap().vault.unwrap().pairs.remove(0);
+        assert!(p.fast_at_own_cost);
+        assert_eq!((p.fast_only[0].asset, p.fast_only[0].fast.max), (7, 900));
+        let both = stock.replace("asset: 7, fast:", "asset: 0, fast:");
+        assert_eq!(Settings::parse(&both).unwrap_err(), SettingsError::RepeatedVaultAsset(0));
+        let away = stock.replace("home: ethereum-sepolia, asset: 7", "home: base-sepolia, asset: 7");
+        assert_eq!(Settings::parse(&away).unwrap_err(), SettingsError::VaultNetwork("base-sepolia".into()));
         let twice = text.replace("home: solana-devnet, asset: 0", "home: ethereum-sepolia, asset: 0");
         assert_eq!(Settings::parse(&twice).unwrap_err(), SettingsError::RepeatedVaultAsset(0));
         // A network that is not listed, or not one of the pair's for an asset.

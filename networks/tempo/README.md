@@ -44,12 +44,25 @@ it names the pair account `8USDsC8MpsnKZmt8KAkVDr18R6s5g71Fro8Jr2JMJmmr`,
 `3TZ1LJ4fVZVKbBUyzVMRjJ9FNPGaqVmGX56JuT5QdXEy`. The vault it replaced is in
 [`evm/deployments/replaced/`](../../evm/deployments/replaced/).
 
+BETA was redeployed on 2026-10-09 from commit `642891c` by
+[`scripts/redeploy-beta.ts`](scripts/redeploy-beta.ts): the build of
+2026-10-03 predates baskets whose parts are the vault's receipts (E5,
+[`docs/specs/ipow-beta-app.md`](../../docs/specs/ipow-beta-app.md)), which
+the SDK calls. The new contract's code was compared with the build and its
+limits read back, and `verify-deployments.ts` matches it. No basket was made
+on the old one (no event from it, read on 2026-10-09). Tempo has no coin of
+its own and refuses a transaction carrying value: a basket whose part is the
+zero address (the coin, elsewhere) can be made here but never minted.
+Greatwall offers only tokens as parts on Tempo, and a mint of those carries
+no value.
+
 | Contract | Address |
 |---|---|
 | Light client (`iPoWLightClient`) | `0x2dD223DcD7F69539Ea895A29095c69c16b088aDb` |
 | Protocol (token build, `iPoWProtocolToken`) | `0x0496e48C51E3783F5a059AC82B70F5D398448D3A` |
 | Conversion | `0xc729b1a6d0325ae559614b6826127e11E51703c1` |
-| BETA (`BetaBaskets`) | `0x6AA1F2dd1a0A28F5FC3a88ec8A219e89987A57aB` |
+| BETA (`BetaBaskets`), named baskets and parts named before bridged (E4, E5), 2026-10-09, from commit `642891c` | `0xE101001bD62451c6f3337f44EF2cC4F166dd891D` |
+| BETA, the build of 2026-10-03 (no baskets were made there) | `0x6AA1F2dd1a0A28F5FC3a88ec8A219e89987A57aB` |
 | Vault home factory (genesis, 2026-10-07) | `0x8A5EB387b8b1CBd5cBAFBE2088aCE6d589eb4F59` |
 | Vault receipts factory (genesis, 2026-10-07) | `0x07eFF65A853f36cBA8FEFbC495eb6A0D98d26a75` |
 | Vault paired with Solana (`iPoWVaultToken`, genesis, 2026-10-07) | `0x6c692BEdCa89292D0FEfc6e86b82f451E371f11D` |
@@ -78,6 +91,7 @@ first). Each script's header comment says how to run it:
 - [`scripts/deploy-new-protocol.ts`](scripts/deploy-new-protocol.ts) — the protocol, and vaults paired with Solana.
 - [`scripts/deploy-mock-rwa.ts`](scripts/deploy-mock-rwa.ts) — Greatwall's mock RWA tokens.
 - [`scripts/genesis-tempo.ts`](scripts/genesis-tempo.ts) — Tempo's part of the vaults' genesis.
+- [`scripts/redeploy-beta.ts`](scripts/redeploy-beta.ts) — BETA (`BetaBaskets`) alone.
 
 Chain ID 42431. Never trust a Tempo deploy receipt's address (above); the
 scripts work it out from the nonce and read the code back.

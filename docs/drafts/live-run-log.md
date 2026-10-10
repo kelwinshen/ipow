@@ -519,6 +519,67 @@ Friction, three runs:
 For the SDK and Greatwall: a network added later costs one vault pair per
 network already there, and each of its tokens one registration per pair.
 
+## 2026-10-09 and 10: the operator on every pair, and Tempo's BETA
+
+The node (`node/node.testnet.yml`) was switched on as a vault operator,
+first for Sepolia–Solana (to carry a Greatwall lock of STRCx, lock 20),
+then for the 15 pairs it can serve: each EVM network with Solana and the
+10 EVM pairs (Tempo–Solana needs Tempo's own transaction type). Each pair
+was registered on Bitcoin, and checkpoint jobs were opened, taken and
+proven on all six networks (Sepolia 13, Base 1–2, Robinhood 1, HyperEVM 1,
+Arbitrum 1–2, Solana 3–5), their 36-hour locks ending on Oct 11 (Solana's
+#3 at 04:50 UTC, #4 at 10:53 UTC). Tempo's BetaBaskets was redeployed to
+the current build (`networks/tempo/scripts/redeploy-beta.ts`;
+`0xE101001bD62451c6f3337f44EF2cC4F166dd891D`): the build of Oct 3 took a
+basket's parts without receipts, so the SDK's calls reverted there.
+
+Costs on Bitcoin (mainnet): about 50,800 sats funded. 15 registrations,
+about 440 sats in fees each at 2–4 sat/vB (9,641 for the 14 of Oct 10,
+paid at a busier hour), a 546-sat marker set aside per pair, and about 450
+sats per checkpoint transaction. About 13,000 sats spent in all; 41,801
+left after the registrations.
+
+Friction, for the SDK, the node and Greatwall:
+
+- **A new operator waits 36 hours, then 7 days.** A registration counts on
+  a network only below a real block, which a checkpoint job makes after
+  its 36-hour lock. Its bonds then count on the other network only after a
+  BOND claim's 7 days of objections, and the node attests only within 80%
+  of a counted bond. The fast path needs neither on chain (an attest needs
+  a registered chain and its collateral; anyone may pay a burn), so on the
+  test networks the node fast-paths at its own cost until then
+  (`fast_at_own_cost`; design section 11.7, the owner's deviation).
+- **8 assets per chain, for good.** A chain bonds at most 8 assets on a
+  pair (D119) and a place, once taken, is never freed, so one operator key
+  carries at most 8 of a pair's 26 to 32 assets. The node now pays the
+  others at once from its genesis stock without carrying them
+  (`fast_only`). Freeing a place whose bond is gone is a proposal.
+- **A waiting checkpoint held up new ones.** A job proven below a new
+  registration, waiting out its lock, kept the node from opening the
+  checkpoint the registration needed: another 36 hours. Fixed in the node
+  (`scan_reals` counts only a job that could certify the block wanted).
+- **Bitcoin explorers unreachable from some networks.** From the node's
+  network, mempool.space and blockstream.info were at times unreachable,
+  and the node could not prove its jobs until they answered again. The node
+  lists several explorers (`bitcoin.fallback_explorers`); a node should run
+  where at least one of them is reachable.
+- **HyperEVM's endpoint refused every send.** The Alchemy endpoint read
+  well but answered "Unable to send transaction"; the public RPC sends but
+  rate-limits a node's reads. `node/scripts/rpc-split.mjs` sends the sends
+  to one and the reads to the other. The deployer's address was also still
+  on big blocks from the deploys, switched back with
+  `evm/scripts/hyperliquid-big-blocks.ts --off`.
+- **Arbitrum had no operator bond.** 0.02 ETH locked
+  (`evm/scripts/lock-bond.ts`), so the node can take its jobs.
+- **Log lines in two byte orders.** The vault task logs a registration's
+  txid in Bitcoin's internal order (`a1ade718…` logged as `7afb4557…`): the
+  same transaction. Worth fixing in the node's log.
+
+For Greatwall: Solana sends through its HTTP-only RPC proxy waited out
+web3.js's 30-second confirmation (its WebSocket could not connect); the
+connections now subscribe at devnet's public WebSocket, and the SDK's
+collects confirm by polling like its mints.
+
 ## Housekeeping
 
 **2026-09-24**: a stale, expired, never-claimed test `Pending` account on
