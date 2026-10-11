@@ -11,8 +11,8 @@ roles: [operator, guardian]
 bitcoin:
   # Several explorers: when one is unreachable from the node's network, the
   # next is asked.
-  explorer: https://blockstream.info/api
-  fallback_explorers: [https://mempool.emzy.de/api, https://mempool.space/api]
+  explorer: https://mempool.space/api
+  fallback_explorers: [https://blockstream.info/api]
   # The operator wallet's mainnet WIF key, loaded by run-testnet.sh.
   wallet_key_env: BTC_WALLET_KEY
   # At most 5 sat/vB (Bitcoin asks about 1 on 2026-10-04): the wallet holds

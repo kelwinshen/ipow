@@ -92,9 +92,16 @@ async fn scan_reals(side: &Side, btc: &dyn BitcoinView, reals: &mut Reals, wante
     let min = side.vault.min_certifying_escrow().await?;
     let now = side.net.now().await?;
     let mut helps = false;
+    // Pages are read from `after`; the cursor kept for the next round moves
+    // only at the end, to before the first job a round must see again.
+    let mut after = reals.job_cursor;
+    let mut retry = None;
     loop {
-        let jobs = side.net.jobs_after(reals.job_cursor, 50).await?;
-        let Some(last) = jobs.last() else { return Ok(helps) };
+        let jobs = side.net.jobs_after(after, 50).await?;
+        let Some(last) = jobs.last() else {
+            reals.job_cursor = cursor_after(reals.job_cursor, after, None, retry);
+            return Ok(helps);
+        };
         let last = last.id;
         let mut stop_at = None;
         for j in jobs {
@@ -118,6 +125,9 @@ async fn scan_reals(side: &Side, btc: &dyn BitcoinView, reals: &mut Reals, wante
             if !side.vault.is_real(&pb).await? {
                 if let Err(e) = side.vault.record_real_from_job(j.id).await {
                     warn!(job = j.id, error = %crate::secrets::redact(&e), "recording a real block failed");
+                    // The next round reads it again (past it, the block would
+                    // never be read again); the jobs after it are still read now.
+                    retry.get_or_insert(j.id - 1);
                     continue;
                 }
             }
@@ -125,24 +135,34 @@ async fn scan_reals(side: &Side, btc: &dyn BitcoinView, reals: &mut Reals, wante
                 reals.blocks.push(pb);
             }
         }
-        reals.job_cursor = stop_at.unwrap_or(last).max(reals.job_cursor);
-        if stop_at.is_some() {
-            // The cursor stays at the first waiting job; the jobs past this
-            // page are read too (not moving it), so a checkpoint opened
-            // further on still counts as under way.
-            let mut after = last;
-            for _ in 0..HOLD_PAGES {
-                if helps {
-                    break;
-                }
-                let more = side.net.jobs_after(after, 50).await?;
-                let Some(l) = more.last() else { break };
-                after = l.id;
-                helps = more.iter().any(|j| j.escrow >= min && holds_up(j, now, wanted));
-            }
-            return Ok(helps);
+        if stop_at.is_none() {
+            after = last;
+            continue;
         }
+        reals.job_cursor = cursor_after(reals.job_cursor, last, stop_at, retry);
+        // The cursor stays at the first waiting job; the jobs past this
+        // page are read too (not moving it), so a checkpoint opened
+        // further on still counts as under way.
+        let mut after = last;
+        for _ in 0..HOLD_PAGES {
+            if helps {
+                break;
+            }
+            let more = side.net.jobs_after(after, 50).await?;
+            let Some(l) = more.last() else { break };
+            after = l.id;
+            helps = more.iter().any(|j| j.escrow >= min && holds_up(j, now, wanted));
+        }
+        return Ok(helps);
     }
+}
+
+/// Where the job cursor goes after a scan that read to job `reached`: before
+/// the first job still waiting out its lock (`stop_at`) or whose real block
+/// failed to be recorded (`retry`), whichever is first, and never back.
+fn cursor_after(cursor: u64, reached: u64, stop_at: Option<u64>, retry: Option<u64>) -> u64 {
+    let to = stop_at.unwrap_or(reached);
+    retry.map_or(to, |r| to.min(r)).max(cursor)
 }
 
 /// A real block the vault knows, at or above `block` on Bitcoin's best
@@ -2049,6 +2069,20 @@ impl Worker for VaultGuardian {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_failed_record_holds_the_cursor_back() {
+        // Read to job 40; nothing waiting, nothing failed: past all of it.
+        assert_eq!(cursor_after(10, 40, None, None), 40);
+        // Job 12's block failed to be recorded: the next round starts before it.
+        assert_eq!(cursor_after(10, 40, None, Some(11)), 11);
+        // A waiting job before the failed one comes first, and the reverse.
+        assert_eq!(cursor_after(10, 40, Some(14), Some(11)), 11);
+        assert_eq!(cursor_after(10, 40, Some(11), Some(14)), 11);
+        // Never back past where it was.
+        assert_eq!(cursor_after(20, 40, None, Some(11)), 20);
+    }
+
     use super::*;
 
     fn bonds(entries: &[((u8, u32), u64)]) -> Bonds {
