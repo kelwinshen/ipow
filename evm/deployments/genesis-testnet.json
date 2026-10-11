@@ -6581,6 +6581,19 @@
       "value": "2000000000",
       "lockTx": "5FwGMHr8sNJwCPc8PmVX5sMJP85a4Z5xGciWWoUdL6oAnm7nZVzqCLSBdQukteZ8AAgELUfdSfCC8jtjFzeAwzH7",
       "issueTx": "0xeae7b635d8c971d3cedde2ff70300471afc7665a0856486e2baae8b66dd93a8e"
+    },
+    {
+      "home": "tempo",
+      "receiptSide": "solana",
+      "asset": 0,
+      "symbol": "asset 0",
+      "token": "",
+      "recordDecimals": 0,
+      "lockId": "4",
+      "value": "2000000000",
+      "recipient": "G8vkKtPzQfm8dTVnFcgFis5LgRHqwCk2bT29731sXU6D",
+      "issueTx": "43dxUTPh7J6UD2r2MquZ7yb3GaSwvSEmdXa47CUS4Ndkmuv7cB5GeDJzitUWZWNg5G4Wnjx8iXg7R7gvDXEqwirW",
+      "note": "a lock made in the app, issued by genesis-issue-lock.ts"
     }
   ]
 }

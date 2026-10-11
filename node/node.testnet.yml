@@ -625,6 +625,9 @@ vault:
       checkpoint_paid: ["1000000", "2000000"]
       fast_at_own_cost: true
       fast_only:
+        # PathUSD, Tempo's coin as a token (6 decimals): from the 2,000 the
+        # operator holds as receipts on Solana (genesis, 2026-10-11).
+        - { home: tempo-testnet, asset: 0, fast: { min_fee: 1, max: 1000000000 } }
         - { home: solana-devnet, asset: 0, fast: { min_fee: 1, max: 10000000000000 } }
         - { home: solana-devnet, asset: 1, fast: { min_fee: 1, max: 10000000000000 } }
         - { home: solana-devnet, asset: 2, fast: { min_fee: 1, max: 10000000000000 } }
