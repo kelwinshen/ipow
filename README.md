@@ -147,10 +147,13 @@ networks and BTC with Conversion, and creates and mints BETA baskets.
 
 ## Security
 
-Unaudited, test networks only. The EVM contracts have no owner and no
-key, with one exception: the vaults' genesis key, until genesis ends. The
-deployer holds that key and the Solana programs' upgrade authority, and
-runs the only operator today.
+iPoW is designed so that no one is in control: the EVM contracts have no
+owner and no key that can change them (D59), Bitcoin is verified on chain,
+and every role is open to anyone. It runs on test networks only and is not
+audited yet. While it is in development, a few keys exist on purpose: the
+Solana programs' upgrade authority (removed once audited, before mainnet,
+so the programs become unchangeable like the EVM contracts) and the
+vaults' genesis key (until 2026-10-21).
 [SECURITY.md](SECURITY.md) states each of these with where to check it,
 and how to report a vulnerability.
 
