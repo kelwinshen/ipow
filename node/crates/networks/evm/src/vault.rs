@@ -209,12 +209,14 @@ impl VaultApp for EvmVault {
                 }
             }
         }
+        let value = self.net.pay(self.address, value).await?;
         send!(self.net, self.contract().addBond(key(home, asset), amount).value(value));
         Ok(())
     }
 
     async fn add_deposits(&self, amount: Amount) -> anyhow::Result<()> {
-        send!(self.net, self.contract().addDeposits(U256::from(amount)).value(U256::from(amount)));
+        let value = self.net.pay(self.address, U256::from(amount)).await?;
+        send!(self.net, self.contract().addDeposits(U256::from(amount)).value(value));
         Ok(())
     }
 
@@ -247,7 +249,8 @@ impl VaultApp for EvmVault {
     }
 
     async fn open_checkpoint(&self, confirmations: u16, paid: Amount) -> anyhow::Result<u64> {
-        let receipt = send!(self.net, self.contract().openCheckpoint(confirmations, U256::from(paid)).value(U256::from(paid)));
+        let value = self.net.pay(self.address, U256::from(paid)).await?;
+        let receipt = send!(self.net, self.contract().openCheckpoint(confirmations, U256::from(paid)).value(value));
         for log in receipt.inner.logs() {
             if let Ok(e) = IPoWProtocol::JobOpened::decode_log(&log.inner) {
                 return Ok(e.data.jobId.to::<u64>());
@@ -475,13 +478,15 @@ impl VaultApp for EvmVault {
 
     async fn object(&self, id: u64) -> anyhow::Result<()> {
         let d = self.contract().deposit().call().await?;
-        send!(self.net, self.contract().object(U256::from(id)).value(d));
+        let value = self.net.pay(self.address, d).await?;
+        send!(self.net, self.contract().object(U256::from(id)).value(value));
         Ok(())
     }
 
     async fn answer(&self, id: u64) -> anyhow::Result<()> {
         let d = self.contract().deposit().call().await?;
-        send!(self.net, self.contract().answer(U256::from(id)).value(d));
+        let value = self.net.pay(self.address, d).await?;
+        send!(self.net, self.contract().answer(U256::from(id)).value(value));
         Ok(())
     }
 

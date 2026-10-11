@@ -228,6 +228,11 @@ pub struct NetworkSettings {
     /// The protocol: a contract address on EVM, a program id on Solana.
     pub protocol: String,
     /// Limits per role on this network, in its smallest unit (D84).
+    /// The network's coin when it is a token, not native: its address
+    /// (Tempo's PathUSD). Bonds, fees and deposits are then paid in it with
+    /// the contract's approval (D136, D137). Unset: the native coin.
+    #[serde(default)]
+    pub coin: Option<String>,
     pub operator: Option<OperatorLimits>,
     pub guardian: Option<GuardianLimits>,
     pub attester: Option<AttesterLimits>,

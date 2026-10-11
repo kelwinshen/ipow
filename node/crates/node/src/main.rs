@@ -71,7 +71,7 @@ fn connect(n: &NetworkSettings) -> anyhow::Result<Connected> {
     let (rpc, key) = (env(&n.rpc_env)?, env(&n.key_env)?);
     Ok(match n.kind {
         NetworkKind::Evm => {
-            let net = Arc::new(EvmNetwork::connect(&n.name, &rpc, &key, &n.light_client, &n.protocol)?);
+            let net = Arc::new(EvmNetwork::connect(&n.name, &rpc, &key, &n.light_client, &n.protocol, n.coin.as_deref())?);
             let conversion = match &n.conversion {
                 Some(c) => Some(Arc::new(EvmConversion::new(net.clone(), &c.address)?) as Arc<dyn ConversionApp>),
                 None => None,

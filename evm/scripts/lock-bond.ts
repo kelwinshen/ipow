@@ -5,7 +5,9 @@
 //
 //   node scripts/lock-bond.ts <network> <amount in the coin's smallest unit> [--check]
 //
-// With --check it only reads the bond.
+// With --check it only reads the bond. On a network whose coin is a token
+// (Tempo's PathUSD, D136), the amount is in the token's smallest unit and is
+// paid with the protocol's approval, no value sent.
 
 import { Contract, FetchRequest, JsonRpcProvider, Wallet, formatEther } from "ethers";
 import { readFileSync } from "node:fs";
@@ -17,7 +19,8 @@ import { NETWORKS, envFile } from "../deploy/networks.ts";
 const here = dirname(fileURLToPath(import.meta.url));
 const [network, amountArg] = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 const s = NETWORKS[network];
-if (!s || s.coin.kind !== "native") throw new Error("a network with a native coin, from deploy/networks.ts");
+if (!s) throw new Error("a network of deploy/networks.ts");
+const coinToken = s.coin.kind === "token" ? s.coin.token.testnet : null;
 const vars: Record<string, string> = {};
 for (const line of readFileSync(envFile(network), "utf8").split("\n")) {
   const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*"?([^"\n]*)"?/);
@@ -39,6 +42,13 @@ await show();
 if (process.argv.includes("--check")) process.exit(0);
 const amount = BigInt(amountArg);
 if (amount <= 0n) throw new Error("an amount above zero");
-const tx = await protocol.lockBond(amount, { value: amount });
+if (coinToken) {
+  const coin = new Contract(coinToken, ["function approve(address,uint256) returns (bool)", "function allowance(address,address) view returns (uint256)"], wallet);
+  if ((await coin.allowance(wallet.address, d.protocol)) < amount) {
+    const a = await coin.approve(d.protocol, amount);
+    console.log("approve", a.hash, "status", (await a.wait())?.status);
+  }
+}
+const tx = await protocol.lockBond(amount, coinToken ? {} : { value: amount });
 console.log("lockBond", tx.hash, "status", (await tx.wait())?.status);
 await show();

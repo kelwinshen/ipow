@@ -127,7 +127,7 @@ pub async fn contracts(net: &LocalNetwork) -> (DynProvider, Address, EvmNetwork,
     let mut arg = [0u8; 32];
     arg[12..].copy_from_slice(lc.as_slice());
     let protocol = deploy(&app, include_str!("../tests/iPoWProtocolHarness.bin"), arg).await;
-    let node = |key: &str| EvmNetwork::connect("hardhat", &net.url, key, &lc.to_string(), &protocol.to_string()).unwrap();
+    let node = |key: &str| EvmNetwork::connect("hardhat", &net.url, key, &lc.to_string(), &protocol.to_string(), None).unwrap();
     (app.clone(), protocol, node(&net.keys[0]), node(&net.keys[2]))
 }
 
@@ -250,7 +250,7 @@ impl EvmWorld {
     /// guardian) sees it.
     pub async fn vault_node(&self, vault: Address, key: usize) -> (std::sync::Arc<crate::vault::EvmVault>, std::sync::Arc<EvmNetwork>) {
         let lc = IPoWProtocol::new(self.protocol, &self.apps[0]).lightClient().call().await.unwrap();
-        let net = std::sync::Arc::new(EvmNetwork::connect("hardhat", &self.net.url, &self.net.keys[key], &lc.to_string(), &self.protocol.to_string()).unwrap());
+        let net = std::sync::Arc::new(EvmNetwork::connect("hardhat", &self.net.url, &self.net.keys[key], &lc.to_string(), &self.protocol.to_string(), None).unwrap());
         (std::sync::Arc::new(crate::vault::EvmVault::connect(net.clone(), &vault.to_string()).await.unwrap()), net)
     }
 
@@ -357,7 +357,7 @@ impl World for EvmWorld {
     async fn conversion(&self) -> std::sync::Arc<dyn ipow_protocol_core::conversion::ConversionApp> {
         // The operator's node on its own connection, with the operator's key.
         let lc = IPoWProtocol::new(self.protocol, &self.apps[0]).lightClient().call().await.unwrap();
-        let net = EvmNetwork::connect("hardhat", &self.net.url, &self.net.keys[0], &lc.to_string(), &self.protocol.to_string()).unwrap();
+        let net = EvmNetwork::connect("hardhat", &self.net.url, &self.net.keys[0], &lc.to_string(), &self.protocol.to_string(), None).unwrap();
         std::sync::Arc::new(crate::conversion::EvmConversion::new(std::sync::Arc::new(net), &self.conversion.to_string()).unwrap())
     }
 

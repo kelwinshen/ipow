@@ -12,7 +12,7 @@ use ipow_protocol_core::types::{
     Amount, BlockRef, Challenge, ChallengeKind, Evidence, Job, JobStatus, Proof, StoredBlock,
 };
 
-use crate::contracts::{iPoWLightClient, iPoWProtocol, IPoWLightClient, IPoWProtocol};
+use crate::contracts::{iPoWLightClient, iPoWProtocol, IPoWLightClient, IPoWProtocol, IERC20};
 
 /// Headers per `extend`. The light client takes up to MAX_WALK (100), at
 /// about 76,000 gas each (V7). 30 is about 2.3M gas, inside HyperEVM's
@@ -51,6 +51,10 @@ pub struct EvmNetwork {
     me: Address,
     protocol: Address,
     light_client: Address,
+    /// The network's coin when it is a token, not native (D136, D137):
+    /// Tempo's PathUSD. Bonds, fees and deposits are then paid in it, with
+    /// the contract's approval, and no value is sent (`pay`).
+    coin: Option<Address>,
 }
 
 fn to_u128(v: U256) -> anyhow::Result<u128> {
@@ -133,9 +137,25 @@ macro_rules! send {
 pub(crate) use send;
 
 impl EvmNetwork {
+    /// What a payment of `amount` of the network's coin to `spender` sends
+    /// as value: the amount, on a network with a native coin; nothing on one
+    /// whose coin is a token, after letting `spender` take the amount
+    /// (approved once, for good).
+    pub async fn pay(&self, spender: Address, amount: U256) -> anyhow::Result<U256> {
+        let Some(coin) = self.coin else { return Ok(amount) };
+        if amount.is_zero() {
+            return Ok(U256::ZERO);
+        }
+        let token = IERC20::new(coin, &self.provider);
+        if token.allowance(self.me, spender).call().await? < amount {
+            send!(self, token.approve(spender, U256::MAX));
+        }
+        Ok(U256::ZERO)
+    }
+
     /// `rpc_url` and `key_hex` come from the environment variables the
     /// settings name; they are never logged.
-    pub fn connect(name: &str, rpc_url: &str, key_hex: &str, light_client: &str, protocol: &str) -> anyhow::Result<Self> {
+    pub fn connect(name: &str, rpc_url: &str, key_hex: &str, light_client: &str, protocol: &str, coin: Option<&str>) -> anyhow::Result<Self> {
         let signer: PrivateKeySigner = key_hex.trim().parse().context("the key is not a valid private key")?;
         let me = signer.address();
         // Every transaction asks the network for its nonce. A nonce kept in
@@ -160,6 +180,7 @@ impl EvmNetwork {
             me,
             protocol: protocol.parse().context("the protocol address is not valid")?,
             light_client: light_client.parse().context("the light client address is not valid")?,
+            coin: coin.map(|c| c.parse().context("the coin's address is not valid")).transpose()?,
         })
     }
 
@@ -422,7 +443,8 @@ impl ProtocolNetwork for EvmNetwork {
     }
 
     async fn lock_bond(&self, amount: Amount) -> anyhow::Result<()> {
-        send!(self, self.protocol().lockBond(U256::from(amount)).value(U256::from(amount)));
+        let value = self.pay(self.protocol, U256::from(amount)).await?;
+        send!(self, self.protocol().lockBond(U256::from(amount)).value(value));
         Ok(())
     }
 
@@ -518,8 +540,9 @@ impl ProtocolNetwork for EvmNetwork {
     }
 
     async fn ask_parent(&self, job_id: u64, salt: &[u8; 32], deposit: Amount) -> anyhow::Result<u64> {
+        let value = self.pay(self.protocol, U256::from(deposit)).await?;
         let p = self.protocol();
-        let receipt = send!(self, p.askParent(U256::from(job_id), FixedBytes(*salt)).value(U256::from(deposit)));
+        let receipt = send!(self, p.askParent(U256::from(job_id), FixedBytes(*salt)).value(value));
         // The id from the receipt: another challenge may have opened since.
         receipt
             .inner
@@ -545,6 +568,7 @@ impl ProtocolNetwork for EvmNetwork {
         salt: &[u8; 32],
         deposit: Amount,
     ) -> anyhow::Result<u64> {
+        let value = self.pay(self.protocol, U256::from(deposit)).await?;
         let p = self.protocol();
         let receipt = send!(self, p
             .challengeFork(
@@ -555,7 +579,7 @@ impl ProtocolNetwork for EvmNetwork {
                 prev_epoch_time,
                 FixedBytes(*salt)
             )
-            .value(U256::from(deposit)));
+            .value(value));
         receipt
             .inner
             .logs()

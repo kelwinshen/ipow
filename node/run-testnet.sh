@@ -9,7 +9,7 @@ cd "$(dirname "$0")"
 set -a
 . ../evm/.env
 # The other EVM test networks' endpoints and keys: each package's own .env.
-for n in base hyperliquid robinhood arbitrum; do
+for n in base hyperliquid robinhood arbitrum tempo; do
   if [ -f "../networks/$n/.env" ]; then . "../networks/$n/.env"; fi
 done
 set +a

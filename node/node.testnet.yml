@@ -177,6 +177,20 @@ networks:
         - { token: "0xEB4CF40eFFbec1758b0Fa6a6CC4b4E5a2091b1cF", symbol: rTSM, decimals: 18, pay_sats: 2900, ask_sats: 2900 }
         - { token: "0x5cE276280542817547D075a51E6A0B563FF5D9c8", symbol: cbBTC, decimals: 18, pay_sats: 1000000, ask_sats: 1000000 }
 
+  # Tempo testnet (2026-10-11): no native coin; fees, bonds and deposits are
+  # PathUSD (6 decimals), paid with the contracts' approval (`coin`, D136,
+  # D137). Paired with Solana only: its vault there is the one Tempo has.
+  - name: tempo-testnet
+    kind: evm
+    rpc_env: TEMPO_TESTNET_RPC_URL
+    key_env: TEMPO_TESTNET_PRIVATE_KEY
+    light_client: "0x2dD223DcD7F69539Ea895A29095c69c16b088aDb"
+    protocol: "0x0496e48C51E3783F5a059AC82B70F5D398448D3A"
+    coin: "0x20C0000000000000000000000000000000000000"
+    # A challenge's deposit, at most 1 PathUSD.
+    guardian: { max_deposit: "1000000" }
+    # At most 10 PathUSD of bond locked for one job.
+    operator: { max_bid: "10000000" }
   - name: solana-devnet
     kind: svm
     rpc_env: SOLANA_RPC_URL
@@ -597,6 +611,50 @@ vault:
           fast: { min_fee: 1, max: 16000000000 }
         - home: solana-devnet   # QQQx
           asset: 13
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 1600000000000 }
+    # Tempo with Solana (2026-10-11): Tempo's three tokens carried, each
+    # Solana asset paid at once from stock. Tempo has no coin to carry.
+    - networks: [tempo-testnet, solana-devnet]
+      vaults: ["0x6c692BEdCa89292D0FEfc6e86b82f451E371f11D", "3TZ1LJ4fVZVKbBUyzVMRjJ9FNPGaqVmGX56JuT5QdXEy"]
+      journal: testnet-tempo-sol.journal
+      # 1 PathUSD on Tempo (above a checkpoint's fees there; the rest is
+      # returned), 0.002 SOL on Solana.
+      checkpoint_paid: ["1000000", "2000000"]
+      fast_at_own_cost: true
+      fast_only:
+        - { home: solana-devnet, asset: 0, fast: { min_fee: 1, max: 10000000000000 } }
+        - { home: solana-devnet, asset: 1, fast: { min_fee: 1, max: 10000000000000 } }
+        - { home: solana-devnet, asset: 2, fast: { min_fee: 1, max: 10000000000000 } }
+        - { home: solana-devnet, asset: 3, fast: { min_fee: 1, max: 10000000000000 } }
+        - { home: solana-devnet, asset: 4, fast: { min_fee: 1, max: 10000000000000 } }
+        - { home: solana-devnet, asset: 5, fast: { min_fee: 1, max: 10000000000000 } }
+        - { home: solana-devnet, asset: 6, fast: { min_fee: 1, max: 10000000000000 } }
+        - { home: solana-devnet, asset: 7, fast: { min_fee: 1, max: 10000000000000 } }
+        - { home: solana-devnet, asset: 8, fast: { min_fee: 1, max: 10000000000000 } }
+        - { home: solana-devnet, asset: 9, fast: { min_fee: 1, max: 10000000000000 } }
+        - { home: solana-devnet, asset: 10, fast: { min_fee: 1, max: 10000000000000 } }
+        - { home: solana-devnet, asset: 11, fast: { min_fee: 1, max: 10000000000000 } }
+        - { home: solana-devnet, asset: 12, fast: { min_fee: 1, max: 10000000000000 } }
+        - { home: solana-devnet, asset: 13, fast: { min_fee: 1, max: 10000000000000 } }
+        - { home: solana-devnet, asset: 14, fast: { min_fee: 1, max: 10000000000000 } }
+      assets:
+        - home: tempo-testnet   # EURC
+          asset: 1
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 1600000000000 }
+        - home: tempo-testnet   # USDY
+          asset: 2
+          bond_home: 20000000000
+          bond_receipt: 20000000000
+          min_fee: 0
+          fast: { min_fee: 1, max: 1600000000000 }
+        - home: tempo-testnet   # syrupUSDC
+          asset: 3
           bond_home: 20000000000
           bond_receipt: 20000000000
           min_fee: 0
