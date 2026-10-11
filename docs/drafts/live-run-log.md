@@ -580,6 +580,63 @@ web3.js's 30-second confirmation (its WebSocket could not connect); the
 connections now subscribe at devnet's public WebSocket, and the SDK's
 collects confirm by polling like its mints.
 
+## 2026-10-11: the operator's stall, lock 20 by the fast path, and Greatwall's faucet
+
+**The operator stalled for a day.** From Oct 9 23:44 UTC to Oct 11 08:31
+the node did no work: blockstream.info stopped answering from this
+machine's network and mempool.emzy.de, the next explorer, answered every
+read with 429 (rate limited). The node now asks mempool.space first and
+blockstream.info after it (`node/node.testnet.yml`).
+
+**A real block lost to a race.** Restarted, the node's pairs (which share
+one key on each EVM network) all tried at once to record Sepolia
+checkpoint job 12's block (970655) in their vaults; one succeeded (the
+vault paired with Robinhood) and four failed with "another transaction of
+this node took its place". The node moved its job cursor past job 12
+anyway, so those vaults never learned the block, and Sepolia–Solana, whose
+registration is in block 970651, could not register its pair chain there.
+`scan_reals` now keeps the cursor before a job whose block failed to be
+recorded and reads it again next round (`node/crates/node/src/vault.rs`,
+`cursor_after`). With the fix the pair registered on Solana at 08:34 and on
+Sepolia at 09:07, and **lock 20 (Sepolia, STRCx, 1,000,000,000 record
+units to `44Kc…oFWC` on Solana) was attested and issued at 09:17:58**: the
+fast path's first delivery on this deployment, read back as attested on
+Solana. The other 14 pairs wait for Sepolia's job 13 (block 970674, lock
+ending 10:58 UTC).
+
+**Greatwall's faucet.** Greatwall's server now sends the test tokens and a
+little gas itself, paying the fee (`/api/faucet/*` in Greatwall), from
+keys of its own: one EVM wallet (`0xC4F788988a854a95Fa6293dFA096009Fecd46774`)
+and one Solana key (`FfXw32AXJMwK72MPM3ZLftBxvSiBGtPa8yHtKMp9gkNt`).
+
+- The deployer minted 500 claims of every listed token to the EVM wallet
+  on all six EVM networks, and sent it 500 PathUSD on Tempo.
+- 1.2 Sepolia ETH, funded by the owner, was split: 0.25 ETH each bridged to
+  Base (L1StandardBridge `0xfd0Bf71F…3120`), Arbitrum (Inbox
+  `0xaAe29B03…ae21`) and Robinhood (Inbox `0xF2939afA…B7a4`), each bridge
+  first read on Sepolia to lead to its chain id; all three arrived within
+  about 15 minutes. 0.45 stays on Sepolia.
+- HyperEVM's gas cannot be bridged from Sepolia: 0.12 HYPE came from the
+  operator, whose 802 USDC on HyperCore is not HYPE. A HyperEVM transaction
+  costs about 0.000006 HYPE (0.1 gwei), so the drip there is 0.002 HYPE.
+- The 14 Solana mock mints' authority moved from the old key, which had
+  been exposed, to the faucet key, each read back after; the old key's SOL
+  and 3 SOL from the deployer went to the faucet key.
+
+Friction, for the SDK, the node and Greatwall:
+
+- **Pairs sharing one key race each other.** Each pair is its own task, but
+  all send from the operator's one address per network; their sends
+  replace one another. The node now retries what it lost, but sends of one
+  key would be better made by one sender per network.
+- **A new wallet had no gas to claim test tokens.** The tokens' own
+  `faucet()` needs the user to pay; the server faucet removes that.
+- **A metadata link written by a local server is dead for good.** GREAT
+  on Solana was made through a server without a public origin and holds
+  `http://0.0.0.0:3001/…` in its immutable metadata; Greatwall ships its
+  files and serves them in its place, and pins every new index's metadata
+  to IPFS (E4 in `docs/specs/ipow-beta-app.md`).
+
 ## Housekeeping
 
 **2026-09-24**: a stale, expired, never-claimed test `Pending` account on

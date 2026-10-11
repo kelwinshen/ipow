@@ -114,11 +114,15 @@ The deployer is one person (the project owner) holding the EVM key
   bond on the programmable network when its Bitcoin transaction is missing
   or not as required. For a Conversion buy, the user pays BTC to an
   address derived from that key (`node/README.md`, "Conversion swaps").
-- **The mock RWA tokens are the deployer's.** On the EVM networks only the
-  deployer can mint them (`minter` in `evm/contracts/testnet/MockRWA.sol`);
-  on Solana a separate mint-authority key held by Greatwall's faucet
-  (`solana/scripts/deploy-mock-rwa.ts`). They have no value and exist only
-  on test networks.
+- **The mock RWA tokens are the deployer's and Greatwall's faucet's.** On
+  the EVM networks only the deployer can mint them (`minter` in
+  `evm/contracts/testnet/MockRWA.sol`); it minted a stock to Greatwall's
+  faucet wallet, which sends from it. On Solana the mints' authority is
+  Greatwall's faucet key (`mintAuthority` in `solana/testnet-rwa.json`,
+  moved there on 2026-10-11). Both faucet keys sit on Greatwall's server
+  with the test networks' gas they hand out, apart from the deployer's and
+  the operator's keys. The tokens have no value and exist only on test
+  networks.
 
 ## Known gaps
 
