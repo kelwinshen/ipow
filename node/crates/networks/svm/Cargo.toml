@@ -10,6 +10,8 @@ ipow-protocol-core = { path = "../../protocol" }
 anchor-lang = "1.0.2"
 anchor-spl = { version = "1.0.2", default-features = false, features = ["token", "token_2022", "associated_token"] }
 solana-client = "3.1"
+# Its HTTP sender, wrapped to count the calls (chain.rs, `Counted`).
+solana-rpc-client = "3.1"
 solana-sdk = "3.0"
 solana-commitment-config = "3"
 solana-address-lookup-table-interface = { version = "3.2", features = ["bincode"] }

@@ -7,7 +7,9 @@ license.workspace = true
 
 [dependencies]
 ipow-protocol-core = { path = "../../protocol" }
-alloy = { version = "1", features = ["provider-http", "signer-local", "contract", "sol-types", "rpc-types", "network"] }
+alloy = { version = "1", features = ["provider-http", "signer-local", "contract", "sol-types", "rpc-types", "network", "rpc-client", "json-rpc", "transports"] }
+# Counting the calls sent to the endpoint (counted.rs).
+tower = "0.5"
 anyhow.workspace = true
 async-trait.workspace = true
 tokio.workspace = true

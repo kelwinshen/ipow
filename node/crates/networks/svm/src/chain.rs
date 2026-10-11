@@ -97,8 +97,31 @@ pub const TABLE_AUTHORITY_OFFSET: usize = 22;
 pub struct Rpc(RpcClient);
 
 impl Rpc {
-    pub fn new(url: &str) -> Self {
-        Rpc(RpcClient::new_with_commitment(url.to_string(), CommitmentConfig::confirmed()))
+    /// The client of `network`'s endpoint at `url`: every call it sends,
+    /// its own polling too, is counted (`ipow_protocol_core::calls`).
+    pub fn new(network: &str, url: &str) -> Self {
+        let sender = Counted { inner: solana_rpc_client::http_sender::HttpSender::new(url.to_string()), network: network.to_string() };
+        Rpc(RpcClient::new_sender(sender, solana_rpc_client::rpc_client::RpcClientConfig::with_commitment(CommitmentConfig::confirmed())))
+    }
+}
+
+/// The HTTP sender, counting each call it sends.
+struct Counted {
+    inner: solana_rpc_client::http_sender::HttpSender,
+    network: String,
+}
+
+#[async_trait]
+impl solana_rpc_client::rpc_sender::RpcSender for Counted {
+    async fn send(&self, request: solana_client::rpc_request::RpcRequest, params: serde_json::Value) -> solana_client::client_error::Result<serde_json::Value> {
+        ipow_protocol_core::calls::count(&self.network, 1);
+        self.inner.send(request, params).await
+    }
+    fn get_transport_stats(&self) -> solana_rpc_client::rpc_sender::RpcTransportStats {
+        self.inner.get_transport_stats()
+    }
+    fn url(&self) -> String {
+        self.inner.url()
     }
 }
 

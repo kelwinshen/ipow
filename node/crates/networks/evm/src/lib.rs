@@ -3,6 +3,7 @@
 
 pub mod contracts;
 pub mod network;
+pub mod counted;
 
 #[cfg(feature = "testing")]
 pub mod testing;

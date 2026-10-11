@@ -79,7 +79,7 @@ fn connect(n: &NetworkSettings) -> anyhow::Result<Connected> {
             Connected { net: net.clone(), conversion, kind: Kind::Evm(net) }
         }
         NetworkKind::Svm => {
-            let net = Arc::new(SvmNetwork::connect(&n.name, Arc::new(Rpc::new(&rpc)), parse_key(&key)?, &n.light_client, &n.protocol)?);
+            let net = Arc::new(SvmNetwork::connect(&n.name, Arc::new(Rpc::new(&n.name, &rpc)), parse_key(&key)?, &n.light_client, &n.protocol)?);
             let conversion = match &n.conversion {
                 Some(c) => Some(Arc::new(SvmConversion::new(net.clone(), &c.address)?) as Arc<dyn ConversionApp>),
                 None => None,
@@ -249,8 +249,30 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
+    // A guardian looks less often than an operator, when the settings say
+    // so (`guardian_interval_seconds`): most of what the node asks of its
+    // endpoints is rounds.
+    let (guardians, others): (Vec<_>, Vec<_>) = pairs.into_iter().partition(|(w, _)| w.role() == Role::Guardian);
     let (stop, stopped) = watch::channel(false);
-    let tasks = supervisor::start(pairs, Timing::from_interval(Duration::from_secs(settings.interval_seconds)), stopped);
+    let mut tasks = supervisor::start(others, Timing::from_interval(Duration::from_secs(settings.interval_seconds)), stopped.clone());
+    tasks.extend(supervisor::start(guardians, Timing::from_interval(Duration::from_secs(settings.guardian_interval())), stopped));
+    info!(operator_seconds = settings.interval_seconds, guardian_seconds = settings.guardian_interval(), "round intervals");
+
+    // How many calls the node makes, by endpoint, every ten minutes: an
+    // endpoint's plan is used up by them, and a 429 says so too late.
+    tokio::spawn(async {
+        let every = Duration::from_secs(600);
+        loop {
+            tokio::time::sleep(every).await;
+            let calls = ipow_protocol_core::calls::take();
+            let explorer = ipow_bitcoin::explorer::take_calls();
+            let per_minute = |n: u64| n as f64 / every.as_secs_f64() * 60.0;
+            for (network, n) in &calls {
+                info!(%network, calls = n, per_minute = format!("{:.1}", per_minute(*n)), "endpoint calls in the last 10 minutes");
+            }
+            info!(calls = explorer, per_minute = format!("{:.1}", per_minute(explorer)), "Bitcoin explorer calls in the last 10 minutes");
+        }
+    });
     tokio::signal::ctrl_c().await?;
     info!("stopping");
     stop.send(true)?;

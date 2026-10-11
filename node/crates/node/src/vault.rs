@@ -412,6 +412,31 @@ impl Nets {
 const FAST_COLLATERAL_BPS: u128 = 12_500;
 const FAST_OPEN_WINDOW: i64 = 7 * 24 * 3600;
 
+/// What a batch moves on each network of the pair, by asset, as `gather`
+/// counted it when it wrote the batch: a LOCK on the network its receipt is
+/// issued on, a REQUEST on its asset's home. None for a batch with a CANCEL,
+/// whose asset the record does not name.
+fn moved_of(records: &[Record], nets: &Nets) -> Option<Moved> {
+    let mut moved: Moved = [vec![], vec![]];
+    for r in records {
+        let (acting, key) = match r {
+            Record::Lock { home, asset, .. } => (nets.other(*home), (*home, *asset)),
+            Record::Request { net, asset, .. } => {
+                let home = nets.other(*net);
+                (home, (home, *asset))
+            }
+            Record::Cancel { .. } => return None,
+            Record::Bond { .. } | Record::Asset { .. } | Record::Exit => continue,
+        };
+        let side = &mut moved[nets.ix(acting)];
+        match side.iter_mut().find(|(k, _)| *k == key) {
+            Some((_, v)) => *v += value_of(r),
+            None => side.push((key, value_of(r))),
+        }
+    }
+    Some(moved)
+}
+
 /// What a record makes the acting network issue or pay: the amount and the
 /// fast fee, in record units (section 11.5).
 fn value_of(r: &Record) -> u64 {
@@ -469,6 +494,22 @@ type Positions = HashMap<(u8, u32), Position>;
 /// newer ones.
 fn window(set: &BTreeSet<u64>, from: u64) -> Vec<u64> {
     set.range(from..).chain(set.range(..from)).copied().take(WINDOW).collect()
+}
+
+/// The newest locks or burns a round always looks at first, before its turn
+/// over the rest: a user's new lock is paid the next round, not after every
+/// older one open (genesis left hundreds) has had its turn.
+const NEWEST: usize = 20;
+
+/// The newest `NEWEST` of `set`, then the turn from `from`, each id once.
+fn newest_then_window(set: &BTreeSet<u64>, from: u64) -> Vec<u64> {
+    let mut out: Vec<u64> = set.iter().rev().take(NEWEST).copied().collect();
+    for id in window(set, from) {
+        if !out.contains(&id) {
+            out.push(id);
+        }
+    }
+    out
 }
 
 /// Where the next turn over `set` starts after looking at `seen`.
@@ -1118,6 +1159,15 @@ impl VaultOperator {
         Ok((g.records, g.moved))
     }
 
+    /// What the message `txid` of the pair chain moves, from its batch in
+    /// the journal: None when the batch is not there or cannot be counted.
+    async fn recount(&self, st: &OpState, txid: &[u8; 32]) -> anyhow::Result<Option<Moved>> {
+        let Some(raw) = self.btc.raw_tx(txid).await? else { return Ok(None) };
+        let Some(payload) = SharedWallet::payload_of(&raw) else { return Ok(None) };
+        let Some(batch) = st.journal.batches.get(&payload) else { return Ok(None) };
+        Ok(decode(batch).and_then(|records| moved_of(&records, &self.nets)))
+    }
+
     /// The fast paths (section 11.7), acted on each network: attests there
     /// of locks on the other network, and burns on the other network paid
     /// there at once. Each on its own: one that fails is only logged.
@@ -1181,10 +1231,27 @@ impl VaultOperator {
         // of its bond in the asset here, as counted now.
         // A batch on its way here takes cover the vault does not count yet:
         // counted with the attests waiting for a claim. A message this node
-        // keeps no count of (after a restart) stops attests until it is
+        // keeps no count of (after a restart, or a move to another machine)
+        // is counted again from its batch in the journal; one whose batch is
+        // not there, or cannot be counted, stops attests until it is
         // processed.
         let unknown = match self.btc.spender(&chain.coin.0, chain.coin.1).await {
-            Ok(spender) => spender.is_some() && !st.in_flight.iter().any(|(index, _)| *index == chain.messages),
+            Ok(Some(spender)) if !st.in_flight.iter().any(|(index, _)| *index == chain.messages) => match self.recount(st, &spender).await {
+                Ok(Some(moved)) => {
+                    info!(network = here.net.name(), message = chain.messages, "counted a message on its way again, from the journal");
+                    st.in_flight.push((chain.messages, moved));
+                    false
+                }
+                Ok(None) => {
+                    warn!(network = here.net.name(), message = chain.messages, "a message on its way is not in the journal: no attests until it is processed");
+                    true
+                }
+                Err(e) => {
+                    warn!(error = %crate::secrets::redact(&e), "reading a message on its way failed: no attests this round");
+                    true
+                }
+            },
+            Ok(_) => false,
             Err(e) => {
                 warn!(error = %crate::secrets::redact(&e), "reading the pair chain on Bitcoin failed: no attests this round");
                 true
@@ -1193,7 +1260,14 @@ impl VaultOperator {
         if unknown {
             debug!(network = here.net.name(), "no attests: a message this node keeps no count of is on its way here");
         }
-        let waiting = if !unknown && can_open(here, chain).await? { self.waiting_attests(st, at).await } else { None };
+        let openable = !unknown && can_open(here, chain).await?;
+        if !unknown && !openable && !st.open_locks[h].is_empty() {
+            // Said, not kept quiet: locks wait while the chain cannot open
+            // the claim an attest needs (refused, slashed, exited, or its
+            // claim deposits here below one deposit).
+            warn!(network = here.net.name(), deposits = chain.deposits, refused = chain.refused, slashed = chain.slashed, exited = chain.exited, "no attests: the chain cannot open a claim here");
+        }
+        let waiting = if openable { self.waiting_attests(st, at).await } else { None };
         if let Some(mut waiting) = waiting {
             for (asset, value) in in_flight_value(&st.in_flight, self.ix(at), home, chain.messages) {
                 *waiting.entry(asset).or_default() += value;
@@ -1202,7 +1276,7 @@ impl VaultOperator {
             // Paid from stock: in turns, as the open set is.
             let stock = window(&st.stock_locks[h], st.stock_lock_turn[h]);
             st.stock_lock_turn[h] = next_turn(&st.stock_locks[h], &stock);
-            for id in window(&st.open_locks[h], st.lock_turn[h]).into_iter().chain(stock) {
+            for id in newest_then_window(&st.open_locks[h], st.lock_turn[h]).into_iter().chain(stock) {
                 let l = match there.vault.lock(id).await {
                     Ok(Some(l)) => l,
                     Ok(None) => continue,
@@ -1295,7 +1369,7 @@ impl VaultOperator {
         let mut burns = vec![];
         let stock = window(&st.stock_requests[h], st.stock_request_turn[h]);
         st.stock_request_turn[h] = next_turn(&st.stock_requests[h], &stock);
-        for id in window(&st.open_requests[h], st.request_turn[h]).into_iter().chain(stock) {
+        for id in newest_then_window(&st.open_requests[h], st.request_turn[h]).into_iter().chain(stock) {
             let outcome: anyhow::Result<()> = async {
                 let Some(q) = there.vault.request(id).await? else { return Ok(()) };
                 let r = q.record(home);
@@ -2069,6 +2143,37 @@ impl Worker for VaultGuardian {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_round_looks_at_the_newest_first() {
+        let set: BTreeSet<u64> = (1..=300).collect();
+        let ids = newest_then_window(&set, 1);
+        // The 20 newest first, newest of all first; then the turn from 1.
+        assert_eq!(&ids[..3], &[300, 299, 298]);
+        assert_eq!(ids[NEWEST], 1);
+        assert_eq!(ids.len(), NEWEST + WINDOW);
+        // A small set: each once.
+        let small: BTreeSet<u64> = [5, 7].into_iter().collect();
+        assert_eq!(newest_then_window(&small, 0), vec![7, 5]);
+    }
+
+
+    #[test]
+    fn a_batch_in_the_journal_counts_what_it_moves() {
+        let nets = Nets([ETHEREUM, SOLANA]);
+        let lock = |asset, amount, fast_fee| Record::Lock { home: ETHEREUM, asset, id: 1, amount, recipient: [0; 32], fee: 0, fast_fee, at: 0 };
+        let burn = Record::Request { net: SOLANA, asset: 2, id: 9, amount: 40, to: [0; 32], fee: 0, fast_fee: 2, at: 0 };
+        let bond = Record::Bond { net: SOLANA, home: ETHEREUM, asset: 1, amount: 5 };
+        // Two locks of one asset add up on the receipt's network (Solana);
+        // a burn of a receipt on Solana moves its asset on Ethereum; a bond
+        // moves nothing.
+        let moved = moved_of(&[lock(1, 100, 1), lock(1, 50, 0), burn, bond], &nets).unwrap();
+        assert_eq!(moved[0], vec![((ETHEREUM, 2), 42)]);
+        assert_eq!(moved[1], vec![((ETHEREUM, 1), 151)]);
+        // A CANCEL does not name its asset: not counted.
+        assert!(moved_of(&[Record::Cancel { net: SOLANA, id: 1 }], &nets).is_none());
+    }
+
 
     #[test]
     fn a_failed_record_holds_the_cursor_back() {

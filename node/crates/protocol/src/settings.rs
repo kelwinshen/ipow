@@ -48,6 +48,13 @@ pub struct Settings {
     /// Seconds between two rounds of a role on a network.
     #[serde(default = "default_interval")]
     pub interval_seconds: u64,
+    /// Seconds between two rounds of a guardian, the protocol's and the
+    /// vault's: a guardian has a job's lock or a claim's days to object, so
+    /// it can look far less often than an operator, which carries locks as
+    /// they come. Each round reads the networks, so this is most of what a
+    /// node asks of its endpoints. Unset: `interval_seconds`.
+    #[serde(default)]
+    pub guardian_interval_seconds: Option<u64>,
     /// The protocol's vault (spec section 11), for the pair Ethereum and
     /// Solana: the operator carries records, the guardian checks claims.
     pub vault: Option<VaultSettings>,
@@ -320,6 +327,8 @@ pub enum SettingsError {
     RepeatedVaultPair(String),
     #[error("two vault pairs share the journal {0}: each pair keeps its own")]
     RepeatedJournal(String),
+    #[error("interval_seconds and guardian_interval_seconds must be at least 1")]
+    ZeroInterval,
 }
 
 impl Settings {
@@ -333,7 +342,16 @@ impl Settings {
         self.roles.contains(&role)
     }
 
+    /// Seconds between two rounds of a guardian (`guardian_interval_seconds`,
+    /// or `interval_seconds` when unset).
+    pub fn guardian_interval(&self) -> u64 {
+        self.guardian_interval_seconds.unwrap_or(self.interval_seconds)
+    }
+
     fn validate(&self) -> Result<(), SettingsError> {
+        if self.interval_seconds == 0 || self.guardian_interval_seconds == Some(0) {
+            return Err(SettingsError::ZeroInterval);
+        }
         if self.roles.is_empty() {
             return Err(SettingsError::NoRole);
         }
@@ -471,6 +489,18 @@ mod tests {
             let s = Settings::parse(&with(roles, true, NETWORK)).unwrap();
             assert_eq!(s.networks[0].kind, NetworkKind::Evm);
             assert_eq!(s.interval_seconds, 15);
+        }
+    }
+
+    #[test]
+    fn a_guardian_waits_its_own_interval_or_the_operators() {
+        let s = Settings::parse(&with("[operator, guardian]", true, NETWORK)).unwrap();
+        assert_eq!(s.guardian_interval(), 15);
+        let s = Settings::parse(&format!("{}\ninterval_seconds: 60\nguardian_interval_seconds: 600", with("[operator, guardian]", true, NETWORK))).unwrap();
+        assert_eq!((s.interval_seconds, s.guardian_interval()), (60, 600));
+        for zero in ["interval_seconds: 0", "guardian_interval_seconds: 0"] {
+            let e = Settings::parse(&format!("{}\n{zero}", with("[guardian]", true, NETWORK))).unwrap_err();
+            assert_eq!(e, SettingsError::ZeroInterval);
         }
     }
 

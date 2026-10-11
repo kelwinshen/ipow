@@ -8,3 +8,4 @@ pub mod types;
 pub mod secrets;
 pub mod conversion;
 pub mod vault;
+pub mod calls;

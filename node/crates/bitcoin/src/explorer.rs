@@ -13,6 +13,19 @@ use crate::reversed;
 use crate::tx::strip_witness;
 use crate::view::{BitcoinView, Coin, TxStatus};
 
+/// Requests sent to the explorers, counted so the node can say how many it
+/// makes (an explorer refuses with 429 when asked too often): `take_calls`.
+static CALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// The requests sent to the explorers since the last take, and clears them.
+pub fn take_calls() -> u64 {
+    CALLS.swap(0, std::sync::atomic::Ordering::Relaxed)
+}
+
+fn counted() {
+    CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
 /// Explorers in order of preference: a read or a broadcast that cannot
 /// reach one, or that it fails with a server error, goes to the next. An
 /// answer, including "not known", is taken from the first that gives one,
@@ -81,6 +94,7 @@ impl Explorer {
         let mut last = None;
         for base in &self.bases {
             let url = format!("{base}{path}");
+            counted();
             match self.http.get(&url).send().await {
                 Err(e) => last = Some(anyhow::Error::new(e).context(format!("GET {url}"))),
                 Ok(res) if res.status() == reqwest::StatusCode::NOT_FOUND => return Ok(None),
@@ -198,6 +212,7 @@ impl BitcoinView for Explorer {
         let mut last = None;
         for base in &self.bases {
             let url = format!("{base}/tx");
+            counted();
             match self.http.post(&url).body(hex::encode(raw)).send().await {
                 Err(e) => last = Some(anyhow::Error::new(e).context(format!("POST {url}"))),
                 Ok(res) if res.status().is_server_error() => last = Some(anyhow::anyhow!("POST {url}: {}", res.status())),

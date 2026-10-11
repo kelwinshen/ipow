@@ -141,12 +141,16 @@ impl EvmNetwork {
         // Every transaction asks the network for its nonce. A nonce kept in
         // memory moves on even when a transaction is refused, and every
         // later transaction then waits behind the gap.
+        // Every call to the endpoint is counted (`crate::counted`).
+        let client = alloy::rpc::client::ClientBuilder::default()
+            .layer(crate::counted::CountLayer(name.into()))
+            .http(rpc_url.parse().context("the endpoint is not a valid URL")?);
         let provider = ProviderBuilder::default()
             .with_gas_estimation()
             .with_simple_nonce_management()
             .fetch_chain_id()
             .wallet(EthereumWallet::from(signer))
-            .connect_http(rpc_url.parse().context("the endpoint is not a valid URL")?)
+            .connect_client(client)
             .erased();
         Ok(EvmNetwork {
             receipt_timeout: RECEIPT_TIMEOUT,

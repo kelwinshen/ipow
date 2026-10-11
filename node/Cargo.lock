@@ -3776,6 +3776,7 @@ dependencies = [
  "ipow-testing",
  "serde_json",
  "tokio",
+ "tower",
  "tracing",
  "tracing-subscriber",
 ]
@@ -3800,6 +3801,7 @@ dependencies = [
  "solana-address-lookup-table-interface",
  "solana-client",
  "solana-commitment-config",
+ "solana-rpc-client",
  "solana-sdk",
  "tokio",
  "tracing",
