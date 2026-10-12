@@ -82,7 +82,8 @@ address: a transaction of his that spends one would read as a receipt.
   inputs may not fit; an address lookup table makes room for a payment of
   a few inputs. The app asks the user to pay from few coins.
 - The records of a swap and of an operator's named script are not closed:
-  their rent stays locked.
+  their rent stays locked. So is a buy's memo's (below), 157 bytes of rent
+  paid by the buy's user.
 - A token can carry rules of its own (a permanent delegate, a freeze
   authority, a transfer hook) that could move or freeze what Conversion
   holds. Conversion does not check a token's rules; an operator's node
@@ -117,8 +118,10 @@ empty for none, at most 40 bytes) and keeps it on the swap, as the old
 protocol did, so that any app, in any browser, can show where the user
 said they would pay from. It is a note, not a rule: anyone may pay a buy
 from anywhere, and nothing checks the payment against it. Built and
-tested on EVM networks; the Solana program is unchanged (buys into Solana
-are not open to users yet). Live at the next Conversion redeploy, with
+tested on EVM networks; the Solana program is unchanged: a buy there keeps
+no user script. Until 2026-10-13 the reason was that buys into Solana were
+not open to users; a tunnel's buy into Solana now is (below), and whether
+Solana should keep a user script too is open for the owner. Live at the next Conversion redeploy, with
 the one-transaction close above.
 
 ## 2026-10-04: a buy carries a memo for operators
@@ -128,4 +131,23 @@ bytes), written by the user's app for operators and not read by the
 contract. A tunnel's buy names in it the sale that will pay it (the
 SDK's `tunnelMemo`), so an operator reading new buys promises that sale
 with no further word from the user: a tunnel is one transaction. Built
-and tested on EVM networks; the Solana program is unchanged.
+and tested on EVM networks.
+
+## 2026-10-13: a buy's memo on Solana
+
+Approved by the owner on 2026-10-13, so that a tunnel can end on Solana.
+The Solana program takes a memo through an instruction of its own,
+`buy_with_memo`: a buy as `buy` opens it, with a memo of 1 to 128 bytes
+kept in an account beside the swap (`["memo", swap id]`), made in the same
+transaction and paid by the buy's user. `buy`, `buy_for` and a swap's
+record are unchanged, so swaps made before it read as before. Differences
+from the EVM networks, made by Solana: the memo is not on the swap's record
+but in its own account, which only this instruction makes; an empty memo is
+refused (`InvalidMemo`), a buy with none using `buy`; `buy_for` takes none.
+The node reads it for a buy (none when the account does not exist), and the
+SDK writes it (`SolanaConversion.buy`'s `memo`). Built and tested
+(`tests/test_conversion.rs`,
+`keeps_a_buys_memo_beside_the_swap_and_refuses_one_empty_or_too_long`);
+the devnet program was upgraded to it on 2026-10-13 and read back, its
+bytes those of the build, and a buy with a memo made and read there (swap
+3).

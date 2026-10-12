@@ -4,7 +4,7 @@
     "name": "conversion",
     "version": "0.1.0",
     "spec": "0.1.0",
-    "description": "Conversion: an application on the iPoW protocol that swaps SOL or a token for real BTC and back. Design: docs/drafts/ipow-conversion-app.md."
+    "description": "Conversion: an application on the iPoW protocol that swaps SOL or a token for real BTC and back. Design: docs/specs/ipow-conversion-app.md."
   },
   "instructions": [
     {
@@ -300,6 +300,163 @@
         {
           "name": "paid",
           "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "buy_with_memo",
+      "discriminator": [
+        187,
+        155,
+        214,
+        5,
+        52,
+        26,
+        209,
+        127
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "swap",
+          "writable": true
+        },
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "protocol",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                173,
+                211,
+                162,
+                204,
+                92,
+                244,
+                151,
+                148,
+                167,
+                47,
+                74,
+                192,
+                205,
+                126,
+                110,
+                225,
+                68,
+                169,
+                236,
+                243,
+                195,
+                149,
+                250,
+                203,
+                170,
+                54,
+                50,
+                155,
+                197,
+                150,
+                224,
+                231
+              ]
+            }
+          }
+        },
+        {
+          "name": "application"
+        },
+        {
+          "name": "job",
+          "writable": true
+        },
+        {
+          "name": "tag_record",
+          "writable": true
+        },
+        {
+          "name": "protocol_vault",
+          "writable": true
+        },
+        {
+          "name": "protocol_program",
+          "address": "ChYhovM8vm2tuMRaRFn4m6etG979bjixVa71fXBDwjPL"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "mint",
+          "optional": true
+        },
+        {
+          "name": "memo",
+          "docs": [
+            "The memo's own account, beside the swap; the user pays its rent."
+          ],
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "sats",
+          "type": "u64"
+        },
+        {
+          "name": "confirmations",
+          "type": "u16"
+        },
+        {
+          "name": "paid",
+          "type": "u64"
+        },
+        {
+          "name": "memo",
+          "type": "bytes"
         }
       ]
     },
@@ -2115,6 +2272,19 @@
       ]
     },
     {
+      "name": "Memo",
+      "discriminator": [
+        161,
+        231,
+        183,
+        96,
+        66,
+        120,
+        3,
+        80
+      ]
+    },
+    {
       "name": "ScriptRecord",
       "discriminator": [
         218,
@@ -2249,6 +2419,11 @@
     {
       "code": 6026,
       "name": "ZeroRecipient"
+    },
+    {
+      "code": 6027,
+      "name": "InvalidMemo",
+      "msg": "A memo is 1 to 128 bytes"
     }
   ],
   "types": [
@@ -2487,6 +2662,32 @@
               "How many challenges of the job are open."
             ],
             "type": "u32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Memo",
+      "docs": [
+        "A buy's memo: a note written by the user's app for operators, not read",
+        "by the program (a tunnel's buy names in it the sale that will pay it).",
+        "Kept beside the swap, in an account of its own, so a swap's record is",
+        "the same with or without one."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "swap_id",
+            "type": "u64"
+          },
+          {
+            "name": "text",
+            "type": "bytes"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
           }
         ]
       }

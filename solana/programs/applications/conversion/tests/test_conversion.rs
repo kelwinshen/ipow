@@ -161,6 +161,9 @@ fn config() -> Pubkey {
 fn swap_pda(id: u64) -> Pubkey {
     cv(&[b"swap", &id.to_le_bytes()])
 }
+fn memo_pda(id: u64) -> Pubkey {
+    cv(&[b"memo", &id.to_le_bytes()])
+}
 fn tag_of(swap_id: u64) -> [u8; 32] {
     sha256(&[b"iPoW conversion", conversion::ID.as_ref(), &swap_id.to_le_bytes()])
 }
@@ -512,6 +515,33 @@ impl World {
                 mint: None,
             },
             conversion::client::args::Buy { amount, sats, confirmations: 6, paid: FEES },
+        );
+        self.send(ix, &[&user])?;
+        Ok(id)
+    }
+
+    /// A buy that keeps a memo for operators, in an account beside the swap.
+    fn buy_with_memo(&mut self, memo: &[u8]) -> Result<u64, String> {
+        let id = self.swap_count() + 1;
+        let (swap, job, tag_record) = self.open_accounts(id);
+        let user = self.user.insecure_clone();
+        let ix = self.ix(
+            conversion::ID,
+            conversion::client::accounts::BuyWithMemo {
+                config: config(),
+                swap,
+                user: user.pubkey(),
+                protocol: pr(&[b"protocol"]),
+                application: pr(&[b"application", config().as_ref()]),
+                job,
+                tag_record,
+                protocol_vault: pr(&[b"vault"]),
+                protocol_program: ipow_protocol::ID,
+                system_program: SYSTEM,
+                mint: None,
+                memo: memo_pda(id),
+            },
+            conversion::client::args::BuyWithMemo { amount: SOL, sats: 5_000_000, confirmations: 6, paid: FEES, memo: memo.to_vec() },
         );
         self.send(ix, &[&user])?;
         Ok(id)
@@ -1327,4 +1357,31 @@ fn links_a_buy_and_a_sell_with_one_bitcoin_payment_both_complete() {
     let before = w.balance(&op.pubkey());
     w.complete_sell(sell_id, &sold).unwrap();
     assert_eq!(w.balance(&op.pubkey()), before + SOL);
+}
+
+#[test]
+fn keeps_a_buys_memo_beside_the_swap_and_refuses_one_empty_or_too_long() {
+    let mut w = World::new();
+    // Empty, or past 128 bytes: refused, and no swap is made.
+    expect_err(w.buy_with_memo(b""), "InvalidMemo");
+    expect_err(w.buy_with_memo(&[b'x'; 129]), "InvalidMemo");
+    assert_eq!(w.swap_count(), 0);
+
+    // A tunnel's terms, as the SDK writes them; and the longest memo kept.
+    let terms = b"ipow-tunnel/1 ethereum-sepolia native 60000000";
+    let id = w.buy_with_memo(terms).unwrap();
+    let m: conversion::accounts::Memo = w.ctx.get_account(&memo_pda(id)).unwrap();
+    assert_eq!((m.swap_id, m.text.as_slice()), (id, &terms[..]));
+    let long = w.buy_with_memo(&[b'y'; 128]).unwrap();
+    let m: conversion::accounts::Memo = w.ctx.get_account(&memo_pda(long)).unwrap();
+    assert_eq!(m.text.len(), 128);
+
+    // The swap itself is a buy like any other: its record is unchanged.
+    let s = w.swap(id);
+    assert!(matches!(s.side, conversion::types::Side::Buy) && matches!(s.state, conversion::types::SwapState::Open));
+    assert_eq!((s.user, s.amount, s.sats), (w.user.pubkey(), SOL, 5_000_000));
+
+    // A buy opened without a memo has no memo account.
+    let plain = w.buy(SOL, 5_000_000).unwrap();
+    assert!(w.ctx.svm.get_account(&memo_pda(plain)).is_none());
 }

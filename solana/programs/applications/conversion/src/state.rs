@@ -73,6 +73,19 @@ impl Swap {
     }
 }
 
+/// A buy's memo: a note written by the user's app for operators, not read
+/// by the program (a tunnel's buy names in it the sale that will pay it).
+/// Kept beside the swap, in an account of its own, so a swap's record is
+/// the same with or without one.
+#[account]
+#[derive(InitSpace)]
+pub struct Memo {
+    pub swap_id: u64,
+    #[max_len(128)]
+    pub text: Vec<u8>,
+    pub bump: u8,
+}
+
 /// Marks an operator's script used, so a payment to it belongs to one swap.
 #[account]
 #[derive(InitSpace)]

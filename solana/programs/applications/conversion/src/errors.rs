@@ -29,4 +29,6 @@ pub enum ConversionError {
     BadWindow,
     PaidOutsideWindow,
     ZeroRecipient,
+    #[msg("A memo is 1 to 128 bytes")]
+    InvalidMemo,
 }

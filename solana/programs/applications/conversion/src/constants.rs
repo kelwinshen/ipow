@@ -21,3 +21,6 @@ pub const MAX_SATS: u64 = 10_000_000;
 pub const CONFIG_SEED: &[u8] = b"config";
 pub const SWAP_SEED: &[u8] = b"swap";
 pub const SCRIPT_SEED: &[u8] = b"script";
+pub const MEMO_SEED: &[u8] = b"memo";
+/// The longest memo a buy keeps, as on the EVM networks (`MAX_MEMO`).
+pub const MAX_MEMO: usize = 128;

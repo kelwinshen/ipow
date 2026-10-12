@@ -35,8 +35,8 @@ pub mod reclaim;
 pub mod refund_sell;
 pub mod sell;
 
-pub use buy::Buy;
-pub(crate) use buy::__client_accounts_buy;
+pub use buy::{Buy, BuyWithMemo};
+pub(crate) use buy::{__client_accounts_buy, __client_accounts_buy_with_memo};
 pub use cancel::Cancel;
 pub use compensate::Compensate;
 pub(crate) use compensate::__client_accounts_compensate;
@@ -124,6 +124,10 @@ pub mod conversion {
 
     pub fn buy_for(ctx: Context<Buy>, recipient: Pubkey, amount: u64, sats: u64, confirmations: u16, paid: u64) -> Result<()> {
         buy::for_recipient(ctx, recipient, amount, sats, confirmations, paid)
+    }
+
+    pub fn buy_with_memo(ctx: Context<BuyWithMemo>, amount: u64, sats: u64, confirmations: u16, paid: u64, memo: Vec<u8>) -> Result<()> {
+        buy::with_memo(ctx, amount, sats, confirmations, paid, memo)
     }
 
     pub fn fund(ctx: Context<Fund>, script: Vec<u8>) -> Result<()> {

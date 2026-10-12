@@ -114,6 +114,12 @@ impl ConversionApp for SvmConversion {
 
     async fn swap(&self, id: u64) -> anyhow::Result<Swap> {
         let s = self.record(id).await?;
+        // A buy's memo is in an account of its own beside the swap, made
+        // only by `buy_with_memo`: none means no memo.
+        let memo = match s.side {
+            cv::types::Side::Buy => self.net.read_account::<cv::accounts::Memo>(&cv_pda(&[b"memo", &id.to_le_bytes()])).await?.map(|m| m.text).unwrap_or_default(),
+            cv::types::Side::Sell => vec![],
+        };
         Ok(Swap {
             id,
             side: match s.side {
@@ -135,8 +141,7 @@ impl ConversionApp for SvmConversion {
             job_id: s.job_id,
             script: s.script,
             pay_window: (s.pay_from != 0).then_some((s.pay_from, s.pay_to)),
-            // The program keeps no memo yet; its buys are not open to users.
-            memo: vec![],
+            memo,
         })
     }
 
