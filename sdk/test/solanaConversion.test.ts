@@ -5,9 +5,9 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import anchor from "@coral-xyz/anchor";
-import { Keypair, PublicKey, SystemProgram } from "@solana/web3.js";
+import { Keypair, PublicKey, SystemProgram, Transaction, TransactionInstruction, sendAndConfirmTransaction } from "@solana/web3.js";
 
-import { IDLS, SOLANA, SolanaConversion, quoteSolanaSwap } from "../src/index.ts";
+import { IDLS, SOLANA, SolanaConversion, associatedTokenAccount, createAccountIdempotent, quoteSolanaSwap } from "../src/index.ts";
 import { startValidator, type Local } from "./helpers/validator.ts";
 
 const { AnchorProvider, Program, Wallet } = anchor;
@@ -75,4 +75,77 @@ test("opens sells and buys, a tunnel's legs too, and reads them back", async () 
   // The signer's swaps, newest first; the other's buy is theirs.
   assert.deepEqual((await conv.swapsOf(me)).map((x) => x.id), [bought.swapId, leg.swapId, sold.swapId]);
   assert.deepEqual((await conv.swapsOf(other)).map((x) => x.id), [forOther.swapId]);
+});
+
+const TOKEN_PROGRAM = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+
+/** A new SPL token of `decimals`, `amount` of it minted to `owner`. */
+async function token(owner: Keypair, decimals: number, amount: bigint): Promise<PublicKey> {
+  const { connection } = local;
+  const mint = Keypair.generate();
+  const rent = await connection.getMinimumBalanceForRentExemption(82);
+  const init = Buffer.alloc(35);
+  init[0] = 20; // InitializeMint2
+  init[1] = decimals;
+  owner.publicKey.toBuffer().copy(init, 2);
+  const mintTo = Buffer.alloc(9);
+  mintTo[0] = 7; // MintTo
+  mintTo.writeBigUInt64LE(amount, 1);
+  const ata = associatedTokenAccount(owner.publicKey, mint.publicKey);
+  const tx = new Transaction().add(
+    SystemProgram.createAccount({ fromPubkey: owner.publicKey, newAccountPubkey: mint.publicKey, lamports: rent, space: 82, programId: TOKEN_PROGRAM }),
+    new TransactionInstruction({ programId: TOKEN_PROGRAM, keys: [{ pubkey: mint.publicKey, isSigner: false, isWritable: true }], data: init }),
+    createAccountIdempotent(owner.publicKey, owner.publicKey, mint.publicKey),
+    new TransactionInstruction({
+      programId: TOKEN_PROGRAM,
+      keys: [
+        { pubkey: mint.publicKey, isSigner: false, isWritable: true },
+        { pubkey: ata, isSigner: false, isWritable: true },
+        { pubkey: owner.publicKey, isSigner: true, isWritable: false },
+      ],
+      data: mintTo,
+    })
+  );
+  await sendAndConfirmTransaction(connection, tx, [owner, mint]);
+  return mint.publicKey;
+}
+
+test("sells and buys a token: it is held in the swap's own account", async () => {
+  const { connection, authority } = local;
+  const conv = new SolanaConversion(connection, new Wallet(authority));
+  const mint = await token(authority, 6, 1_000_000n);
+  const held = async (owner: PublicKey) => BigInt((await connection.getTokenAccountBalance(associatedTokenAccount(owner, mint))).value.amount);
+
+  const sold = await conv.sell({ lamports: 400_000n, sats: 50_000n, to: BTC, token: mint.toBase58() });
+  let s = await conv.getSwap(sold.swapId);
+  assert.deepEqual([s.side, s.state, s.token, s.amount], ["Sell", "Open", mint.toBase58(), 400_000n]);
+  assert.equal(await held(authority.publicKey), 600_000n);
+  assert.equal(await held(conv.swapAddress(sold.swapId)), 400_000n);
+
+  // A tunnel's leg in a token, held to its payment blocks.
+  const leg = await conv.sellInWindow({ lamports: 100_000n, sats: 50_000n, to: BTC, window: { first: 900_001, last: 900_012 }, token: mint.toBase58() });
+  s = await conv.getSwap(leg.swapId);
+  assert.deepEqual([s.token, s.amount, s.payWindow], [mint.toBase58(), 100_000n, { first: 900_001, last: 900_012 }]);
+  assert.equal(await held(authority.publicKey), 500_000n);
+
+  // A buy of the token: nothing moves until an operator funds it.
+  const bought = await conv.buy({ lamports: 250_000n, sats: 50_000n, token: mint.toBase58() });
+  s = await conv.getSwap(bought.swapId);
+  assert.deepEqual([s.side, s.state, s.token, s.amount], ["Buy", "Open", mint.toBase58(), 250_000n]);
+  assert.equal(await held(authority.publicKey), 500_000n);
+
+  // A buy with a memo for operators: a tunnel's terms, kept beside the swap.
+  const terms = "ipow-tunnel/1 ethereum-sepolia native 60000000";
+  const noted = await conv.buy({ lamports: 250_000n, sats: 50_000n, token: mint.toBase58(), memo: terms });
+  s = await conv.getSwap(noted.swapId);
+  assert.deepEqual([s.side, s.token, s.memo], ["Buy", mint.toBase58(), terms]);
+  assert.equal((await conv.getSwap(bought.swapId)).memo, null);
+  await assert.rejects(conv.buy({ lamports: 1n, sats: 50_000n, memo: "x".repeat(129) }), /1 to 128 bytes/);
+
+  // SOL swaps name no token.
+  const sol = await conv.sell({ lamports: SOL / 10n, sats: 50_000n, to: BTC });
+  assert.equal((await conv.getSwap(sol.swapId)).token, null);
+
+  // A mint that is not one is refused before anything is sent.
+  await assert.rejects(conv.sell({ lamports: 1n, sats: 50_000n, to: BTC, token: Keypair.generate().publicKey.toBase58() }), /not a token on this network/);
 });

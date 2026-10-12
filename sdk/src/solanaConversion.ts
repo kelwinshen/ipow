@@ -1,7 +1,8 @@
 // Conversion on Solana (programs/applications/conversion): the same swaps as on EVM
-// networks, SOL against real BTC, and the tunnel's legs (a sell held to a
-// window of payment blocks, a buy opened for someone else). SOL only for
-// now; an SPL token's swap needs its token accounts, not built here.
+// networks, SOL or a token against real BTC (C5), and the tunnel's legs (a
+// sell held to a window of payment blocks, a buy opened for someone else).
+// A token is one of the classic token program or Token-2022, held in the
+// swap's associated token account.
 // Design: docs/specs/ipow-conversion-app.md, docs/specs/ipow-conversion-tunnel.md.
 
 // Imported, not global: in a browser this is the `buffer` package.
@@ -12,7 +13,12 @@ import { ComputeBudgetProgram, Connection, PublicKey, SystemProgram } from "@sol
 
 import { addressToScript, scriptToAddress } from "./btcAddress.ts";
 import { IDLS, SOLANA } from "./generated/solana.ts";
-import type { SolanaWallet } from "./solana.ts";
+import { associatedTokenAccount, type SolanaWallet } from "./solana.ts";
+import { createAccountIdempotent } from "./solanaBeta.ts";
+
+const TOKEN_PROGRAM = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+const TOKEN_2022_PROGRAM = new PublicKey("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb");
+const ASSOCIATED_TOKEN_PROGRAM = new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
 
 /** The protocol's rules the fees and stages follow (ipow-protocol constants). */
 const PROOF_RANGE = 25;
@@ -33,7 +39,11 @@ export type SolanaSwapView = {
   side: "Sell" | "Buy";
   state: "Open" | "Funded" | "Done" | "Refunded" | "Cancelled" | "Reclaimed";
   user: string;
-  /** Lamports. */
+  /** The token swapped: its mint, or null for SOL. */
+  token: string | null;
+  /** A buy's memo for operators (a tunnel's terms), or null. */
+  memo: string | null;
+  /** Lamports, or the token's smallest units. */
   amount: bigint;
   sats: bigint;
   /** Sell: the user's Bitcoin address. Buy: the operator's, once funded. */
@@ -102,6 +112,10 @@ export class SolanaConversion {
   swapAddress(id: bigint | number) {
     return PublicKey.findProgramAddressSync([Buffer.from("swap"), u64(id)], this.program.programId)[0];
   }
+  /** Where a buy's memo is kept, beside its swap (made only with one). */
+  memoAddress(id: bigint | number) {
+    return PublicKey.findProgramAddressSync([Buffer.from("memo"), u64(id)], this.program.programId)[0];
+  }
   private get accounts(): any {
     return this.program.account as any;
   }
@@ -156,40 +170,66 @@ export class SolanaConversion {
     return [ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 })];
   }
 
-  /** Sells `lamports` of SOL for at least `sats`, paid to the Bitcoin address `to`. */
-  async sell(options: { lamports: bigint; sats: bigint; to: string; quote?: SolanaSwapQuote }): Promise<{ swapId: bigint; signature: string }> {
+  /** A token's mint and the token program that owns it; null for SOL. */
+  private async tokenOf(mint: string | null | undefined): Promise<{ mint: PublicKey; program: PublicKey } | null> {
+    if (!mint) return null;
+    const key = new PublicKey(mint);
+    const info = await this.connection.getAccountInfo(key);
+    if (!info) throw new Error(`${mint} is not a token on this network`);
+    if (!info.owner.equals(TOKEN_PROGRAM) && !info.owner.equals(TOKEN_2022_PROGRAM)) throw new Error(`${mint} is not a token mint`);
+    return { mint: key, program: info.owner };
+  }
+
+  /** Sells `lamports` of SOL, or that many smallest units of `token` (a
+   *  mint), for at least `sats`, paid to the Bitcoin address `to`. */
+  async sell(options: { lamports: bigint; sats: bigint; to: string; token?: string; quote?: SolanaSwapQuote }): Promise<{ swapId: bigint; signature: string }> {
     return this.openSell(options, null);
   }
 
   /** A sell as one leg of a tunnel (T1): paid to `to`, the funded buy's
    *  address on the other network, counting only when mined in `window`. */
-  async sellInWindow(options: { lamports: bigint; sats: bigint; to: string; window: { first: number; last: number }; quote?: SolanaSwapQuote }): Promise<{ swapId: bigint; signature: string }> {
+  async sellInWindow(options: { lamports: bigint; sats: bigint; to: string; window: { first: number; last: number }; token?: string; quote?: SolanaSwapQuote }): Promise<{ swapId: bigint; signature: string }> {
     return this.openSell(options, options.window);
   }
 
-  private async openSell(o: { lamports: bigint; sats: bigint; to: string; quote?: SolanaSwapQuote }, window: { first: number; last: number } | null) {
+  private async openSell(o: { lamports: bigint; sats: bigint; to: string; token?: string; quote?: SolanaSwapQuote }, window: { first: number; last: number } | null) {
     const user = this.program.provider.publicKey!;
     const q = o.quote ?? quoteSolanaSwap();
     const { id, accounts } = await this.openAccounts(user);
     const script = Buffer.from(addressToScript(o.to).slice(2), "hex");
-    const none = { mint: null, escrow: null, from: null, tokenProgram: null, associatedTokenProgram: null };
+    const t = await this.tokenOf(o.token);
+    // A token is taken from the seller's own account into the swap's.
+    const token = t
+      ? { mint: t.mint, escrow: associatedTokenAccount(accounts.swap, t.mint, t.program), from: associatedTokenAccount(user, t.mint, t.program), tokenProgram: t.program, associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM }
+      : { mint: null, escrow: null, from: null, tokenProgram: null, associatedTokenProgram: null };
     const call = window
       ? this.program.methods.sellInWindow(new BN(o.lamports.toString()), new BN(o.sats.toString()), script, window.first, window.last, q.confirmations, new BN(q.paid.toString()))
       : this.program.methods.sell(new BN(o.lamports.toString()), new BN(o.sats.toString()), script, q.confirmations, new BN(q.paid.toString()));
-    const signature = await call.accountsStrict({ ...accounts, ...none } as any).preInstructions(this.budget()).rpc().catch((e: any) => this.recover(e));
+    const signature = await call.accountsStrict({ ...accounts, ...token } as any).preInstructions(this.budget()).rpc().catch((e: any) => this.recover(e));
     return { swapId: id, signature };
   }
 
-  /** Buys `lamports` of SOL for `sats`, for `recipient` (the signer by
-   *  default; another when an operator opens a tunnel's buy, T2). */
-  async buy(options: { lamports: bigint; sats: bigint; recipient?: string; quote?: SolanaSwapQuote }): Promise<{ swapId: bigint; signature: string }> {
+  /** Buys `lamports` of SOL, or that many smallest units of `token` (a
+   *  mint), for `sats`, for `recipient` (the signer by default; another when
+   *  an operator opens a tunnel's buy, T2). `memo` is a note for operators,
+   *  1 to 128 bytes, kept beside the swap: a tunnel's buy names in it the
+   *  sale that will pay it (`tunnelMemo`). A buy for someone else has none. */
+  async buy(options: { lamports: bigint; sats: bigint; recipient?: string; token?: string; memo?: string; quote?: SolanaSwapQuote }): Promise<{ swapId: bigint; signature: string }> {
     const user = this.program.provider.publicKey!;
     const q = options.quote ?? quoteSolanaSwap();
     const { id, accounts } = await this.openAccounts(user);
-    const call = options.recipient
-      ? this.program.methods.buyFor(new PublicKey(options.recipient), new BN(options.lamports.toString()), new BN(options.sats.toString()), q.confirmations, new BN(q.paid.toString()))
-      : this.program.methods.buy(new BN(options.lamports.toString()), new BN(options.sats.toString()), q.confirmations, new BN(q.paid.toString()));
-    const signature = await call.accountsStrict({ ...accounts, mint: null } as any).preInstructions(this.budget()).rpc().catch((e: any) => this.recover(e));
+    const memo = options.memo ? Buffer.from(options.memo, "utf8") : null;
+    if (memo && options.recipient) throw new Error("A buy for someone else keeps no memo");
+    if (memo && (memo.length < 1 || memo.length > 128)) throw new Error("A memo is 1 to 128 bytes");
+    const [amount, sats, paid] = [new BN(options.lamports.toString()), new BN(options.sats.toString()), new BN(q.paid.toString())];
+    const call = memo
+      ? this.program.methods.buyWithMemo(amount, sats, q.confirmations, paid, memo)
+      : options.recipient
+        ? this.program.methods.buyFor(new PublicKey(options.recipient), amount, sats, q.confirmations, paid)
+        : this.program.methods.buy(amount, sats, q.confirmations, paid);
+    const t = await this.tokenOf(options.token);
+    const all = { ...accounts, mint: t?.mint ?? null, ...(memo ? { memo: this.memoAddress(id) } : {}) };
+    const signature = await call.accountsStrict(all as any).preInstructions(this.budget()).rpc().catch((e: any) => this.recover(e));
     return { swapId: id, signature };
   }
 
@@ -210,11 +250,14 @@ export class SolanaConversion {
     const proven = Number(job.provenAt) !== 0;
     // Stored as hashed; explorers show it reversed.
     const txid = Buffer.from(job.txid).reverse().toString("hex");
+    const memo = side === "Buy" ? await this.accounts.memo.fetchNullable(this.memoAddress(id)) : null;
     return {
       id: BigInt(id),
       side,
       state,
       user: s.user.toBase58(),
+      token: s.mint.equals(PublicKey.default) ? null : s.mint.toBase58(),
+      memo: memo ? Buffer.from(memo.text).toString("utf8") : null,
       amount: big(s.amount),
       sats: big(s.sats),
       address: script.length ? scriptToAddress("0x" + script.toString("hex")) : null,
@@ -251,10 +294,13 @@ export class SolanaConversion {
     return mine.find((s) => s.side === "Sell" && s.address === address && s.state !== "Refunded" && s.state !== "Cancelled") ?? null;
   }
 
-  /** Gives a sell's SOL back when it is refundable (no operator, a missed
-   *  deadline, a slash, a payment outside its window). Anyone may call. */
+  /** Gives a sell's SOL or token back when it is refundable (no operator, a
+   *  missed deadline, a slash, a payment outside its window). Anyone may
+   *  call; a token goes to its seller's own account, made here if missing. */
   async refundSell(id: bigint | number, rawTx: Uint8Array = new Uint8Array()): Promise<{ signature: string }> {
     const s = await this.accounts.swap.fetch(this.swapAddress(id));
+    const t = await this.tokenOf(s.mint.equals(PublicKey.default) ? null : s.mint.toBase58());
+    const payer = this.program.provider.publicKey!;
     const signature = await this.program.methods
       .refundSell(Buffer.from(rawTx))
       .accountsStrict({
@@ -266,12 +312,12 @@ export class SolanaConversion {
         protocol: this.pr(Buffer.from("protocol")),
         protocolVault: this.pr(Buffer.from("vault")),
         protocolProgram: this.protocolId,
-        mint: null,
-        escrow: null,
-        to: null,
-        tokenProgram: null,
+        mint: t?.mint ?? null,
+        escrow: t ? associatedTokenAccount(this.swapAddress(id), t.mint, t.program) : null,
+        to: t ? associatedTokenAccount(s.user, t.mint, t.program) : null,
+        tokenProgram: t?.program ?? null,
       } as any)
-      .preInstructions(this.budget())
+      .preInstructions(t ? [...this.budget(), createAccountIdempotent(payer, s.user, t.mint, t.program)] : this.budget())
       .rpc().catch((e: any) => this.recover(e));
     return { signature };
   }

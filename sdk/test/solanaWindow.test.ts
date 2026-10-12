@@ -11,6 +11,8 @@ const sell = (over: Partial<SolanaSwapView>): SolanaSwapView => ({
   side: "Sell",
   state: "Open",
   user: "u",
+  token: null,
+  memo: null,
   amount: 1n,
   sats: 1n,
   address: null,

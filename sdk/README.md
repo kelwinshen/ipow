@@ -44,9 +44,12 @@ Tested on a local chain (`evm/test/Sdk.test.ts`)
 and on a local Solana validator running the production programs
 (`npm test` here), and read against the live deployment on Sepolia. Not tested yet: a burn that succeeds, a lock reaching `Carried`
 or `Issued`, which need an operator's accepted claim; and a token lock on
-Solana, not built yet. Jobs on Solana are not read yet, nor Conversion on
-Solana; a buy's own payment proof and completing a swap (the operator's
-calls) are not in the SDK. Greatwall.finance can start on what is here.
+Solana, not built yet. Jobs on Solana are not read yet. Conversion on
+Solana (`SolanaConversion`) opens and reads swaps of SOL or a token, a buy
+with a memo too, tested on a local validator; a buy's own payment proof is
+in the SDK for EVM networks (`provePayment`, tested) and for Solana
+(`provePaymentOnSolana`, written and not yet run); completing a swap (the
+operator's call) is not in the SDK. Greatwall.finance can start on what is here.
 
 ```ts
 import { network, quoteCheckpoint, openCheckpoint, getJob, findJobTx } from "@ipow/sdk";

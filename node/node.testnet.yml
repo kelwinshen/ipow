@@ -222,9 +222,19 @@ networks:
       # (faucets) and the BTC is real (settings `sells`, 2026-10-11).
       sells: false
       coins:
-        # SOL only: the node's token buys, and the SDK's token swaps, are not
-        # built on Solana yet (the mock tokens are in testnet-rwa.json).
+        # SOL and Greatwall's test tokens (the mints of its faucet), priced as
+        # the EVM networks' tokens are: a tenth of the market, in sats.
         - { token: native, symbol: SOL, decimals: 9, pay_sats: 15000, ask_sats: 15000 }
+        - { token: "3Rz3KnHk5TFecwkjn5iUVNgSmNxscT5k1VaJskP8Y5i1", symbol: ONyc, decimals: 9, pay_sats: 10, ask_sats: 10 }
+        - { token: "CuJKX2cCGbjRztMMKPDmtRtxPsi33siXSmDvum4aWHDG", symbol: MSTRx, decimals: 9, pay_sats: 3300, ask_sats: 3300 }
+        - { token: "23EfYUXxaUuhQUeYHFwCvWQGJcQ5J7voFjXLE7nAqzHx", symbol: CRCLx, decimals: 9, pay_sats: 1200, ask_sats: 1200 }
+        - { token: "5DPmBfTHyvrgWsFzLL8mTTE7C8Aw8dWYb3eiijZcwkvw", symbol: SPYx, decimals: 9, pay_sats: 6500, ask_sats: 6500 }
+        - { token: "Ds6YjJDgHNSbCNu3fJXR7JhK2KKHr69t9NttxurPBZ2x", symbol: TSLAx, decimals: 9, pay_sats: 4300, ask_sats: 4300 }
+        - { token: "ED4i81SD8b5PwCJiSW3mU5VmeTuAgFVEBx4Kzi21d8rf", symbol: GLDx, decimals: 9, pay_sats: 3700, ask_sats: 3700 }
+        - { token: "H5jmGEmxJ1rt6CdwUXfoj5euBE4ZLWXuBQKsgPjJD7e4", symbol: GOOGLx, decimals: 9, pay_sats: 2500, ask_sats: 2500 }
+        - { token: "FEzJpUCA5JXs3uEfc94Gx9CebP4UHAeeTuonNSB49kha", symbol: SPCXx, decimals: 9, pay_sats: 2000, ask_sats: 2000 }
+        - { token: "GoZFcM4moGyWh8Tr41Y3LiR1p7JYo6ZgUebxp8gy1Mvx", symbol: QQQx, decimals: 9, pay_sats: 6000, ask_sats: 6000 }
+        - { token: "DYMkgJF2GLeWrgbx4wWE5FBzKURL5CKqaPAD9mcAEgBs", symbol: HOODx, decimals: 9, pay_sats: 1200, ask_sats: 1200 }
 
 # Switched on 2026-10-09: Ethereum-Solana first (lock 20 of STRCx), then
 # on 2026-10-10 every pair this node can serve, 15 of the 16: each EVM

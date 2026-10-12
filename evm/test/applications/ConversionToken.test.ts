@@ -2,6 +2,7 @@ import { expect } from "chai";
 import { network } from "hardhat";
 
 import { tokenNetwork } from "../helpers/tokenNetwork.ts";
+import { buy, getSwap, sell, type SwapQuote } from "../../../sdk/src/index.ts";
 
 const { ethers } = await network.create();
 
@@ -91,5 +92,63 @@ describe("Conversion on a token network", function () {
     expect((await coin.balanceOf(user.address)) - before).to.equal(10n * USD + (escrow * 8000n) / 10_000n);
     expect(await protocol.credit(user.address)).to.equal(200_000n);
     expect(await coin.balanceOf(await conversion.getAddress())).to.equal(0n);
+  });
+
+  // The SDK on such a network: it approves what a swap takes in the coin and
+  // in the token, and sends no native value.
+  it("the SDK sells the coin as its token, sells another token and buys, approving the fees in the coin", async function () {
+    const { coin, protocol, conversion, user } = await setup();
+    const coinAddress = await coin.getAddress();
+    const at = await conversion.getAddress();
+    // The approval the setup gave is taken away: the SDK must give its own.
+    await coin.connect(user).approve(at, 0n);
+    const d = {
+      name: "local-token",
+      network: "tempo",
+      number: 8,
+      chainId: 31337,
+      coin: { kind: "token", token: coinAddress, priceScale: SCALE.toString() },
+      workScale: null,
+      dataFee: "none",
+      protocol: await protocol.getAddress(),
+      conversion: at,
+      vaults: [],
+    } as any;
+    const quote: SwapQuote = { network: d.name, confirmations: 6, commitmentFee: 0n, escrowFee: 0n, margin: 0n, fees: 200_000n };
+    const BTC = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4";
+
+    // The coin itself, named as its token: the amount and the fees in one approval.
+    let before = await coin.balanceOf(user.address);
+    await atTempoPrice();
+    const sold = await sell(user, d, quote, { token: coinAddress, amount: 10n * USD, sats: 5_000_000n, to: BTC });
+    expect(before - (await coin.balanceOf(user.address))).to.equal(10n * USD + quote.fees);
+    let s = await getSwap(ethers.provider, d, sold.swapId);
+    expect([s.side, s.token.toLowerCase(), s.amount]).to.deep.equal(["Sell", coinAddress.toLowerCase(), 10n * USD]);
+    expect(await coin.allowance(user.address, at)).to.equal(0n);
+
+    // Another token: it is approved for the amount, the coin for the fees.
+    const stock = await ethers.deployContract("MockToken", ["Stock", "STK", 18]);
+    await stock.mint(user.address, 5n * 10n ** 18n);
+    before = await coin.balanceOf(user.address);
+    await atTempoPrice();
+    const sold2 = await sell(user, d, quote, { token: await stock.getAddress(), amount: 2n * 10n ** 18n, sats: 5_000_000n, to: BTC });
+    expect(before - (await coin.balanceOf(user.address))).to.equal(quote.fees);
+    expect(await stock.balanceOf(at)).to.equal(2n * 10n ** 18n);
+    s = await getSwap(ethers.provider, d, sold2.swapId);
+    expect(s.amount).to.equal(2n * 10n ** 18n);
+
+    // A buy locks nothing: only its fees, in the coin. With no token named,
+    // it buys the coin, which here is its token.
+    before = await coin.balanceOf(user.address);
+    await atTempoPrice();
+    const bought = await buy(user, d, quote, { amount: 3n * USD, sats: 5_000_000n, memo: "ipow-tunnel/1 solana-devnet native 60000000" });
+    expect(before - (await coin.balanceOf(user.address))).to.equal(quote.fees);
+    s = await getSwap(ethers.provider, d, bought.swapId);
+    expect([s.side, s.token.toLowerCase(), s.amount]).to.deep.equal(["Buy", coinAddress.toLowerCase(), 3n * USD]);
+
+    // The coin cannot be sold as "the native coin" here: refused before anything is sent.
+    let error = "";
+    await sell(user, d, quote, { amount: USD, sats: 5_000_000n, to: BTC }).catch((e) => (error = e.message));
+    expect(error).to.match(/its coin is a token/);
   });
 });

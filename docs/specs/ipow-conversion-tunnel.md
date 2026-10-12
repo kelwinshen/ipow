@@ -3,14 +3,36 @@
 **Status: approved by the owner on 2026-10-03 (Q1 to Q7 below). Built on
 2026-10-03:** T1 and T2 in the Conversion
 contract and program, with tests; T3 in the SDK on EVM networks
-(`provePayment`), not on Solana; T4 in the node (the tunnel API, the
-promise to a tunnel buy's sell, read from the buy's memo, the sell's
-window), its token buys on Solana not yet; T5 in Greatwall's
-Convert between EVM networks, and from Solana into them; into Solana it
-waits for T3 there (Q3: a buy opens to testers only with the user's own
-proof). Conversion was redeployed for it on 2026-10-03 and the first
-tunnel ran on 2026-10-04, SOL on devnet into AAPL on Sepolia
+(`provePayment`); T4 in the node (the tunnel API, the promise to a tunnel
+buy's sell, read from the buy's memo, the sell's window); T5 in
+Greatwall's Convert between EVM networks, and from Solana into them.
+Conversion was redeployed for it on 2026-10-03 and the first tunnel ran on
+2026-10-04, SOL on devnet into AAPL on Sepolia
 ([`live-run-log.md`](../drafts/live-run-log.md)).
+
+**Added on 2026-10-13, built and not yet run on the test networks:**
+- Tokens on Solana: the SDK sells, buys and refunds an SPL token
+  (`SolanaConversion`'s `token`), tested on a local validator; the node's
+  Solana adapter already carried a swap's token accounts; the testnet
+  node's settings list Solana's test tokens beside SOL.
+- A tunnel into Solana: the Solana program keeps a buy's memo
+  (`buy_with_memo`, [`ipow-conversion-app.md`](ipow-conversion-app.md),
+  "2026-10-13"), upgraded on devnet and read back; the node reads it; the
+  SDK opens the buy with it; Greatwall's Convert opens the route.
+- T3 on Solana: the SDK's `provePaymentOnSolana`
+  (`sdk/src/solanaPaymentProof.ts`), written from the program's rules and
+  reviewed, **not yet run**: no test stages an operator that wins a job and
+  then fails. Q3 asks for it before a buy opens to testers, and Greatwall
+  opened the route with it in this state, by the owner's word on
+  2026-10-13 to build every route.
+- A network whose coin is a token: the SDK's swaps approve the fees in the
+  coin and send no value (`sdk/src/conversion.ts`, `funding`), tested on a
+  local chain with a token coin (`evm/test/applications/ConversionToken.test.ts`).
+  **Tempo's own Conversion is the build of 2026-10-02** (read on chain on
+  2026-10-13: its `buy` takes no memo, and it has no `sellInWindow`), so
+  no tunnel runs through Tempo until it is redeployed.
+- Not run on the test networks yet: a token against a token, any route
+  with a Solana token, and any route into Solana.
 
 One Conversion application then handles every pair: a programmable
 network against Bitcoin (one leg, built) and a programmable network against
@@ -95,8 +117,8 @@ The node serves `GET /assets` and `GET /quote`
 trades on each network (the coin and the tokens, with a symbol, decimals
 and its prices in sats): the app's token pickers and estimates come from
 it, so the app keeps no prices of its own. Either side of a tunnel may be
-a token (`fromToken`, `token`), as a sell or a buy of that token; on
-Solana the node buys only SOL so far. On the test networks the operator's
+a token (`fromToken`, `token`), as a sell or a buy of that token, on
+Solana too since 2026-10-13 (the tokens its settings list). On the test networks the operator's
 prices are fixed and representative (Bitcoin only carries the real
 transaction): a tenth of the market, and the mock RWA tokens of
 `evm/deployments/ethereum-testnet-rwa.json`.

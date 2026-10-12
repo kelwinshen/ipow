@@ -88,6 +88,33 @@ async function approve(signer: Signer, token: string, spender: string, amount: b
   await (await t.approve(spender, amount)).wait();
 }
 
+/**
+ * What a swap's call sends with it, after the approvals it needs: `amount`
+ * of `token` locked by the caller (zero for a buy, which locks nothing) and
+ * the job's `fees`, in the network's coin (D136, D138).
+ *
+ * - A native coin: the fees, and the amount when the coin itself is sold,
+ *   are sent with the call; a token sold is approved.
+ * - A coin that is a token (Tempo's PathUSD): nothing is sent with the call.
+ *   The fees are approved in the coin, and the amount in its token; the
+ *   coin itself is swapped as its token, in one approval with the fees.
+ */
+async function funding(signer: Signer, d: Deployment, token: string, amount: bigint, fees: bigint): Promise<bigint> {
+  if (d.coin.kind === "native") {
+    if (token !== ZeroAddress && amount > 0n) await approve(signer, token, d.conversion, amount);
+    return ((token === ZeroAddress ? amount : 0n) + fees) * rpcScale(d);
+  }
+  const coin = d.coin.token;
+  if (token === ZeroAddress) throw new Error(`${d.name}: its coin is a token; name that token (${coin}) to swap it`);
+  if (amount > 0n && token.toLowerCase() === coin.toLowerCase()) {
+    await approve(signer, coin, d.conversion, amount + fees);
+  } else {
+    if (amount > 0n) await approve(signer, token, d.conversion, amount);
+    await approve(signer, coin, d.conversion, fees);
+  }
+  return 0n;
+}
+
 /** Sells `amount` of `token` (zero for the network's coin) for at least
  *  `sats`, paid to the Bitcoin address `to`. */
 export async function sell(
@@ -96,11 +123,9 @@ export async function sell(
   quote: SwapQuote,
   options: { token?: string; amount: bigint; sats: bigint; to: string }
 ): Promise<{ swapId: bigint; jobId: bigint; txHash: string }> {
-  if (d.coin.kind !== "native") throw new Error(`${d.name}: a token coin's swap needs its approvals, not built yet`);
   const token = options.token ?? ZeroAddress;
   const c = conversion(d, signer);
-  if (token !== ZeroAddress) await approve(signer, token, d.conversion, options.amount);
-  const value = ((token === ZeroAddress ? options.amount : 0n) + quote.fees) * rpcScale(d);
+  const value = await funding(signer, d, token, options.amount, quote.fees);
   const args = [token, options.amount, options.sats, addressToScript(options.to), quote.confirmations, quote.fees];
   const tx = await c.sell(...args, { value, gasLimit: await jobGas(c, "sell", args, value) });
   return { ...opened(c, await tx.wait(), "Sold"), txHash: tx.hash };
@@ -118,14 +143,19 @@ export async function sellInWindow(
   quote: SwapQuote,
   options: { token?: string; amount: bigint; sats: bigint; to: string; window: { first: number; last: number } }
 ): Promise<{ swapId: bigint; jobId: bigint; txHash: string }> {
-  if (d.coin.kind !== "native") throw new Error(`${d.name}: a token coin's swap needs its approvals, not built yet`);
   const token = options.token ?? ZeroAddress;
   const c = conversion(d, signer);
-  if (token !== ZeroAddress) await approve(signer, token, d.conversion, options.amount);
-  const value = ((token === ZeroAddress ? options.amount : 0n) + quote.fees) * rpcScale(d);
+  const value = await funding(signer, d, token, options.amount, quote.fees);
   const args = [token, options.amount, options.sats, addressToScript(options.to), options.window.first, options.window.last, quote.confirmations, quote.fees];
   const tx = await c.sellInWindow(...args, { value, gasLimit: await jobGas(c, "sellInWindow", args, value) });
   return { ...opened(c, await tx.wait(), "Sold"), txHash: tx.hash };
+}
+
+/** The token a buy names: the one asked for, else the network's coin, which
+ *  on a network whose coin is a token is that token, not zero. */
+function buyTokenOf(d: Deployment, token?: string): string {
+  if (token && token !== ZeroAddress) return token;
+  return d.coin.kind === "native" ? ZeroAddress : d.coin.token;
 }
 
 /** A buy whose coin goes to `recipient`, the signer paying the fees (T2):
@@ -136,10 +166,9 @@ export async function buyFor(
   quote: SwapQuote,
   options: { recipient: string; token?: string; amount: bigint; sats: bigint }
 ): Promise<{ swapId: bigint; jobId: bigint; txHash: string }> {
-  if (d.coin.kind !== "native") throw new Error(`${d.name}: a token coin's swap needs its approvals, not built yet`);
   const c = conversion(d, signer);
-  const args = [options.recipient, options.token ?? ZeroAddress, options.amount, options.sats, quote.confirmations, quote.fees];
-  const value = quote.fees * rpcScale(d);
+  const args = [options.recipient, buyTokenOf(d, options.token), options.amount, options.sats, quote.confirmations, quote.fees];
+  const value = await funding(signer, d, buyTokenOf(d, options.token), 0n, quote.fees);
   const tx = await c.buyFor(...args, { value, gasLimit: await jobGas(c, "buyFor", args, value) });
   return { ...opened(c, await tx.wait(), "Bought"), txHash: tx.hash };
 }
@@ -155,11 +184,10 @@ export async function buy(
   quote: SwapQuote,
   options: { token?: string; amount: bigint; sats: bigint; from?: string; memo?: string }
 ): Promise<{ swapId: bigint; jobId: bigint; txHash: string }> {
-  if (d.coin.kind !== "native") throw new Error(`${d.name}: a token coin's swap needs its approvals, not built yet`);
   const c = conversion(d, signer);
   const memo = options.memo ? hexlify(toUtf8Bytes(options.memo)) : "0x";
-  const args = [options.token ?? ZeroAddress, options.amount, options.sats, options.from ? addressToScript(options.from) : "0x", memo, quote.confirmations, quote.fees];
-  const value = quote.fees * rpcScale(d);
+  const args = [buyTokenOf(d, options.token), options.amount, options.sats, options.from ? addressToScript(options.from) : "0x", memo, quote.confirmations, quote.fees];
+  const value = await funding(signer, d, buyTokenOf(d, options.token), 0n, quote.fees);
   const tx = await c.buy(...args, { value, gasLimit: await jobGas(c, "buy", args, value) });
   return { ...opened(c, await tx.wait(), "Bought"), txHash: tx.hash };
 }

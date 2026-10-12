@@ -57,6 +57,7 @@ export {
 export { addressToScript, scriptToAddress } from "./btcAddress.ts";
 export { SolanaConversion, quoteSolanaSwap, solanaPaidOutsideWindow, type SolanaSwapQuote, type SolanaSwapStage, type SolanaSwapView } from "./solanaConversion.ts";
 export { merklePath, provePayment, type BitcoinSource, type PaymentProofPlan } from "./paymentProof.ts";
+export { provePaymentOnSolana } from "./solanaPaymentProof.ts";
 export {
   NATIVE,
   TunnelApi,
