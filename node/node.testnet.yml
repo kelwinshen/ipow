@@ -49,6 +49,9 @@ networks:
     # quote); the operator holds 1,000 of each.
     conversion:
       address: "0x3896b0B95D853655A62CCb83079509716E77962d"
+      # Never buys the coins for BTC outside a tunnel: they are free here
+      # (faucets) and the BTC is real (settings `sells`, 2026-10-11).
+      sells: false
       coins:
         - { token: native, symbol: ETH, decimals: 18, pay_sats: 300000, ask_sats: 300000 }
         - { token: "0x1a7bd06F30b7ED12f6C698b0B3a289eBB379aaC9", symbol: XAUT, decimals: 18, pay_sats: 40000, ask_sats: 40000 }
@@ -79,6 +82,9 @@ networks:
     # tokens of deployments/base-testnet-rwa.json, at the same representative rates as Sepolia.
     conversion:
       address: "0x07eFF65A853f36cBA8FEFbC495eb6A0D98d26a75"
+      # Never buys the coins for BTC outside a tunnel: they are free here
+      # (faucets) and the BTC is real (settings `sells`, 2026-10-11).
+      sells: false
       coins:
         - { token: native, symbol: ETH, decimals: 18, pay_sats: 300000, ask_sats: 300000 }
         - { token: "0xbc653e8dB02870f0562231BA55E6f4F182cAaF4c", symbol: GLDY, decimals: 18, pay_sats: 10, ask_sats: 10 }
@@ -108,6 +114,9 @@ networks:
     # tokens of deployments/hyperliquid-testnet-rwa.json, at the same representative rates as Sepolia.
     conversion:
       address: "0x07eFF65A853f36cBA8FEFbC495eb6A0D98d26a75"
+      # Never buys the coins for BTC outside a tunnel: they are free here
+      # (faucets) and the BTC is real (settings `sells`, 2026-10-11).
+      sells: false
       coins:
         - { token: native, symbol: HYPE, decimals: 18, pay_sats: 40000, ask_sats: 40000 }
         - { token: "0xbc653e8dB02870f0562231BA55E6f4F182cAaF4c", symbol: thBILL, decimals: 18, pay_sats: 10, ask_sats: 10 }
@@ -136,6 +145,9 @@ networks:
     # tokens of deployments/robinhood-testnet-rwa.json, at the same representative rates as Sepolia.
     conversion:
       address: "0xf35A1C4A9dE7B7FffF62c7cEfda2ac91a71cB6cc"
+      # Never buys the coins for BTC outside a tunnel: they are free here
+      # (faucets) and the BTC is real (settings `sells`, 2026-10-11).
+      sells: false
       coins:
         - { token: native, symbol: ETH, decimals: 18, pay_sats: 300000, ask_sats: 300000 }
         - { token: "0x01BE560A22e91201C9414b634f0a61085F84dD08", symbol: USDG, decimals: 18, pay_sats: 10, ask_sats: 10 }
@@ -163,6 +175,9 @@ networks:
     # Greatwall's mock RWA tokens of deployments/arbitrum-testnet-rwa.json.
     conversion:
       address: "0xB7054E399E31A2cFE181c4fD59C7235562a6d45d"
+      # Never buys the coins for BTC outside a tunnel: they are free here
+      # (faucets) and the BTC is real (settings `sells`, 2026-10-11).
+      sells: false
       coins:
         - { token: native, symbol: ETH, decimals: 18, pay_sats: 300000, ask_sats: 300000 }
         - { token: "0x4265A27605cDd45b69d36f17635Bad03351387e6", symbol: rINTC, decimals: 18, pay_sats: 350, ask_sats: 350 }
@@ -203,6 +218,9 @@ networks:
     operator: { max_bid: "20000000" }
     conversion:
       address: "9Argk3M83p8t5pWG92PhwEhYzysWt5n82siEWyb29w7D"
+      # Never buys the coins for BTC outside a tunnel: they are free here
+      # (faucets) and the BTC is real (settings `sells`, 2026-10-11).
+      sells: false
       coins:
         # SOL only: the node's token buys, and the SDK's token swaps, are not
         # built on Solana yet (the mock tokens are in testnet-rwa.json).

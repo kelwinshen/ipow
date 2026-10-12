@@ -59,7 +59,7 @@ other side of each swap it wins:
 
 | Swap | What the operator does |
 |---|---|
-| A user sells the coin for BTC | Bids when `sats` per whole coin is at most its `pay_sats`, and its wallet can pay. Its tagged transaction pays the user. It collects the coin once the proof's lock has ended |
+| A user sells the coin for BTC | Bids when `sats` per whole coin is at most its `pay_sats`, its wallet can pay, and `sells` is not false (a tunnel's sell is taken either way: its BTC goes to the tunnel's buy). Its tagged transaction pays the user. It collects the coin once the proof's lock has ended |
 | A user buys the coin with BTC | Bids when `sats` per whole coin is at least its `ask_sats`, and it holds the coin. After anchoring it locks the coin and names a new address, derived from its Bitcoin key by BIP32 for this network and swap. Its tagged transaction spends the user's payment (a receipt), and it gives the user the coin; with no payment, it sends a close after the 12 payment blocks and takes the coin back once the lock has ended |
 
 Only the coins listed are ever taken: a token's own rules are the

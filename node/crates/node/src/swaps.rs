@@ -70,6 +70,8 @@ pub struct Swaps {
     /// The tunnels this node promised: their sells are taken on the terms
     /// quoted.
     tunnels: Option<Arc<TunnelBook>>,
+    /// Whether a user's sell outside a tunnel is taken (settings `sells`).
+    sells: bool,
     state: Mutex<State>,
 }
 
@@ -141,7 +143,14 @@ impl Swaps {
     pub fn new(app: Arc<dyn ConversionApp>, coins: Vec<CoinPrice>, network: &str) -> Self {
         let h = ipow_bitcoin::sha256d(format!("{network}/{}", app.application()).as_bytes());
         let key_index = u32::from_le_bytes(h[..4].try_into().unwrap()) & 0x7fff_ffff;
-        Swaps { app, coins, key_index, network: network.to_string(), tunnels: None, state: Mutex::new(State::default()) }
+        Swaps { app, coins, key_index, network: network.to_string(), tunnels: None, sells: true, state: Mutex::new(State::default()) }
+    }
+
+    /// Whether to take a user's sell outside a tunnel (settings `sells`):
+    /// false refuses them all, on test networks whose coins are free.
+    pub fn with_sells(mut self, sells: bool) -> Self {
+        self.sells = sells;
+        self
     }
 
     pub fn with_tunnels(mut self, book: Arc<TunnelBook>) -> Self {
@@ -192,6 +201,12 @@ impl Swaps {
         };
         if promised == Promised::Refuse {
             info!(swap = swap.id, "a sell with a payment window that is not a tunnel's on its terms; not taken");
+            return Ok(false);
+        }
+        // A sell paying the user BTC, not a tunnel's: refused where this
+        // operator does not buy (test networks' coins are free, BTC real).
+        if swap.side == Side::Sell && promised == Promised::No && !self.sells {
+            info!(swap = swap.id, "a sell for BTC outside a tunnel; this operator does not buy here, not taken");
             return Ok(false);
         }
         let Some(price) = self.price(swap) else { return Ok(false) };

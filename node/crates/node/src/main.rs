@@ -172,7 +172,7 @@ async fn main() -> anyhow::Result<()> {
                     let wallet = wallet.clone().expect("checked when the settings were read");
                     let mut operator = Operator::new(wallet, amount(n.operator.as_ref().map(|l| &l.max_bid)));
                     if let (Some(app), Some(c)) = (&conversion, &n.conversion) {
-                        operator = operator.with_swaps(Arc::new(Swaps::new(app.clone(), c.coins.clone(), &n.name).with_tunnels(tunnel_book.clone())));
+                        operator = operator.with_swaps(Arc::new(Swaps::new(app.clone(), c.coins.clone(), &n.name).with_tunnels(tunnel_book.clone()).with_sells(c.sells)));
                     }
                     Arc::new(operator)
                 }

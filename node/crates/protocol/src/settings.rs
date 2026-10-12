@@ -249,6 +249,17 @@ pub struct ConversionSettings {
     /// The coins it swaps, and at what price. A swap of a coin not listed
     /// is never taken.
     pub coins: Vec<CoinPrice>,
+    /// Whether it buys the coins for BTC: takes a user's sell, paying the
+    /// user BTC, outside a tunnel. False on test networks, whose coins and
+    /// tokens are free (faucets) while the BTC paid is real: a sell would
+    /// drain the wallet. A tunnel's sell is taken either way (its BTC goes
+    /// to the tunnel's buy, so only the fee is spent), and so is a buy.
+    #[serde(default = "sells_by_default")]
+    pub sells: bool,
+}
+
+fn sells_by_default() -> bool {
+    true
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -495,6 +506,15 @@ mod tests {
             assert_eq!(s.networks[0].kind, NetworkKind::Evm);
             assert_eq!(s.interval_seconds, 15);
         }
+    }
+
+    #[test]
+    fn conversion_sells_unless_told_not_to() {
+        let with = |extra: &str| format!("{}\n    conversion:\n      address: \"0x03\"\n      coins: []{extra}", with("[operator]", true, NETWORK).trim_end());
+        let s = Settings::parse(&with("")).unwrap();
+        assert!(s.networks[0].conversion.as_ref().unwrap().sells);
+        let s = Settings::parse(&with("\n      sells: false")).unwrap();
+        assert!(!s.networks[0].conversion.as_ref().unwrap().sells);
     }
 
     #[test]

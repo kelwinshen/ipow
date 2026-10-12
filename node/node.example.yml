@@ -32,6 +32,9 @@ networks:
     #   address: "0x0000000000000000000000000000000000000000"
     #   coins:
     #     - { token: native, decimals: 18, pay_sats: 3000000, ask_sats: 3100000 }
+    #   # false: never buys the coins for BTC outside a tunnel (a user's sell).
+    #   # Set it on test networks, whose coins are free while the BTC is real.
+    #   sells: true
     # attester: { max_lock: "1000000000000000000" }
 
   - name: solana-devnet
