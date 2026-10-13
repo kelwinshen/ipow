@@ -145,6 +145,7 @@ impl Setup {
                 journal: journal.path().join("vault.journal"),
                 fast_only: vec![],
                 fast_at_own_cost: false,
+                housekeeping: std::time::Duration::ZERO,
             },
         )
         .unwrap();
@@ -164,6 +165,7 @@ impl Setup {
                 journal: journal.path().join("mallory.journal"),
                 fast_only: vec![],
                 fast_at_own_cost: false,
+                housekeeping: std::time::Duration::ZERO,
             },
         )
         .unwrap();
@@ -191,6 +193,7 @@ impl Setup {
                         journal: journal.path().join("evm.journal"),
                         fast_only: vec![],
                         fast_at_own_cost: false,
+                        housekeeping: std::time::Duration::ZERO,
                     },
                 )
                 .unwrap();

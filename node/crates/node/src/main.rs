@@ -215,6 +215,7 @@ async fn main() -> anyhow::Result<()> {
                         journal: PathBuf::from(&pair.journal),
                         fast_only: pair.fast_only.iter().map(|x| (number(&x.home), x.asset, x.fast.clone())).collect(),
                         fast_at_own_cost: pair.fast_at_own_cost,
+                        housekeeping: std::time::Duration::from_secs(v.housekeeping_seconds),
                     },
                 )?;
                 info!(pair = %pair.networks.join(" and "), journal = %pair.journal, "vault operator");

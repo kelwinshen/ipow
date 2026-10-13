@@ -17,6 +17,7 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use ipow_bitcoin::view::{BitcoinView, TxStatus};
@@ -334,6 +335,9 @@ pub struct VaultOperatorSettings {
     /// Attests before its bond is counted, limited by the receipts it holds
     /// (settings `fast_at_own_cost`).
     pub fast_at_own_cost: bool,
+    /// How often the fees earned are collected and the attests made are
+    /// tended (settings `housekeeping_seconds`); zero is every round.
+    pub housekeeping: Duration,
 }
 
 impl VaultOperatorSettings {
@@ -637,6 +641,12 @@ impl<'a> Gathered<'a> {
 #[derive(Default)]
 struct OpState {
     loaded: bool,
+    /// When the work that is never urgent was last done (`housekeeping`):
+    /// never yet after a start, so the first round does it.
+    kept_at: Option<Instant>,
+    /// Carried assets whose receipt is known made, by (home, asset): a
+    /// receipt once made stays, so it is not asked for again every round.
+    receipts_made: HashSet<(u8, u32)>,
     journal: JournalState,
     /// By home network: the highest lock id read so far, and those among
     /// them of a carried asset not finished yet: returned, issued, or carried
@@ -688,6 +698,8 @@ pub struct VaultOperator {
     wallet: Arc<SharedWallet>,
     settings: VaultOperatorSettings,
     journal: Journal,
+    /// Where in the housekeeping interval this pair's falls (`phase_of`).
+    phase: Duration,
     state: Mutex<OpState>,
 }
 
@@ -700,6 +712,19 @@ async fn can_open(side: &Side, c: &Chain) -> anyhow::Result<bool> {
 /// Withdraws this node's credits on a network: in its coin (deposits won)
 /// and in each of `assets` (fees earned, burns paid at once repaid, the
 /// collateral of settled attests, a slasher's share).
+/// Whether the work done every `every` is due at `now`: when never done yet
+/// (after a start), or last done at least `every` ago. Zero is every round.
+fn due(last: Option<Instant>, every: Duration, now: Instant) -> bool {
+    last.is_none_or(|t| now.saturating_duration_since(t) >= every)
+}
+
+/// A pair's share of the interval, by its journal's name: where in the
+/// interval its housekeeping falls, so pairs are spread across it.
+fn phase_of(journal: &std::path::Path, every: Duration) -> Duration {
+    let sum: u64 = journal.to_string_lossy().bytes().map(u64::from).sum();
+    every.mul_f64((sum % 100) as f64 / 100.0)
+}
+
 async fn withdraw_credits(side: &Side, assets: &[(u8, u32)]) {
     let net = side.vault.network_id();
     let mut keys = vec![(net, 0)];
@@ -726,7 +751,8 @@ impl VaultOperator {
     pub fn new(a: Side, b: Side, btc: Arc<dyn BitcoinView>, wallet: Arc<SharedWallet>, settings: VaultOperatorSettings) -> anyhow::Result<Self> {
         let nets = pair_of(&a, &b)?;
         let journal = Journal::new(settings.journal.clone());
-        Ok(VaultOperator { a, b, nets, btc, wallet, settings, journal, state: Mutex::new(OpState::default()) })
+        let phase = phase_of(&settings.journal, settings.housekeeping);
+        Ok(VaultOperator { a, b, nets, btc, wallet, settings, journal, phase, state: Mutex::new(OpState::default()) })
     }
 
     fn ix(&self, net: u8) -> usize {
@@ -791,7 +817,7 @@ impl VaultOperator {
     /// Keeps the bonds and the deposit money at what the settings ask, and
     /// withdraws its credits: deposits won, fees, repayments. A failure is only logged: it must not
     /// keep the node from answering objections.
-    async fn top_up(&self, chains: &[Chain; 2]) {
+    async fn top_up(&self, chains: &[Chain; 2], collect: bool) {
         let mut asks: Vec<(&Side, &str, anyhow::Result<()>)> = vec![];
         for s in &self.settings.assets {
             let home = s.home;
@@ -824,8 +850,11 @@ impl VaultOperator {
             }
             .await;
             asks.push((side, "deposits", outcome));
-            let assets: Vec<(u8, u32)> = self.settings.assets.iter().map(|a| (a.home, a.asset)).collect();
-            withdraw_credits(side, &assets).await;
+            // One read per asset: only when collecting (`housekeeping`).
+            if collect {
+                let assets: Vec<(u8, u32)> = self.settings.assets.iter().map(|a| (a.home, a.asset)).collect();
+                withdraw_credits(side, &assets).await;
+            }
         }
         for (side, what, outcome) in asks {
             if let Err(e) = outcome {
@@ -901,7 +930,10 @@ impl VaultOperator {
 
     /// Reads the claims opened since the last round on both networks, and
     /// the state of those still open, into the index of what they carry.
-    async fn index_claims(&self, st: &mut OpState) -> anyhow::Result<()> {
+    /// Reads the claims opened since the last round, and each open one's
+    /// state. Returns whether a claim opened or one's state changed.
+    async fn index_claims(&self, st: &mut OpState) -> anyhow::Result<bool> {
+        let mut changed = false;
         for (i, side) in self.sides().into_iter().enumerate() {
             let idx = &mut st.claims[i];
             let count = side.vault.claim_count().await?;
@@ -910,6 +942,7 @@ impl VaultOperator {
                 idx.status.insert(id, (c.operator, c.decided, c.accepted));
                 idx.unread.push(id);
                 idx.cursor = id;
+                changed = true;
             }
             let mut unread = vec![];
             for id in std::mem::take(&mut idx.unread) {
@@ -929,10 +962,12 @@ impl VaultOperator {
             let open: Vec<u64> = idx.status.iter().filter(|(_, (_, d, _))| !d).map(|(id, _)| *id).collect();
             for id in open {
                 let c = side.vault.claim_status(id).await?;
-                idx.status.insert(id, (c.operator, c.decided, c.accepted));
+                let now = (c.operator, c.decided, c.accepted);
+                changed |= idx.status.get(&id) != Some(&now);
+                idx.status.insert(id, now);
             }
         }
-        Ok(())
+        Ok(changed)
     }
 
     /// The ASSET record of carried asset (`home`, `asset`), if its home vault
@@ -954,6 +989,9 @@ impl VaultOperator {
     async fn make_receipts(&self, st: &mut OpState) {
         for s in self.settings.assets.clone() {
             let (home, acting) = (s.home, self.other(s.home));
+            if st.receipts_made.contains(&(home, s.asset)) {
+                continue;
+            }
             let outcome: anyhow::Result<()> = async {
                 let Some(r) = self.asset_record(st, home, s.asset).await? else { return Ok(()) };
                 let Some(claim) = st.claims[self.ix(acting)].accepted(&r) else { return Ok(()) };
@@ -962,6 +1000,7 @@ impl VaultOperator {
                     there.vault.make_receipt(claim, &r).await?;
                     info!(network = there.net.name(), asset = s.asset, claim, "made the receipt of an asset");
                 }
+                st.receipts_made.insert((home, s.asset));
                 Ok(())
             }
             .await;
@@ -1171,15 +1210,15 @@ impl VaultOperator {
     /// The fast paths (section 11.7), acted on each network: attests there
     /// of locks on the other network, and burns on the other network paid
     /// there at once. Each on its own: one that fails is only logged.
-    async fn fast(&self, st: &mut OpState, chains: &[Chain; 2]) {
+    async fn fast(&self, st: &mut OpState, chains: &[Chain; 2], tend: bool) {
         for at in self.nets.0 {
-            if let Err(e) = self.fast_on(st, at, &chains[self.ix(at)]).await {
+            if let Err(e) = self.fast_on(st, at, &chains[self.ix(at)], tend).await {
                 warn!(network = self.side(at).net.name(), error = %crate::secrets::redact(&e), "the fast paths failed");
             }
         }
     }
 
-    async fn fast_on(&self, st: &mut OpState, at: u8, chain: &Chain) -> anyhow::Result<()> {
+    async fn fast_on(&self, st: &mut OpState, at: u8, chain: &Chain, tend: bool) -> anyhow::Result<()> {
         // The home of the locks attested here, and the network of the burns
         // paid here.
         let home = self.other(at);
@@ -1197,7 +1236,9 @@ impl VaultOperator {
             }
             st.attest_cursor[i] = n;
         }
-        for n in st.attests[i].keys().copied().collect::<Vec<_>>() {
+        // Two reads per attest: an attest has 7 days to be linked, and is
+        // settled or burned after, so they are tended every `housekeeping`.
+        for n in st.attests[i].keys().copied().filter(|_| tend).collect::<Vec<_>>() {
             if let Err(e) = self.tend_attest(st, at, n).await {
                 warn!(network = here.net.name(), attest = n, error = %crate::secrets::redact(&e), "tending an attest failed");
             }
@@ -1267,11 +1308,7 @@ impl VaultOperator {
             // claim deposits here below one deposit).
             warn!(network = here.net.name(), deposits = chain.deposits, refused = chain.refused, slashed = chain.slashed, exited = chain.exited, "no attests: the chain cannot open a claim here");
         }
-        let waiting = if openable { self.waiting_attests(st, at).await } else { None };
-        if let Some(mut waiting) = waiting {
-            for (asset, value) in in_flight_value(&st.in_flight, self.ix(at), home, chain.messages) {
-                *waiting.entry(asset).or_default() += value;
-            }
+        if openable {
             let mut locks = vec![];
             // Paid from stock: in turns, as the open set is.
             let stock = window(&st.stock_locks[h], st.stock_lock_turn[h]);
@@ -1307,6 +1344,23 @@ impl VaultOperator {
                 }
             }
             locks.sort_by(|a, b| b.fast_fee.cmp(&a.fast_fee));
+            // What its attests waiting for a claim already take of its
+            // cover: two reads per attest, so read only when a lock is there
+            // to attest. Not readable: no attests this round.
+            let mut waiting = if locks.is_empty() {
+                HashMap::new()
+            } else {
+                match self.waiting_attests(st, at).await {
+                    Some(w) => w,
+                    None => {
+                        locks.clear();
+                        HashMap::new()
+                    }
+                }
+            };
+            for (asset, value) in in_flight_value(&st.in_flight, self.ix(at), home, chain.messages) {
+                *waiting.entry(asset).or_default() += value;
+            }
             let now = here.net.now().await?;
             for l in locks {
                 let r = l.record(home);
@@ -1567,12 +1621,21 @@ impl Worker for VaultOperator {
         let chains = [chains[0].clone().unwrap(), chains[1].clone().unwrap()];
         // Objections first: nothing else in the round may keep them from
         // being answered within their 7 days.
-        self.index_claims(&mut st).await?;
+        let claims_changed = self.index_claims(&mut st).await?;
         self.tend_claims(&mut st).await?;
         if chains.iter().any(|c| c.exited) {
             return Ok(());
         }
-        self.top_up(&chains).await;
+        // Collecting fees and tending attests: every `housekeeping`, not
+        // every round. The first time after a start, the next is brought
+        // forward by this pair's own share of the interval, so the pairs of
+        // one node do not all read at once.
+        let now = Instant::now();
+        let keep = due(st.kept_at, self.settings.housekeeping, now);
+        if keep {
+            st.kept_at = Some(if st.kept_at.is_none() { now.checked_sub(self.phase).unwrap_or(now) } else { now });
+        }
+        self.top_up(&chains, keep).await;
         self.make_receipts(&mut st).await;
         // Batches both vaults processed are counted in their claims.
         let processed = chains[0].messages.min(chains[1].messages);
@@ -1580,7 +1643,10 @@ impl Worker for VaultOperator {
         if let Err(e) = self.discover(&mut st).await {
             warn!(error = %crate::secrets::redact(&e), "reading new locks and burns failed");
         }
-        self.fast(&mut st, &chains).await;
+        // Attests are tended at once when a claim opened or was decided: one
+        // of its own that just opened is what an attest is linked to, within
+        // its 7 days (D123).
+        self.fast(&mut st, &chains, keep || claims_changed).await;
         if !self.catch_up(&mut st, &chains).await? {
             return Ok(());
         }
@@ -2235,6 +2301,34 @@ mod tests {
     }
 
     #[test]
+    fn housekeeping_is_due_after_a_start_and_then_once_an_interval() {
+        let t0 = Instant::now();
+        let ten = Duration::from_secs(600);
+        // Never done yet: due, whatever the interval.
+        assert!(due(None, ten, t0));
+        // Done just now: not due again until the interval has passed.
+        assert!(!due(Some(t0), ten, t0));
+        assert!(!due(Some(t0), ten, t0 + Duration::from_secs(599)));
+        assert!(due(Some(t0), ten, t0 + ten));
+        // An interval of zero is every round.
+        assert!(due(Some(t0), Duration::ZERO, t0));
+        // A clock read before the last time (never in practice) is not due.
+        assert!(!due(Some(t0 + ten), ten, t0));
+    }
+
+    #[test]
+    fn pairs_are_spread_across_the_interval_by_their_journal() {
+        let ten = Duration::from_secs(600);
+        let a = phase_of(std::path::Path::new("testnet-eth-sol.journal"), ten);
+        let b = phase_of(std::path::Path::new("testnet-base-sol.journal"), ten);
+        assert!(a < ten && b < ten);
+        assert_ne!(a, b);
+        // The same pair always falls at the same place; none with no interval.
+        assert_eq!(a, phase_of(std::path::Path::new("testnet-eth-sol.journal"), ten));
+        assert_eq!(phase_of(std::path::Path::new("x.journal"), Duration::ZERO), Duration::ZERO);
+    }
+
+    #[test]
     fn an_asset_is_carried_or_paid_from_stock_and_each_has_its_fast_path() {
         let fast = |max| FastSettings { min_fee: 1, max };
         let s = VaultOperatorSettings {
@@ -2244,6 +2338,7 @@ mod tests {
             journal: PathBuf::from("x.journal"),
             fast_only: vec![(ETHEREUM, 7, fast(20))],
             fast_at_own_cost: false,
+            housekeeping: Duration::ZERO,
         };
         assert!(s.asset(ETHEREUM, 0).is_some() && !s.stock_only(ETHEREUM, 0));
         assert!(s.asset(ETHEREUM, 7).is_none() && s.stock_only(ETHEREUM, 7));

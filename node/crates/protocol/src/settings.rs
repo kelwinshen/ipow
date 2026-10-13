@@ -100,6 +100,15 @@ pub struct VaultSettings {
     /// The operator: claim deposits to keep in each vault.
     #[serde(default = "default_deposits")]
     pub deposits: u32,
+    /// The operator: seconds between the work that is never urgent, on each
+    /// pair: collecting the fees it earned, and tending the attests it made
+    /// (linked within 7 days, settled or burned after). Done every round it
+    /// was a read per asset and two per attest on every network every
+    /// round, most of an idle node's calls. Attests are also tended at once
+    /// when a claim opens or is decided. A lock or a burn is still read and
+    /// paid every round.
+    #[serde(default = "default_housekeeping")]
+    pub housekeeping_seconds: u64,
     /// The pairs of networks it works for: a vault per pair (D132).
     pub pairs: Vec<VaultPair>,
 }
@@ -189,6 +198,10 @@ pub struct FastSettings {
     /// lock's amount in receipts, or pays a burn's amount in the asset, until
     /// the claim carrying it is accepted.
     pub max: u64,
+}
+
+fn default_housekeeping() -> u64 {
+    600
 }
 
 fn default_deposits() -> u32 {
