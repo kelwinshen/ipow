@@ -109,13 +109,13 @@ export class SolanaVault {
 
   async assets(): Promise<SolanaAsset[]> {
     const c = await this.accounts.config.fetch(this.config);
-    const out: SolanaAsset[] = [];
-    for (let i = 0; i < Number(c.assetCount); i++) {
-      const a = await this.accounts.homeAsset.fetch(this.at("asset", u32(i)));
+    // Read together: one request for every asset, not one after another.
+    const all: any[] = await this.accounts.homeAsset.fetchMultiple(Array.from({ length: Number(c.assetCount) }, (_, i) => this.at("asset", u32(i))));
+    return all.map((a, i) => {
+      if (!a) throw new Error(`asset ${i} of the vault could not be read`);
       const native = a.mint.equals(PublicKey.default);
-      out.push({ number: i, mint: native ? null : a.mint.toBase58(), decimals: a.decimals, recordDecimals: a.recordDecimals, unit: big(a.unit), tokenProgram: native ? null : a.tokenProgram.toBase58() });
-    }
-    return out;
+      return { number: i, mint: native ? null : a.mint.toBase58(), decimals: a.decimals, recordDecimals: a.recordDecimals, unit: big(a.unit), tokenProgram: native ? null : a.tokenProgram.toBase58() };
+    });
   }
 
   /** Locks `amount` of asset `asset` (in its own units: lamports for SOL,

@@ -330,33 +330,38 @@ export class SolanaBeta {
   async getBasket(address: string): Promise<SolanaBasket> {
     const key = new PublicKey(address);
     const b: any = await (this.program.account as any).basket.fetch(key);
-    const supply = big((await this.connection.getTokenSupply(b.beta)).value.amount);
-    const meta = await this.connection.getAccountInfo(metadataAddress(b.beta));
+    // Read together: one round trip's wait, not one per account. A basket
+    // of 8 parts read one after another took about 30 in a row.
+    const [supplyOf, meta] = await Promise.all([this.connection.getTokenSupply(b.beta), this.connection.getAccountInfo(metadataAddress(b.beta))]);
+    const supply = big(supplyOf.value.amount);
     const { name, symbol, uri } = meta ? parseMetadata(meta.data) : { name: "BETA", symbol: "BETA", uri: "" };
-    const parts: SolanaBasketPart[] = [];
-    for (const p of b.parts) {
-      // A pending part (E5) has no token program recorded yet: once its mint
-      // exists, the chain says which program and decimals, and the first
-      // mint records them.
-      let tokenProgram: PublicKey = p.tokenProgram;
-      let decimals: number = p.decimals;
-      let made = !tokenProgram.equals(PublicKey.default);
-      if (!made) {
-        const mintInfo = await this.connection.getAccountInfo(p.mint);
-        if (mintInfo && (mintInfo.owner.equals(TOKEN_PROGRAM) || mintInfo.owner.equals(TOKEN_2022_PROGRAM))) {
-          tokenProgram = mintInfo.owner;
-          decimals = (await this.connection.getTokenSupply(p.mint)).value.decimals;
-          made = true;
+    const parts: SolanaBasketPart[] = await Promise.all(
+      (b.parts as any[]).map(async (p): Promise<SolanaBasketPart> => {
+        // A pending part (E5) has no token program recorded yet: once its mint
+        // exists, the chain says which program and decimals, and the first
+        // mint records them.
+        let tokenProgram: PublicKey = p.tokenProgram;
+        let decimals: number = p.decimals;
+        let made = !tokenProgram.equals(PublicKey.default);
+        if (!made) {
+          const mintInfo = await this.connection.getAccountInfo(p.mint);
+          if (mintInfo && (mintInfo.owner.equals(TOKEN_PROGRAM) || mintInfo.owner.equals(TOKEN_2022_PROGRAM))) {
+            tokenProgram = mintInfo.owner;
+            // A mint's decimals: its byte 44, Token and Token-2022 alike.
+            decimals = mintInfo.data[44];
+            made = true;
+          }
         }
-      }
-      let balance = 0n;
-      if (made) {
-        const held = associatedTokenAddress(key, p.mint, tokenProgram);
-        const info = await this.connection.getAccountInfo(held);
-        balance = info ? big((await this.connection.getTokenAccountBalance(held)).value.amount) : 0n;
-      }
-      parts.push({ mint: p.mint.toBase58(), amount: big(p.amount), tokenProgram: tokenProgram.toBase58(), decimals, made, held: balance - big(p.owed), owed: big(p.owed) });
-    }
+        let balance = 0n;
+        if (made) {
+          // What the basket holds: its token account's amount (bytes 64 to
+          // 72), read with the account in one request.
+          const info = await this.connection.getAccountInfo(associatedTokenAddress(key, p.mint, tokenProgram));
+          balance = info && info.data.length >= 72 ? Buffer.from(info.data).readBigUInt64LE(64) : 0n;
+        }
+        return { mint: p.mint.toBase58(), amount: big(p.amount), tokenProgram: tokenProgram.toBase58(), decimals, made, held: balance - big(p.owed), owed: big(p.owed) };
+      })
+    );
     return { address, creator: b.creator.toBase58(), id: big(b.id), feeTo: b.feeTo.toBase58(), mintFeeBps: b.mintFeeBps, burnFeeBps: b.burnFeeBps, beta: b.beta.toBase58(), name, symbol, uri, supply, parts };
   }
 
