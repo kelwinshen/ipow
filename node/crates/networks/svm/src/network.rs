@@ -208,6 +208,10 @@ impl SvmNetwork {
         self.chain.account(key).await
     }
 
+    pub(crate) async fn account_data_final(&self, key: &Pubkey) -> anyhow::Result<Option<Vec<u8>>> {
+        self.chain.account_final(key).await
+    }
+
     pub(crate) async fn read_account<T: AccountDeserialize>(&self, key: &Pubkey) -> anyhow::Result<Option<T>> {
         self.read(key).await
     }

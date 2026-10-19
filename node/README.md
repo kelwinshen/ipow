@@ -85,15 +85,26 @@ lamports for SOL).
 | operator | Registers its pair chain once, by one Bitcoin transaction that names it on both networks. For each listed asset, keeps `bond_home` bonded in the asset on its home network (it covers locks) and `bond_receipt` bonded in its receipt on the other network (it covers burns and give-ups), once it holds those receipts; and keeps `deposits` claim deposits in each vault. Takes the fees its messages earned (on Solana with a call of its own) and withdraws its credits: deposits won, fees, repayments, the collateral of settled attests. Gathers what is worth carrying, in both directions: a BOND record for each bond until the other network counts it, an ASSET record for each listed asset until its receipt exists, locks of listed assets once their block is final, burns of their receipts, and give-ups, each with a fee of at least the asset's `min_fee`. Each fits 80% of its bond in that asset counted on the acting network (D129), and the batch keeps to section 11.9's limits: 2,048 bytes, 32 LOCK, REQUEST, CANCEL and ASSET records on both networks together, 10 LOCK records acted on by Solana, 8 assets per claim (on Solana counted with the chain's own). Writes them as one batch on Bitcoin, spending its pair chain's coin, and submits the message to both vaults once a real block is above it (D108), storing any missing block below that real block. With `checkpoint_paid_*` set, opens a checkpoint job when no real block is above a message and none is under way. Makes a receipt once a claim carrying its ASSET record is accepted. Answers every objection to its claims, decides and collects. With an asset's `fast` set (section 11.7), on either network: issues the receipt of a final lock at once, locking 1.25 times its amount of its own receipts, and pays a final burn at once from its own, for locks and burns whose fast fee is at least `min_fee` and amount at most `max`, the best-paid first. It earns the part of the fast fee for the time left to 8 days after the lock or burn (D124), so it never attests one whose claim was already accepted. It carries each lock it attested in a claim of its own whatever its fee, links the attest to that claim (only its own, D125), and settles it once the claim is accepted; it takes the vault's repayment of each burn it paid, also after a restart |
 | guardian | Reads every claim on each network and checks each of its records against the other network: a lock or a burn request exists with exactly that record, a give-up happened, an asset is registered with that token and decimals, a stated bond is the bond there. Objects to a false claim, decides claims whose 7 days are over, and collects its winnings. Brings to each network the messages of an operator's chain that only the other network has processed, with the batch the other vault published, checked against its hash on Bitcoin: a lie shown to one network only is proven and slashed on the other, 20% to the guardian. It brings them only when one of the next 20 lagging messages is false there; honest lagging messages are left to their operator. With `checkpoint_paid_*` set, it opens a checkpoint job when no real block is above the lie. Settles a slashed chain's bonds asset by asset (D129), and withdraws its 20%. Reads every attest of a lock on both networks: burns one with no claim linked within 7 days, or whose linked claim was refused, and settles one whose lock an accepted claim states otherwise, taking the quarter above the amount. Several attests of one lock may be made for 7 days from its first (D126); they are settled oldest first, so the earliest true one counts, and with none true the recipient's receipt is issued once no attest can come |
 
-Not all of the operator's work is done every round. Reading and carrying
-new locks and burns, paying them at once, and answering objections are.
-Collecting the fees it earned, and linking and settling the attests it made
-(an attest has 7 days to be linked), are done every
-`vault.housekeeping_seconds` (10 minutes by default), on the first round
-after a start, and at once when a claim opens or is decided. Each pair does
-it at its own place in the interval. Done every round, these were a read per
-asset and two per attest on every network every round: most of what an idle
-node asked its endpoints.
+Not all of the operator's work is done every round. A round first reads
+each vault's activity: five calls on an EVM network (its pair chain and
+its counts of final locks, final burns, claims and attests), two on Solana
+(the pair's configuration, final, and its pair chain). When neither changed
+since a round that found nothing to do and logged no failure, and no
+message of its own is on its way, that is the whole round. Anything new (a
+lock, a burn, a claim, an attest, a message processed) makes the next round
+read and carry everything, pay at once, and attest, as before; so does a
+lock that waits for more of the operator's own receipts to attest it.
+Everything is also looked at every `vault.housekeeping_seconds` (30
+minutes by default), on the first round after a start, and then: collecting
+the fees it earned, linking and settling its attests, answering objections,
+carrying give-ups and deciding its claims, each with 7 days to be done
+(D111), and a batch waiting for its Bitcoin wallet to be topped up. Collecting and tending attests wait for the
+housekeeping even in a busy round, except attests, tended at once when a
+claim opens or is decided. Each pair does its housekeeping at its own place
+in the interval. Every round of every pair read everything before
+(2026-10-20): about 40 calls on each EVM network of a pair every minute,
+most of what an idle node asked its endpoints. The node logs its calls
+every 10 minutes, by network and method.
 
 On a test network only, two settings of a pair let the operator fast-path
 more than it carries (design section 11.7, the owner's deviation of

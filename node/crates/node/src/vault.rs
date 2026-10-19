@@ -647,6 +647,13 @@ struct OpState {
     /// Carried assets whose receipt is known made, by (home, asset): a
     /// receipt once made stays, so it is not asked for again every round.
     receipts_made: HashSet<(u8, u32)>,
+    /// Both vaults' `activity` when a round last found nothing to do: while
+    /// it stays the same, with no message on its way, a round reads only it
+    /// until `housekeeping` is due.
+    idle: Option<[Vec<u8>; 2]>,
+    /// No failure logged this round, and nothing left for a later one that
+    /// no `activity` would wake: only such a round lets the pair go idle.
+    clean: bool,
     journal: JournalState,
     /// By home network: the highest lock id read so far, and those among
     /// them of a carried asset not finished yet: returned, issued, or carried
@@ -967,6 +974,9 @@ impl VaultOperator {
                 idx.status.insert(id, now);
             }
         }
+        if st.claims.iter().any(|c| !c.unread.is_empty()) {
+            st.clean = false;
+        }
         Ok(changed)
     }
 
@@ -1006,6 +1016,7 @@ impl VaultOperator {
             .await;
             if let Err(e) = outcome {
                 warn!(asset = s.asset, error = %crate::secrets::redact(&e), "making a receipt failed");
+                st.clean = false;
             }
         }
     }
@@ -1111,6 +1122,7 @@ impl VaultOperator {
                 if l.fee_paid && l.fee > 0 {
                     if let Err(e) = hs.vault.take_fee(&r).await {
                         warn!(network = hs.net.name(), lock = id, error = %crate::secrets::redact(&e), "taking a fee failed");
+                        st.clean = false;
                     }
                 }
                 // A receipt an attester issued at once still waits for a claim
@@ -1162,6 +1174,7 @@ impl VaultOperator {
                 if q.fee_paid && q.fee > 0 {
                     if let Err(e) = bs.vault.take_fee(&r).await {
                         warn!(network = bs.net.name(), request = id, error = %crate::secrets::redact(&e), "taking a fee failed");
+                        st.clean = false;
                     }
                 }
                 let accepted = st.claims[a].accepted(&r).is_some();
@@ -1179,6 +1192,7 @@ impl VaultOperator {
                             Err(e) => {
                                 // Looked at again next round.
                                 warn!(network = hs.net.name(), request = id, error = %crate::secrets::redact(&e), "reading who paid a burn failed");
+                                st.clean = false;
                                 continue;
                             }
                         }
@@ -1214,6 +1228,7 @@ impl VaultOperator {
         for at in self.nets.0 {
             if let Err(e) = self.fast_on(st, at, &chains[self.ix(at)], tend).await {
                 warn!(network = self.side(at).net.name(), error = %crate::secrets::redact(&e), "the fast paths failed");
+                st.clean = false;
             }
         }
     }
@@ -1241,6 +1256,7 @@ impl VaultOperator {
         for n in st.attests[i].keys().copied().filter(|_| tend).collect::<Vec<_>>() {
             if let Err(e) = self.tend_attest(st, at, n).await {
                 warn!(network = here.net.name(), attest = n, error = %crate::secrets::redact(&e), "tending an attest failed");
+                st.clean = false;
             }
         }
 
@@ -1263,6 +1279,7 @@ impl VaultOperator {
             .await;
             if let Err(e) = outcome {
                 warn!(network = here.net.name(), request = id, error = %crate::secrets::redact(&e), "taking a fast repayment failed");
+                st.clean = false;
             }
         }
 
@@ -1285,16 +1302,19 @@ impl VaultOperator {
                 }
                 Ok(None) => {
                     warn!(network = here.net.name(), message = chain.messages, "a message on its way is not in the journal: no attests until it is processed");
+                    st.clean = false;
                     true
                 }
                 Err(e) => {
                     warn!(error = %crate::secrets::redact(&e), "reading a message on its way failed: no attests this round");
+                    st.clean = false;
                     true
                 }
             },
             Ok(_) => false,
             Err(e) => {
                 warn!(error = %crate::secrets::redact(&e), "reading the pair chain on Bitcoin failed: no attests this round");
+                st.clean = false;
                 true
             }
         };
@@ -1319,6 +1339,7 @@ impl VaultOperator {
                     Ok(None) => continue,
                     Err(e) => {
                         warn!(network = there.net.name(), lock = id, error = %crate::secrets::redact(&e), "reading a lock failed");
+                        st.clean = false;
                         continue;
                     }
                 };
@@ -1353,6 +1374,7 @@ impl VaultOperator {
                 match self.waiting_attests(st, at).await {
                     Some(w) => w,
                     None => {
+                        st.clean = false;
                         locks.clear();
                         HashMap::new()
                     }
@@ -1392,6 +1414,9 @@ impl VaultOperator {
                     let own_cost = stock || (self.settings.fast_at_own_cost && p.as_ref().is_some_and(|p| p.peer_bond == 0));
                     if own_cost {
                         if here.vault.receipt_balance(l.asset).await? < collateral {
+                            // Its stock may be topped up without any
+                            // `activity`: looked at again next round.
+                            st.clean = false;
                             return Ok(());
                         }
                     } else if !fits_cover(p.as_ref().expect("read for a carried asset"), waiting.get(&l.asset).copied().unwrap_or(0), value_of(&r)) {
@@ -1413,6 +1438,7 @@ impl VaultOperator {
                     // The attest may have landed although the call failed:
                     // its cover is not counted, so none more this round.
                     warn!(network = here.net.name(), lock = l.id, error = %crate::secrets::redact(&e), "attesting a lock failed: no more attests this round");
+                    st.clean = false;
                     break;
                 }
             }
@@ -1459,6 +1485,7 @@ impl VaultOperator {
             .await;
             if let Err(e) = outcome {
                 warn!(network = there.net.name(), request = id, error = %crate::secrets::redact(&e), "reading a burn failed");
+                st.clean = false;
             }
         }
         burns.sort_by(|a, b| b.0.cmp(&a.0));
@@ -1482,6 +1509,7 @@ impl VaultOperator {
             .await;
             if let Err(e) = outcome {
                 warn!(network = here.net.name(), request = id, error = %crate::secrets::redact(&e), "paying a burn at once failed");
+                st.clean = false;
             }
         }
         Ok(())
@@ -1592,6 +1620,7 @@ impl VaultOperator {
                 .await;
                 if let Err(e) = outcome {
                     warn!(network = side.net.name(), claim = id, error = %crate::secrets::redact(&e), "tending a claim failed");
+                    st.clean = false;
                 }
             }
         }
@@ -1614,6 +1643,20 @@ impl Worker for VaultOperator {
             st.journal = self.journal.read()?;
             st.loaded = true;
         }
+        // Nothing reached either vault since a round found nothing to do,
+        // and no message is on its way: nothing to do now either, until the
+        // housekeeping is due. What `activity` does not show waits for it:
+        // what changes by time alone (a claim to decide, an attest to tend,
+        // credits to collect), an objection to answer and a give-up to
+        // carry (each with 7 days, D111), and a Bitcoin wallet topped up.
+        let now = Instant::now();
+        let keep = due(st.kept_at, self.settings.housekeeping, now);
+        let activity = [self.a.vault.activity(&self.a.vault.me()).await?, self.b.vault.activity(&self.b.vault.me()).await?];
+        if !keep && st.waiting.is_empty() && st.in_flight.is_empty() && st.idle.as_ref() == Some(&activity) {
+            return Ok(());
+        }
+        st.idle = None;
+        st.clean = true;
         let chains = [self.a.vault.chain(&self.a.vault.me()).await?, self.b.vault.chain(&self.b.vault.me()).await?];
         if !self.register(&mut st, &chains).await? {
             return Ok(());
@@ -1630,8 +1673,6 @@ impl Worker for VaultOperator {
         // every round. The first time after a start, the next is brought
         // forward by this pair's own share of the interval, so the pairs of
         // one node do not all read at once.
-        let now = Instant::now();
-        let keep = due(st.kept_at, self.settings.housekeeping, now);
         if keep {
             st.kept_at = Some(if st.kept_at.is_none() { now.checked_sub(self.phase).unwrap_or(now) } else { now });
         }
@@ -1642,6 +1683,7 @@ impl Worker for VaultOperator {
         st.in_flight.retain(|(index, _)| *index >= processed);
         if let Err(e) = self.discover(&mut st).await {
             warn!(error = %crate::secrets::redact(&e), "reading new locks and burns failed");
+            st.clean = false;
         }
         // Attests are tended at once when a claim opened or was decided: one
         // of its own that just opened is what an attest is linked to, within
@@ -1666,10 +1708,18 @@ impl Worker for VaultOperator {
         }
         let (records, moved) = self.gather(&mut st, &chains).await?;
         if records.is_empty() {
+            if st.clean {
+                st.idle = Some(activity);
+            }
             return Ok(());
         }
         if !self.wallet.can_pay().await? {
+            // Tried again once something reaches a vault, or at the
+            // housekeeping.
             warn!("the Bitcoin wallet cannot pay for a vault message");
+            if st.clean {
+                st.idle = Some(activity);
+            }
             return Ok(());
         }
         let batch = encode(&records);

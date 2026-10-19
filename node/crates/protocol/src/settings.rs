@@ -201,7 +201,7 @@ pub struct FastSettings {
 }
 
 fn default_housekeeping() -> u64 {
-    600
+    1800
 }
 
 fn default_deposits() -> u32 {

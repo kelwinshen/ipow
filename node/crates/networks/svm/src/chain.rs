@@ -114,7 +114,7 @@ struct Counted {
 #[async_trait]
 impl solana_rpc_client::rpc_sender::RpcSender for Counted {
     async fn send(&self, request: solana_client::rpc_request::RpcRequest, params: serde_json::Value) -> solana_client::client_error::Result<serde_json::Value> {
-        ipow_protocol_core::calls::count(&self.network, 1);
+        ipow_protocol_core::calls::count(&self.network, &request.to_string(), 1);
         self.inner.send(request, params).await
     }
     fn get_transport_stats(&self) -> solana_rpc_client::rpc_sender::RpcTransportStats {

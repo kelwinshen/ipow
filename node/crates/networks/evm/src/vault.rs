@@ -177,6 +177,23 @@ impl VaultApp for EvmVault {
         }))
     }
 
+    async fn activity(&self, operator: &str) -> anyhow::Result<Vec<u8>> {
+        // Five calls: final as `final_locks_after` and `requests_after` read
+        // them.
+        let op = Self::operator(operator)?;
+        let (home, receipts) = (self.home().await?, self.receipts().await?);
+        let c = self.contract().getChain(op).call().await?;
+        let locks = home.lockCount().block(BlockId::finalized()).call().await?;
+        let burns = receipts.burnCount().block(BlockId::finalized()).call().await?;
+        let claims = self.contract().claimCount().call().await?;
+        let attests = receipts.attestCount().call().await?;
+        Ok(format!(
+            "{} {} {} {} {} {} {} {} {} {locks} {burns} {claims} {attests}",
+            c.registered, c.coinTxid, c.coinVout, c.messages, c.exited, c.slashed, c.refused, c.openClaims, c.deposits
+        )
+        .into_bytes())
+    }
+
     async fn position(&self, operator: &str, home: u8, asset: u32) -> anyhow::Result<Position> {
         let p = self.contract().getPosition(Self::operator(operator)?, key(home, asset)).call().await?;
         Ok(Position {

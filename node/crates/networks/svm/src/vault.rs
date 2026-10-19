@@ -344,6 +344,14 @@ impl VaultApp for SvmVault {
         Ok(pair_commitment(c.peer, &c.peer_vault, &peer, &self.p.config, &self.net.me_key()))
     }
 
+    async fn activity(&self, operator: &str) -> anyhow::Result<Vec<u8>> {
+        // Two reads: the configuration, final as `final_locks_after` reads
+        // its counts, and the pair chain.
+        let mut out = self.net.account_data_final(&self.p.config()).await?.unwrap_or_default();
+        out.extend(self.net.account_data(&self.p.chain_pda(&Self::operator(operator)?)).await?.unwrap_or_default());
+        Ok(out)
+    }
+
     async fn chain(&self, operator: &str) -> anyhow::Result<Option<Chain>> {
         let Some(c) = self.net.read_account::<vt::accounts::Chain>(&self.p.chain_pda(&Self::operator(operator)?)).await? else {
             return Ok(None);

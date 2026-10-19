@@ -268,8 +268,10 @@ async fn main() -> anyhow::Result<()> {
             let calls = ipow_protocol_core::calls::take();
             let explorer = ipow_bitcoin::explorer::take_calls();
             let per_minute = |n: u64| n as f64 / every.as_secs_f64() * 60.0;
-            for (network, n) in &calls {
-                info!(%network, calls = n, per_minute = format!("{:.1}", per_minute(*n)), "endpoint calls in the last 10 minutes");
+            for (network, methods) in &calls {
+                let n: u64 = methods.values().sum();
+                let methods = ipow_protocol_core::calls::by_method(methods);
+                info!(%network, calls = n, per_minute = format!("{:.1}", per_minute(n)), %methods, "endpoint calls in the last 10 minutes");
             }
             info!(calls = explorer, per_minute = format!("{:.1}", per_minute(explorer)), "Bitcoin explorer calls in the last 10 minutes");
         }

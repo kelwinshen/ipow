@@ -406,6 +406,13 @@ pub trait VaultApp: Send + Sync {
     /// the other network.
     async fn pair_commitment(&self, peer: &[u8]) -> anyhow::Result<[u8; 32]>;
     async fn chain(&self, operator: &str) -> anyhow::Result<Option<Chain>>;
+    /// A few cheap reads that change whenever something reaches this vault
+    /// that an operator acts on soon: a new lock or burn once final, a new
+    /// claim or attest, and `operator`'s pair chain (its messages, open
+    /// claims, deposits). The same bytes twice: nothing of that happened in
+    /// between, and an idle operator need not look further (`housekeeping`
+    /// still does, now and then, for the rest).
+    async fn activity(&self, operator: &str) -> anyhow::Result<Vec<u8>>;
     /// A chain's place in asset (`home`, `asset`), also one it holds no bond
     /// in: what its claims move there and the bond the other network counts.
     async fn position(&self, operator: &str, home: u8, asset: u32) -> anyhow::Result<Position>;

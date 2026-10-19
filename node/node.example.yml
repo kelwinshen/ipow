@@ -56,8 +56,10 @@ networks:
 # the receipt's smallest unit (gwei for ETH, lamports for SOL).
 # vault:
 #   deposits: 5
-#   # Seconds between collecting fees and tending attests (default 600).
-#   housekeeping_seconds: 600
+#   # Seconds between the rounds that look at everything, also with nothing
+#   # new in either vault: collecting fees, tending attests, deciding
+#   # claims (default 1800).
+#   housekeeping_seconds: 1800
 #   pairs:
 #     - networks: [ethereum-sepolia, solana-devnet]
 #       vaults: ["0x0000000000000000000000000000000000000000", "2e1ZUB5eqA6bQfH3f9pbfvibfie7WnvEJeKif53VAm7p"]

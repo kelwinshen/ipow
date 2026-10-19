@@ -60,6 +60,10 @@ struct EvmPair {
     b: Arc<dyn VaultApp>,
     a_address: alloy::primitives::Address,
     b_address: alloy::primitives::Address,
+    /// What its operator was made of, to make it again with other settings.
+    sides: [Side; 2],
+    wallet: Arc<SharedWallet>,
+    journal: std::path::PathBuf,
 }
 
 /// ETH, asset 0 of Ethereum, carried with a bond of `bond` gwei there, and
@@ -178,12 +182,17 @@ impl Setup {
             None => None,
             Some(evm_assets) => {
                 let (a_address, b_address) = eth.deploy_evm_pair(ETHEREUM, BASE, ETH / 100, ETH).await;
-                let (a, a_net) = eth.vault_node(a_address, 0).await;
-                let (b, b_net) = eth.vault_node(b_address, 0).await;
+                // Named for this test alone: its calls are counted apart from
+                // the other tests running at the same time.
+                static PAIRS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+                let name = format!("hardhat-pair-{}", PAIRS.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
+                let (a, a_net) = eth.vault_node_named(a_address, 0, &name).await;
+                let (b, b_net) = eth.vault_node_named(b_address, 0, &name).await;
                 ipow_node::vault::check_pair(&Side { vault: a.clone(), net: a_net.clone() }, &Side { vault: b.clone(), net: b_net.clone() }).await.unwrap();
+                let sides = [Side { vault: a.clone(), net: a_net }, Side { vault: b.clone(), net: b_net }];
                 let op = VaultOperator::new(
-                    Side { vault: a.clone(), net: a_net },
-                    Side { vault: b.clone(), net: b_net },
+                    sides[0].clone(),
+                    sides[1].clone(),
                     btc.clone(),
                     shared.clone(),
                     VaultOperatorSettings {
@@ -200,7 +209,7 @@ impl Setup {
                 let (ga, ga_net) = eth.vault_node(a_address, 2).await;
                 let (gb, gb_net) = eth.vault_node(b_address, 2).await;
                 let guardian = VaultGuardian::new(Side { vault: ga, net: ga_net }, Side { vault: gb, net: gb_net }, btc.clone(), [Some(ETH / 10), Some(ETH / 10)]).unwrap();
-                Some(EvmPair { op, guardian, a, b, a_address, b_address })
+                Some(EvmPair { op, guardian, a, b, a_address, b_address, sides, wallet: shared.clone(), journal: journal.path().join("evm.journal") })
             }
         };
 
@@ -538,7 +547,13 @@ async fn carries_sol_to_vsol_on_ethereum_and_back() {
     // SOL for the operator, who needs vSOL for its bond there.
     let alice: [u8; 20] = s.eth.user_address().await.0.0;
     let op: [u8; 20] = s.eth_vault.me_bytes().try_into().unwrap();
+    // Solana's vault reads the same while nothing reaches it, so an idle
+    // pair stays idle; a lock changes it, so the pair wakes.
+    let quiet = s.sol_vault.activity(&s.sol_vault.me()).await.unwrap();
+    assert!(!quiet.is_empty());
+    assert_eq!(s.sol_vault.activity(&s.sol_vault.me()).await.unwrap(), quiet);
     let a = s.sol.user_lock_sol(SOL as u64, alice, 1_000, 0).await;
+    assert_ne!(s.sol_vault.activity(&s.sol_vault.me()).await.unwrap(), quiet);
     let o = s.sol.user_lock_sol(2 * SOL as u64, op, 0, 0).await;
     // And 23 small ones: all 25 fit one message.
     let mut small = vec![];
@@ -632,4 +647,58 @@ async fn carries_a_lock_between_two_evm_networks() {
     assert_eq!(s.eth.receipt_balance(p.b_address, 0, alice).await, 1_000_000_000);
     // The operator earned the lock's fee on Ethereum.
     assert!(p.a.lock(1).await.unwrap().unwrap().fee_paid);
+}
+
+/// The calls of one round of `op` to the networks named `name`, by method.
+/// Other tests' calls are counted at the same time, under other names.
+async fn calls_of_a_round(op: &VaultOperator, name: &str, net: &dyn ipow_protocol_core::network::ProtocolNetwork) -> std::collections::BTreeMap<String, u64> {
+    ipow_protocol_core::calls::take();
+    op.round(net).await.unwrap();
+    ipow_protocol_core::calls::take().remove(name).unwrap_or_default()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_idle_pair_reads_only_its_activity_until_a_lock_reaches_a_vault() {
+    let s = Setup::build(vec![], Some(vec![eth_asset(2_000_000_000, false)])).await;
+    let p = s.evm_pair.as_ref().unwrap();
+    let me = p.b.me();
+    s.until("ETH's bond counted on Base, and its receipt made", async |s| {
+        let p = s.evm_pair.as_ref().unwrap();
+        p.b.chain(&me).await.unwrap().is_some() && p.b.position(&me, ETHEREUM, 0).await.unwrap().peer_bond == 2_000_000_000 && p.b.has_receipt(0).await.unwrap()
+    })
+    .await;
+    // The same operator, from its journal, with the housekeeping an hour
+    // away, as a testnet node's after its first round.
+    let op = VaultOperator::new(
+        p.sides[0].clone(),
+        p.sides[1].clone(),
+        s.btc.clone(),
+        p.wallet.clone(),
+        VaultOperatorSettings {
+            assets: vec![eth_asset(2_000_000_000, false)],
+            deposits: 5,
+            checkpoint_paid: [Some(ETH / 10), Some(ETH / 10)],
+            journal: p.journal.clone(),
+            fast_only: vec![],
+            fast_at_own_cost: false,
+            housekeeping: std::time::Duration::from_secs(3600),
+        },
+    )
+    .unwrap();
+    let net = s.eth.operator();
+    let name = p.sides[0].net.name().to_string();
+    let full = calls_of_a_round(&op, &name, net).await;
+    calls_of_a_round(&op, &name, net).await;
+    // Idle: five calls on each network, nothing else.
+    let idle = calls_of_a_round(&op, &name, net).await;
+    eprintln!("a full round: {full:?}; an idle one: {idle:?}");
+    assert_eq!(idle, [("eth_call".to_string(), 10)].into());
+    assert_eq!(calls_of_a_round(&op, &name, net).await, idle);
+    assert!(full.values().sum::<u64>() > 20, "{full:?}");
+
+    // A lock reaches Ethereum's vault: the next round looks at everything.
+    let alice = s.eth.user_address().await;
+    s.eth.user_lock(p.a_address, eth_address32(&alice.0.0), ETH, 1_000_000_000, 0).await;
+    let woken = calls_of_a_round(&op, &name, net).await;
+    assert!(woken.values().sum::<u64>() > 20, "{woken:?}");
 }

@@ -1,6 +1,6 @@
 //! The endpoint's calls, counted by network (`ipow_protocol_core::calls`):
 //! a layer under the provider sees every request it sends, a batch as its
-//! calls.
+//! calls, each by its method.
 
 use std::sync::Arc;
 use std::task::{Context, Poll};
@@ -37,11 +37,14 @@ where
     }
 
     fn call(&mut self, req: RequestPacket) -> Self::Future {
-        let n = match &req {
-            RequestPacket::Single(_) => 1,
-            RequestPacket::Batch(b) => b.len() as u64,
-        };
-        ipow_protocol_core::calls::count(&self.network, n);
+        match &req {
+            RequestPacket::Single(r) => ipow_protocol_core::calls::count(&self.network, r.method(), 1),
+            RequestPacket::Batch(b) => {
+                for r in b {
+                    ipow_protocol_core::calls::count(&self.network, r.method(), 1);
+                }
+            }
+        }
         self.inner.call(req)
     }
 }

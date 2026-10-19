@@ -249,8 +249,13 @@ impl EvmWorld {
     /// The vault as the node of account `key` (0 the operator, 2 the
     /// guardian) sees it.
     pub async fn vault_node(&self, vault: Address, key: usize) -> (std::sync::Arc<crate::vault::EvmVault>, std::sync::Arc<EvmNetwork>) {
+        self.vault_node_named(vault, key, "hardhat").await
+    }
+
+    /// The same, its calls counted under `name`.
+    pub async fn vault_node_named(&self, vault: Address, key: usize, name: &str) -> (std::sync::Arc<crate::vault::EvmVault>, std::sync::Arc<EvmNetwork>) {
         let lc = IPoWProtocol::new(self.protocol, &self.apps[0]).lightClient().call().await.unwrap();
-        let net = std::sync::Arc::new(EvmNetwork::connect("hardhat", &self.net.url, &self.net.keys[key], &lc.to_string(), &self.protocol.to_string(), None).unwrap());
+        let net = std::sync::Arc::new(EvmNetwork::connect(name, &self.net.url, &self.net.keys[key], &lc.to_string(), &self.protocol.to_string(), None).unwrap());
         (std::sync::Arc::new(crate::vault::EvmVault::connect(net.clone(), &vault.to_string()).await.unwrap()), net)
     }
 
