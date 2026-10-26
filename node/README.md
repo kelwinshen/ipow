@@ -104,7 +104,9 @@ claim opens or is decided. Each pair does its housekeeping at its own place
 in the interval. Every round of every pair read everything before
 (2026-10-20): about 40 calls on each EVM network of a pair every minute,
 most of what an idle node asked its endpoints. The node logs its calls
-every 10 minutes, by network and method.
+every 10 minutes, by network and method, and each pair's rounds: how many
+were idle, and why the others looked at everything. Its first log line
+names the commit it was built from.
 
 On a test network only, two settings of a pair let the operator fast-path
 more than it carries (design section 11.7, the owner's deviation of

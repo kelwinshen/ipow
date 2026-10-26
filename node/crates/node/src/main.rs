@@ -133,6 +133,7 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let text = std::fs::read_to_string(&cli.settings)
         .map_err(|e| anyhow::anyhow!("cannot read {}: {e}", cli.settings.display()))?;
+    info!(commit = env!("IPOW_COMMIT"), "ipow-node");
     let settings = Settings::parse(&text)?;
     info!(roles = ?settings.roles, networks = settings.networks.len(), "settings are valid");
     if cli.check {
@@ -272,6 +273,12 @@ async fn main() -> anyhow::Result<()> {
                 let n: u64 = methods.values().sum();
                 let methods = ipow_protocol_core::calls::by_method(methods);
                 info!(%network, calls = n, per_minute = format!("{:.1}", per_minute(n)), %methods, "endpoint calls in the last 10 minutes");
+            }
+            for (pair, rounds) in ipow_node::vault::take_rounds() {
+                let mut r: Vec<_> = rounds.into_iter().collect();
+                r.sort_by(|a, b| b.1.cmp(&a.1));
+                let rounds = r.iter().map(|(what, n)| format!("{what}={n}")).collect::<Vec<_>>().join(", ");
+                info!(%pair, %rounds, "vault rounds in the last 10 minutes");
             }
             info!(calls = explorer, per_minute = format!("{:.1}", per_minute(explorer)), "Bitcoin explorer calls in the last 10 minutes");
         }

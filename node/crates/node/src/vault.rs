@@ -14,9 +14,9 @@
 //! Both work on the two networks at once. The supervisor runs them as
 //! ordinary workers; the network it hands them only names the task.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
@@ -654,6 +654,9 @@ struct OpState {
     /// No failure logged this round, and nothing left for a later one that
     /// no `activity` would wake: only such a round lets the pair go idle.
     clean: bool,
+    /// Why the last round that looked at everything did not let the pair go
+    /// idle: the next one looks at everything for it.
+    unsettled: &'static str,
     journal: JournalState,
     /// By home network: the highest lock id read so far, and those among
     /// them of a carried asset not finished yet: returned, issued, or carried
@@ -719,6 +722,22 @@ async fn can_open(side: &Side, c: &Chain) -> anyhow::Result<bool> {
 /// Withdraws this node's credits on a network: in its coin (deposits won)
 /// and in each of `assets` (fees earned, burns paid at once repaid, the
 /// collateral of settled attests, a slasher's share).
+/// The vault operator's rounds, by pair and by what each was: "idle" (only
+/// the activity read) or why it looked at everything. Logged and cleared by
+/// the node every 10 minutes, so its log says whether its pairs go idle.
+static ROUNDS: OnceLock<std::sync::Mutex<BTreeMap<String, BTreeMap<&'static str, u64>>>> = OnceLock::new();
+
+fn count_round(pair: &str, what: &'static str) {
+    let mut r = ROUNDS.get_or_init(Default::default).lock().unwrap_or_else(|e| e.into_inner());
+    *r.entry(pair.to_string()).or_default().entry(what).or_default() += 1;
+}
+
+/// The rounds since the last take, by pair and by what each was, and
+/// clears them.
+pub fn take_rounds() -> BTreeMap<String, BTreeMap<&'static str, u64>> {
+    std::mem::take(&mut *ROUNDS.get_or_init(Default::default).lock().unwrap_or_else(|e| e.into_inner()))
+}
+
 /// Whether the work done every `every` is due at `now`: when never done yet
 /// (after a start), or last done at least `every` ago. Zero is every round.
 fn due(last: Option<Instant>, every: Duration, now: Instant) -> bool {
@@ -1652,13 +1671,28 @@ impl Worker for VaultOperator {
         let now = Instant::now();
         let keep = due(st.kept_at, self.settings.housekeeping, now);
         let activity = [self.a.vault.activity(&self.a.vault.me()).await?, self.b.vault.activity(&self.b.vault.me()).await?];
-        if !keep && st.waiting.is_empty() && st.in_flight.is_empty() && st.idle.as_ref() == Some(&activity) {
+        let what = if keep {
+            "housekeeping"
+        } else if !st.waiting.is_empty() || !st.in_flight.is_empty() {
+            "a message on its way"
+        } else {
+            match &st.idle {
+                Some(idle) if *idle == activity => "idle",
+                Some(_) => "something reached a vault",
+                None if st.unsettled.is_empty() => "the first round",
+                None => st.unsettled,
+            }
+        };
+        count_round(&format!("{} and {}", self.a.net.name(), self.b.net.name()), what);
+        if what == "idle" {
             return Ok(());
         }
         st.idle = None;
         st.clean = true;
+        st.unsettled = "a round that failed";
         let chains = [self.a.vault.chain(&self.a.vault.me()).await?, self.b.vault.chain(&self.b.vault.me()).await?];
         if !self.register(&mut st, &chains).await? {
+            st.unsettled = "registering";
             return Ok(());
         }
         let chains = [chains[0].clone().unwrap(), chains[1].clone().unwrap()];
@@ -1667,6 +1701,7 @@ impl Worker for VaultOperator {
         let claims_changed = self.index_claims(&mut st).await?;
         self.tend_claims(&mut st).await?;
         if chains.iter().any(|c| c.exited) {
+            st.unsettled = "a chain that exited";
             return Ok(());
         }
         // Collecting fees and tending attests: every `housekeeping`, not
@@ -1690,6 +1725,7 @@ impl Worker for VaultOperator {
         // its 7 days (D123).
         self.fast(&mut st, &chains, keep || claims_changed).await;
         if !self.catch_up(&mut st, &chains).await? {
+            st.unsettled = "a message to submit";
             return Ok(());
         }
         // Both vaults are at the end of the chain, and no message waits.
@@ -1700,7 +1736,10 @@ impl Worker for VaultOperator {
         // yet: a new one now would spend the same coin.
         for txid in st.waiting.keys().copied().collect::<Vec<_>>() {
             match self.btc.tx_status(&txid).await? {
-                Some(TxStatus::Unconfirmed) => return Ok(()),
+                Some(TxStatus::Unconfirmed) => {
+                    st.unsettled = "a message unconfirmed";
+                    return Ok(());
+                }
                 _ => {
                     st.waiting.remove(&txid);
                 }
@@ -1711,6 +1750,7 @@ impl Worker for VaultOperator {
             if st.clean {
                 st.idle = Some(activity);
             }
+            st.unsettled = "a failure, or a lock waiting for the operator's receipts";
             return Ok(());
         }
         if !self.wallet.can_pay().await? {
@@ -1720,8 +1760,10 @@ impl Worker for VaultOperator {
             if st.clean {
                 st.idle = Some(activity);
             }
+            st.unsettled = "a failure, or a lock waiting for the operator's receipts";
             return Ok(());
         }
+        st.unsettled = "a batch written";
         let batch = encode(&records);
         let payload = message_payload(&batch);
         // The batch is kept before the message exists: no crash can lose it.
