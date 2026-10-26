@@ -16,11 +16,11 @@ tokio.workspace = true
 tracing.workspace = true
 # For `testing`.
 ipow-testing = { path = "../../testing", optional = true }
-serde_json = { version = "1", optional = true }
+serde_json = "1"
 
 [features]
 # Local-network helpers for the tests of this crate and of the node.
-testing = ["dep:ipow-testing", "dep:serde_json", "alloy/json-rpc"]
+testing = ["dep:ipow-testing", "alloy/json-rpc"]
 
 [dev-dependencies]
 tracing-subscriber.workspace = true

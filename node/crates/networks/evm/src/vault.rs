@@ -2,7 +2,8 @@
 //! and its parts `vault/VaultHome.sol` and `vault/VaultReceipts.sol`, spec
 //! section 11), for the node's operator and guardian.
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use alloy::eips::BlockId;
 use alloy::primitives::{Address, Bytes, FixedBytes, U256};
@@ -28,6 +29,32 @@ pub struct EvmVault {
     here: u8,
     peer: u8,
     parts: OnceCell<(Address, Address)>,
+    /// Whether this network's blocks name Ethereum's block they belong to
+    /// (`l1BlockNumber`: Arbitrum and the chains built like it, Robinhood
+    /// Chain): there a contract's `block.number` is Ethereum's, so a block the
+    /// vault records is not this network's own.
+    on_ethereum_blocks: OnceCell<bool>,
+    /// This network's blocks of each Ethereum block looked up so far.
+    ranges: Mutex<HashMap<u64, (u64, u64)>>,
+}
+
+/// The first number in `lo..=hi` whose `key` is at least `want`, `key` never
+/// decreasing along them; `hi + 1` when none is.
+async fn first_at_least<F, Fut>(lo: u64, hi: u64, want: u64, key: F) -> anyhow::Result<u64>
+where
+    F: Fn(u64) -> Fut,
+    Fut: std::future::Future<Output = anyhow::Result<u64>>,
+{
+    let (mut lo, mut hi) = (lo, hi + 1);
+    while lo < hi {
+        let mid = lo + (hi - lo) / 2;
+        if key(mid).await? >= want {
+            hi = mid;
+        } else {
+            lo = mid + 1;
+        }
+    }
+    Ok(lo)
 }
 
 /// An asset, by its home network and number, as the core keys it.
@@ -42,7 +69,7 @@ impl EvmVault {
         let address: Address = address.parse().map_err(|_| anyhow::anyhow!("the vault address is not valid"))?;
         let c = IPoWVault::new(address, net.provider());
         let (here, peer) = (c.here().call().await?, c.peer().call().await?);
-        Ok(EvmVault { net, address, here, peer, parts: OnceCell::new() })
+        Ok(EvmVault { net, address, here, peer, parts: OnceCell::new(), on_ethereum_blocks: OnceCell::new(), ranges: Mutex::new(HashMap::new()) })
     }
 
     fn contract(&self) -> IPoWVault::IPoWVaultInstance<&alloy::providers::DynProvider> {
@@ -58,6 +85,35 @@ impl EvmVault {
                 anyhow::Ok((c.home().call().await?, c.receipts().call().await?))
             })
             .await?)
+    }
+
+    /// The Ethereum block block `n` of this network belongs to, when its
+    /// blocks name one.
+    async fn ethereum_block_of(&self, n: u64) -> anyhow::Result<Option<u64>> {
+        let b: serde_json::Value = self.net.provider().raw_request("eth_getBlockByNumber".into(), (format!("0x{n:x}"), false)).await?;
+        Ok(b.get("l1BlockNumber").and_then(|v| v.as_str()).and_then(|h| u64::from_str_radix(h.trim_start_matches("0x"), 16).ok()))
+    }
+
+    /// The blocks of this network a block number the vault recorded
+    /// (`block.number`) stands for: itself, or on a network whose contracts
+    /// see Ethereum's block number, all of its own blocks in that Ethereum
+    /// block (Arbitrum's are a quarter of a second, about 48 of them). Found
+    /// once by halving, about 60 reads, and kept.
+    async fn blocks_of(&self, recorded: u64) -> anyhow::Result<(u64, u64)> {
+        let latest = self.net.provider().get_block_number().await?;
+        let on_ethereum = *self.on_ethereum_blocks.get_or_try_init(|| async { anyhow::Ok(self.ethereum_block_of(latest).await?.is_some()) }).await?;
+        if !on_ethereum {
+            return Ok((recorded, recorded));
+        }
+        if let Some(r) = self.ranges.lock().unwrap_or_else(|e| e.into_inner()).get(&recorded) {
+            return Ok(*r);
+        }
+        let key = |n: u64| async move { self.ethereum_block_of(n).await?.ok_or_else(|| anyhow::anyhow!("block {n} names no Ethereum block")) };
+        let from = first_at_least(1, latest, recorded, key).await?;
+        let to = first_at_least(from, latest, recorded + 1, key).await? - 1;
+        anyhow::ensure!(from <= to, "no block of this network is in Ethereum's block {recorded}");
+        self.ranges.lock().unwrap_or_else(|e| e.into_inner()).insert(recorded, (from, to));
+        Ok((from, to))
     }
 
     async fn home(&self) -> anyhow::Result<VaultHome::VaultHomeInstance<&alloy::providers::DynProvider>> {
@@ -294,12 +350,13 @@ impl VaultApp for EvmVault {
         // back from the last, one block at a time.
         let mut block = c.lastMessageBlock;
         while block != 0 {
+            let (from, to) = self.blocks_of(block).await?;
             let filter = Filter::new()
                 .address(self.address)
                 .event_signature(IPoWVault::MessageBatch::SIGNATURE_HASH)
                 .topic1(op.into_word())
-                .from_block(block)
-                .to_block(block);
+                .from_block(from)
+                .to_block(to);
             // Several messages may share a block: the lowest of them names the
             // block of the one before it.
             let mut lowest: Option<(u64, u64)> = None;
@@ -470,14 +527,16 @@ impl VaultApp for EvmVault {
     async fn claim(&self, id: u64) -> anyhow::Result<Claim> {
         let c = self.contract().getClaim(U256::from(id)).call().await?;
         anyhow::ensure!(c.operator != Address::ZERO, "claim {id} does not exist");
-        // The batch is named in an event of the block the claim opened in;
+        // The batch is named in an event of the block the claim opened in
+        // (on Arbitrum and its like, of the blocks of that Ethereum block);
         // only its records from Solana belong to the claim here.
+        let (from, to) = self.blocks_of(c.openedBlock).await?;
         let filter = Filter::new()
             .address(self.address)
             .event_signature(IPoWVault::ClaimBatch::SIGNATURE_HASH)
             .topic1(U256::from(id))
-            .from_block(c.openedBlock)
-            .to_block(c.openedBlock);
+            .from_block(from)
+            .to_block(to);
         let logs = self.net.provider().get_logs(&filter).await?;
         let log = logs.first().ok_or_else(|| anyhow::anyhow!("the batch of claim {id} was not found"))?;
         let batch = IPoWVault::ClaimBatch::decode_log(&log.inner)?.data.batch;
@@ -646,5 +705,23 @@ impl VaultApp for EvmVault {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::first_at_least;
+
+    #[tokio::test]
+    async fn finds_a_networks_blocks_of_one_ethereum_block() {
+        // Ethereum's block of each of this network's blocks 0 to 9.
+        let eth = [5u64, 5, 6, 6, 6, 7, 9, 9, 9, 10];
+        let key = |n: u64| async move { anyhow::Ok(eth[n as usize]) };
+        let run = async |want| first_at_least(0, 9, want, key).await.unwrap();
+        assert_eq!((run(6).await, run(7).await - 1), (2, 4));
+        assert_eq!((run(9).await, run(10).await - 1), (6, 8));
+        // None in Ethereum's block 8; past the end, the end.
+        assert_eq!((run(8).await, run(9).await - 1), (6, 5));
+        assert_eq!(run(11).await, 10);
     }
 }
